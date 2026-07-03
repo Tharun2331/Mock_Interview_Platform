@@ -18,20 +18,24 @@ app.post("/api/v1/pre-interview", async (req,res) => {
     });
     return
   }
-  const githubUrl = data.github?.endsWith("/") ? data.github?.slice(0, -1) : data.github ;
+  const githubUrl = data.gitHub?.endsWith("/") ? data.gitHub?.slice(0, -1) : data.gitHub ;
 
   const githubUsername = githubUrl.split("/").pop();
 
 
-  const userRepos = await axios.get(`https://api.github.com/users/${githubUsername}/repos`)
-  const filteredUseRepos = userRepos.data.map((x: any) => ({
-    description: x.description,
-    name: x.name,
-    fullName: x.full_name,
-    startCount: x.stargazers_count
-  }))
+  try {
+    const userRepos = await axios.get(`https://api.github.com/users/${githubUsername}/repos`)
+    const filteredUseRepos = userRepos.data.map((x: any) => ({
+      description: x.description,
+      name: x.name,
+      fullName: x.full_name,
+      starCount: x.stargazers_count
+    }))
 
-console.log(filteredUseRepos)
+    res.json({ repos: filteredUseRepos })
+  } catch (e) {
+    res.status(500).json({ message: "Failed to fetch GitHub repos" })
+  }
 })
 
 app.listen(8000);
