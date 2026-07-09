@@ -1,7 +1,8 @@
 import express from "express";
 import cors from "cors";
-import { PreInterviewBody } from "./types";
+import { PreInterviewBody } from "@repo/shared";
 import axios from "axios";
+import { planRouter } from "./routes/plan";
 
 const app = express();
 const corsOptions = {
@@ -9,6 +10,7 @@ const corsOptions = {
 }
 app.use(cors(corsOptions));
 app.use(express.json());
+app.use("/api/v1/plan", planRouter);
 
 app.post("/api/v1/pre-interview", async (req,res) => {
   const {success,data} = PreInterviewBody.safeParse(req.body);
