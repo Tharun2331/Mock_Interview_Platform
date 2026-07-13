@@ -36,3 +36,23 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
+*.tflock
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# tfvars may contain sensitive values — commit only if they're non-sensitive placeholders
+*.tfvars
+*.tfvars.json
+
+# Note: .terraform.lock.hcl SHOULD be committed (locks provider versions like package-lock.json)
