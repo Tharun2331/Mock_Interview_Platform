@@ -1,5 +1,12 @@
-module "iam" {
-  source      = "../../modules/iam"
+module "dynamodb" {
+  source      = "../../modules/dynamodb"
   environment = var.environment
-  aws_region  = var.aws_region
+  enable_pitr = false
+}
+
+module "iam" {
+  source              = "../../modules/iam"
+  environment         = var.environment
+  aws_region          = var.aws_region
+  dynamodb_table_arns = module.dynamodb.table_arns
 }
