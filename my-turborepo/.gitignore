@@ -56,3 +56,6 @@ override.tf.json
 *.tfvars.json
 
 # Note: .terraform.lock.hcl SHOULD be committed (locks provider versions like package-lock.json)
+
+# Local dev notes — never commit
+.claude.local.md
