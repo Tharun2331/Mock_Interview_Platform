@@ -18,8 +18,3 @@ variable "bedrock_model_ids" {
   ]
 }
 
-variable "dynamodb_table_arns" {
-  type        = list(string)
-  description = "ARNs of DynamoDB tables the server role is allowed to access"
-  default     = []
-}
