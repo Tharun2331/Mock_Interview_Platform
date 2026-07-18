@@ -1,11 +1,6 @@
-variable "aws_region" {
-  type    = string
-  default = "us-east-1"
-}
-
 variable "environment" {
-  type    = string
-  default = "dev"
+  type=string
+  description= "Deployment environment (dev | prod)"
 }
 
 variable "google_client_id" {
