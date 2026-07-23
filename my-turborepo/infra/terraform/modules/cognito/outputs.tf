@@ -1,7 +1,7 @@
-output "google_client_id_parameter_name" {
-  value = aws_ssm_parameter.google_client_id.name
+output "aws_cognito_domain" {
+  value = aws_cognito_user_pool_domain.main
 }
 
-output "google_client_secret_parameter_name" {
-  value = aws_ssm_parameter.google_client_secret.name
+output "aws_route53_zone" {
+  value = aws_route53_record.cognito_domain
 }
