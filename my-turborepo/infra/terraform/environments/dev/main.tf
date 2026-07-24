@@ -30,7 +30,16 @@ module "cognito" {
   google_client_id     = var.google_client_id
   google_client_secret = var.google_client_secret
 
-  # Cognito's custom-domain check requires the apex (tharunsekar.xyz) to resolve,
-  # which the CloudFront apex A record provides.
-  depends_on = [module.cloudfront]
+  # NOTE: intentionally NO depends_on = [module.cloudfront]. The apex record
+  # (created by module.cloudfront) only needed to exist for the FIRST creation
+  # of the custom domain. A module-level depends_on defers this module's data
+  # sources (ACM cert) whenever CloudFront has any pending change, which makes
+  # certificate_arn "known after apply" and forces the user pool domain to be
+  # replaced (auth downtime). If ever rebuilding from scratch, apply
+  # module.cloudfront first, then module.cognito.
+}
+
+module "vpc" {
+  source = "../../modules/vpc"
+  environment = var.environment
 }
