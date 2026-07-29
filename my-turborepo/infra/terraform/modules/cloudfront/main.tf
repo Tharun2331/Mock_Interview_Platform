@@ -28,6 +28,13 @@ resource "aws_cloudfront_distribution" "frontend" {
   default_root_object = "index.html"
   aliases             = var.aliases
 
+  lifecycle {
+    # web_acl_id is locked to this distribution by an active CloudFront Security
+    # Savings Bundle subscription — AWS rejects any attempt to remove/change it
+    # via the API, so let it drift instead of fighting it every plan.
+    ignore_changes = [web_acl_id]
+  }
+
   origin {
     domain_name              = var.bucket_regional_domain_name
     origin_id                = "s3-frontend"

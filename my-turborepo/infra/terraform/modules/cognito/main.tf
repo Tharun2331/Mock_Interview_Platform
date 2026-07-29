@@ -34,6 +34,9 @@ resource "aws_cognito_identity_provider" "google" {
     email    = "email"
     username = "sub"
   }
+  lifecycle {
+    ignore_changes = [ provider_details ]
+  }
 }
 
 # 5. True Custom Domain (Using your ACM SSL Certificate)
