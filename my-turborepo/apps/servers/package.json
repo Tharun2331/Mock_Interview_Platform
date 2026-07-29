@@ -20,6 +20,7 @@
     "@octokit/rest": "^22.0.1",
     "@repo/shared": "*",
     "@types/express": "^5.0.6",
+    "aws-jwt-verify": "^5.2.1",
     "axios": "^1.18.1",
     "cors": "^2.8.6",
     "express": "^5.2.1",
