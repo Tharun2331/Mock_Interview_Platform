@@ -10,9 +10,9 @@ export const BACKEND_URL = "http://localhost:8000";
 // `callback_urls` / `logout_urls`. Amplify selects the entry whose origin
 // matches the current `window.location.origin`, so dev and prod both work.
 export const COGNITO = {
-  region: process.env.REGION,
-  userPoolId: process.env.COGNITO_USER_POOL_ID,
-  userPoolClientId: process.env.COGNITO_USER_POOL_CLIENT_ID,
+  region: process.env.BUN_PUBLIC_REGION,
+  userPoolId: process.env.BUN_PUBLIC_COGNITO_USER_POOL_ID,
+  userPoolClientId: process.env.BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID,
   oauth: {
     domain: "auth.tharunsekar.xyz",
     scopes: ["email", "openid", "profile", "phone"],

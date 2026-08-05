@@ -17,8 +17,8 @@ import { COGNITO } from "./lib/config";
 Amplify.configure({
   Auth: {
     Cognito: {
-      userPoolId: COGNITO.userPoolId,
-      userPoolClientId: COGNITO.userPoolClientId,
+      userPoolId: COGNITO.userPoolId || "",
+      userPoolClientId: COGNITO.userPoolClientId || "",
       loginWith: {
         oauth: {
           domain: COGNITO.oauth.domain,

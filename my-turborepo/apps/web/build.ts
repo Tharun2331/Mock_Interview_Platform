@@ -16,6 +16,9 @@ const result = await Bun.build({
   sourcemap: "linked",
   define: {
     "process.env.NODE_ENV": JSON.stringify("production"),
+    "process.env.BUN_PUBLIC_REGION": JSON.stringify(process.env.BUN_PUBLIC_REGION ?? ""),
+    "process.env.BUN_PUBLIC_COGNITO_USER_POOL_ID": JSON.stringify(process.env.BUN_PUBLIC_COGNITO_USER_POOL_ID ?? ""),
+    "process.env.BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID": JSON.stringify(process.env.BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID ?? ""),
   },
 });
 
