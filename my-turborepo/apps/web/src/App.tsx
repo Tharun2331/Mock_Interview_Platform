@@ -10,6 +10,7 @@ import { Callback } from "./pages/callback";
 import { Toaster } from "sonner";
 import { AppShell } from "./components/layout/AppShell";
 import { RequireAuth } from "./components/layout/RequireAuth";
+import { RedirectIfAuthenticated } from "./components/layout/RedirectIfAuthenticated";
 import { AuthProvider } from "./lib/auth";
 
 
@@ -20,10 +21,20 @@ export function App() {
     <AuthProvider>
     <Routes>
     <Route path="/" element={<Navigate to="/signup" replace />} />
-    <Route path="/signup" element={<Signup />} />
-    <Route path="/signin" element={<SignIn />} />
+
+    {/* Signed-in users are bounced to /form so they never see a sign-in form
+        they cannot use — clicking Google here throws UserAlreadyAuthenticated. */}
+    <Route element={<RedirectIfAuthenticated />}>
+      <Route path="/signup" element={<Signup />} />
+      <Route path="/signin" element={<SignIn />} />
+    </Route>
+
+    {/* Deliberately unguarded: /confirm completes sign-in via autoSignIn() and
+        must stay reachable to verify a code, and /callback must stay mounted to
+        finish the hosted-UI code exchange. */}
     <Route path="/confirm" element={<Confirm />} />
     <Route path="/callback" element={<Callback />} />
+
     <Route element={<RequireAuth />}>
       <Route element={<AppShell />}>
         <Route path="/form" element={<Form />} />
@@ -31,7 +42,10 @@ export function App() {
         <Route path="/results" element={<Result />} />
       </Route>
     </Route>
-    <Route path="*" element={<Navigate to="/form" replace />} />
+    {/* Unknown paths resolve at "/" instead of being laundered through the
+        protected tree, so an unauthenticated 404 no longer presents as a
+        failed auth check. "/" then routes by session state. */}
+    <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     <Toaster duration={3000} position= "top-center" />
     </AuthProvider>

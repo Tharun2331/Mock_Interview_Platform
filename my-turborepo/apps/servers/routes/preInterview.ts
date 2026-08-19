@@ -1,7 +1,11 @@
 import { Router } from "express";
 import axios from "axios";
 import { z } from "zod";
-import { PreInterviewBody } from "@repo/shared";
+import {
+  PreInterviewBody,
+  extractGithubUsername,
+  type PreInterviewRepo,
+} from "@repo/shared";
 import { config } from "../lib/config";
 import { MESSAGES } from "../lib/messages";
 
@@ -23,18 +27,20 @@ preInterviewRouter.post("/", async (req, res) => {
     return;
   }
 
-  const rawUrl = parsed.data.gitHub;
-  const githubUrl = rawUrl.endsWith("/") ? rawUrl.slice(0, -1) : rawUrl;
-  const githubUsername = githubUrl.split("/").pop();
-
-  if (!githubUsername) {
+  // The schema already guarantees this resolves; re-checking narrows the type
+  // and keeps the route correct if the schema is ever loosened.
+  const githubUsername = extractGithubUsername(parsed.data.gitHub);
+  if (githubUsername === null) {
     res.status(400).json({ message: MESSAGES.MISSING_GITHUB_USER });
     return;
   }
 
   try {
     const response = await axios.get(
-      `${config.githubApiBase}/users/${githubUsername}/repos`
+      // Encoded despite passing the username allowlist — defence in depth, so
+      // this stays safe if the allowlist is ever widened.
+      `${config.githubApiBase}/users/${encodeURIComponent(githubUsername)}/repos`,
+      { timeout: config.githubTimeoutMs }
     );
 
     const reposResult = GithubReposSchema.safeParse(response.data);
@@ -43,7 +49,9 @@ preInterviewRouter.post("/", async (req, res) => {
       return;
     }
 
-    const repos = reposResult.data.map((repo) => ({
+    // Typed against the shared schema so a change to the projection breaks the
+    // build rather than the client's runtime parse.
+    const repos: PreInterviewRepo[] = reposResult.data.map((repo) => ({
       description: repo.description,
       name: repo.name,
       fullName: repo.full_name,

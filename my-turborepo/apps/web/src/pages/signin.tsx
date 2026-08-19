@@ -23,13 +23,8 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { GoogleIcon } from "@/components/GoogleIcon";
-import { errorMessage } from "@/lib/errors";
-
-// Cognito throws this when a session already exists (common in dev after a
-// hot reload). It means the user is effectively signed in, so we can proceed.
-function isAlreadyAuthenticated(error: unknown): boolean {
-  return error instanceof Error && error.name === "UserAlreadyAuthenticatedException";
-}
+import { errorMessage, isAlreadyAuthenticated } from "@/lib/errors";
+import { MESSAGES } from "@/lib/messages";
 
 export function SignIn() {
   const navigate = useNavigate();
@@ -52,10 +47,11 @@ export function SignIn() {
       // Account exists but the email was never verified — send the user
       // through the same confirmation flow as sign-up.
       if (nextStep.signInStep === "CONFIRM_SIGN_UP") {
-        toast.info("Please confirm your email to finish signing in.");
-        navigate("/confirm", {
-          state: { email: values.email, password: values.password },
-        });
+        toast.info(MESSAGES.AUTH_NOT_CONFIRMED);
+        // Email only — the password stays out of history state. Confirming from
+        // this path ends at /signin rather than auto-signing in, because no
+        // autoSignIn flow was started here.
+        navigate("/confirm", { state: { email: values.email } });
         return;
       }
 
@@ -67,7 +63,7 @@ export function SignIn() {
         navigate("/form");
         return;
       }
-      toast.error(errorMessage(error, "Sign-in failed. Check your credentials."));
+      toast.error(errorMessage(error, MESSAGES.AUTH_SIGNIN_FAILED));
     }
   });
 
@@ -77,7 +73,13 @@ export function SignIn() {
     try {
       await signInWithRedirect({ provider: "Google" });
     } catch (error) {
-      toast.error(errorMessage(error, "Google sign-in failed. Please try again."));
+      // A session already exists (e.g. another tab signed in). Nothing is
+      // wrong — send the user where the redirect would have taken them.
+      if (isAlreadyAuthenticated(error)) {
+        navigate("/form", { replace: true });
+        return;
+      }
+      toast.error(errorMessage(error, MESSAGES.AUTH_GOOGLE_FAILED));
     }
   }
 
@@ -85,10 +87,8 @@ export function SignIn() {
     <div className="flex min-h-screen w-full items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Welcome back</CardTitle>
-          <CardDescription>
-            Sign in to continue practising interviews.
-          </CardDescription>
+          <CardTitle>{MESSAGES.SIGNIN_TITLE}</CardTitle>
+          <CardDescription>{MESSAGES.SIGNIN_DESCRIPTION}</CardDescription>
         </CardHeader>
 
         <CardContent>
@@ -99,13 +99,13 @@ export function SignIn() {
             onClick={handleGoogle}
           >
             <GoogleIcon className="size-4" />
-            Continue with Google
+            {MESSAGES.CONTINUE_WITH_GOOGLE}
           </Button>
 
           <div className="mt-6 flex items-center gap-3">
             <Separator className="flex-1" />
             <span className="text-muted-foreground text-xs">
-              or sign in with email
+              {MESSAGES.SIGNIN_DIVIDER}
             </span>
             <Separator className="flex-1" />
           </div>
@@ -115,12 +115,14 @@ export function SignIn() {
           <CardContent>
             <FieldGroup>
               <Field data-invalid={!!errors.email}>
-                <FieldLabel htmlFor="email">Email</FieldLabel>
+                <FieldLabel htmlFor="email">
+                  {MESSAGES.FIELD_EMAIL_LABEL}
+                </FieldLabel>
                 <Input
                   id="email"
                   type="email"
                   autoComplete="email"
-                  placeholder="you@example.com"
+                  placeholder={MESSAGES.FIELD_EMAIL_PLACEHOLDER}
                   aria-invalid={!!errors.email}
                   {...register("email")}
                 />
@@ -128,12 +130,14 @@ export function SignIn() {
               </Field>
 
               <Field data-invalid={!!errors.password}>
-                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <FieldLabel htmlFor="password">
+                  {MESSAGES.FIELD_PASSWORD_LABEL}
+                </FieldLabel>
                 <Input
                   id="password"
                   type="password"
                   autoComplete="current-password"
-                  placeholder="••••••••"
+                  placeholder={MESSAGES.FIELD_PASSWORD_PLACEHOLDER}
                   aria-invalid={!!errors.password}
                   {...register("password")}
                 />
@@ -146,12 +150,14 @@ export function SignIn() {
 
           <CardFooter className="mt-6 flex-col gap-4">
             <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? "Signing in…" : "Sign in"}
+              {isSubmitting
+                ? MESSAGES.SIGNIN_SUBMIT_PENDING
+                : MESSAGES.SIGNIN_SUBMIT}
             </Button>
             <p className="text-muted-foreground text-sm">
-              Don&apos;t have an account?{" "}
+              {MESSAGES.SIGNIN_NO_ACCOUNT}{" "}
               <Link to="/signup" className="text-primary underline-offset-4 hover:underline">
-                Sign up
+                {MESSAGES.SIGNIN_SIGNUP_LINK}
               </Link>
             </p>
           </CardFooter>

@@ -67,6 +67,11 @@ state file**. `terraform` commands run from inside one of them, never from
 `cloudwatch`. Scaffold as new modules following the conventions below rather
 than dropping loose resources into an environment root.
 
+The `bedrock` module covers the Knowledge Base and its data source for the
+Coach agent. Model invocation itself is not a Terraform resource — nothing
+provisions Nova 2 Sonic or Llama. What Terraform owns is the IAM that permits
+the call and the SSM parameters carrying the model IDs.
+
 ### Why `global` exists
 
 Some resources are region-pinned to `us-east-1` regardless of where the app
@@ -81,6 +86,25 @@ treat edits there as higher-risk than an environment change.
 
 ---
 
+## Region constraint: Nova 2 Sonic
+
+The live interview loop runs on `amazon.nova-2-sonic-v1:0`, which is available
+in fewer regions than most Bedrock models. **Confirm availability before
+setting `var.region` for an environment.** This is not a normal region choice:
+
+- There is no second speech-to-speech model in the stack. If the region doesn't
+  carry Sonic, the interview loop has no fallback and the product doesn't run.
+  The text models have a three-tier fallback chain; the voice model has none.
+- A region mismatch surfaces at runtime as an access-denied or
+  model-not-found error, not at plan or apply time. Terraform will happily
+  build a complete, working, useless environment.
+- If the app region and Sonic's region ever have to differ, that is a
+  cross-region call from ECS through the NAT Gateway, with the latency and
+  data-processing cost that implies. Raise it as a design decision rather than
+  quietly configuring a second region.
+
+---
+
 ## Module conventions
 
 - A module contains `main.tf`, `variables.tf`, `outputs.tf`. Every variable has
@@ -91,7 +115,8 @@ treat edits there as higher-risk than an environment change.
   use with `for_each` or alias later.
 - **No hardcoded account IDs, regions, ARNs, or bucket names.** Take them as
   variables or derive them from `data.aws_caller_identity` /
-  `data.aws_region`.
+  `data.aws_region`. Model IDs are configuration too — they belong in SSM and
+  in variables, never inlined into a policy document.
 - Wire modules together through **outputs**, not by re-looking-up resources with
   `data` blocks. `module.vpc.private_subnet_ids` is explicit; a data lookup by
   tag is a hidden dependency that breaks silently.
@@ -115,6 +140,32 @@ Least privilege, and be specific about it:
   of splitting the services.
 - Build policies with `data "aws_iam_policy_document"`, not heredoc JSON.
   It validates at plan time and interpolates ARNs without string surgery.
+
+### Bedrock actions
+
+Two distinct permissions, and they are not interchangeable:
+
+- `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` — the text
+  agents, scoped to the Llama and Mistral foundation-model ARNs.
+- `bedrock:InvokeModelWithBidirectionalStream` — the voice loop, scoped to the
+  Nova 2 Sonic foundation-model ARN only.
+
+Scope each to model ARNs of the form
+`arn:aws:bedrock:${region}::foundation-model/${model_id}`, taking the model IDs
+as variables. A blanket `foundation-model/*` is the usual shortcut here and it
+grants access to every model in the account, including ones with materially
+different pricing.
+
+**The Evaluator worker role gets no bidirectional-stream permission.** It scores
+text and has no reason to open an audio stream. That separation is the concrete
+payoff of splitting the roles — if the worker is ever compromised or looped by a
+bug, it cannot open a billable audio stream.
+
+**No `transcribe:*` and no `polly:*` on either role.** Those services left the
+stack with [ADR-0005](../../docs/adr/0005_nova_sonic_speech_to_speech.md). If
+you find those actions in a policy document, they are stale and should be
+removed rather than kept "just in case" — an unused permission on a live role is
+a standing liability.
 
 ## State
 
@@ -158,6 +209,29 @@ Two things bill whether or not anyone uses the app:
 When a change adds an always-on resource, or multiplies one across AZs, say so
 in the same response. Don't let a second NAT Gateway land silently because the
 module defaulted to one per subnet.
+
+### What Terraform can and cannot control about Sonic spend
+
+Nova 2 Sonic bills by open stream duration, which is an application concern —
+no `.tf` file caps it. Terraform's contribution is indirect and worth building
+deliberately:
+
+- **CloudWatch alarms on Bedrock invocation metrics**, in the `cloudwatch`
+  module. Without one, a leaked stream is invisible until the bill arrives.
+  This is the closest thing to a safety net infrastructure can offer.
+- **A budget alarm** in `global`, since spend is account-wide rather than
+  per-environment.
+- **ECS task count in `dev`** — every running task can hold open streams.
+  Scaling `dev` to zero between sessions is the same discipline as destroying
+  the NAT Gateway.
+
+### S3 audio lifecycle
+
+Interview audio is stored as raw PCM, roughly ten times the size of a
+compressed format. The transcripts in DynamoDB carry everything the Evaluator
+and Coach need, so the audio is a debugging aid rather than product data. Add a
+lifecycle rule expiring `audio/*` — 30 days is reasonable — in the `s3` module.
+Without one, storage grows monotonically for objects nothing reads.
 
 ## Known issue: Cognito custom domain
 

@@ -5,8 +5,8 @@
   "private": true,
   "scripts": {
     "dev": "bun --hot index.ts",
-    "start": "NODE_ENV=production bun src/index.ts",
-    "build": "bun run build.ts"
+    "start": "NODE_ENV=production bun index.ts",
+    "check-types": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -24,6 +24,8 @@
     "axios": "^1.18.1",
     "cors": "^2.8.6",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.6.2",
+    "helmet": "^8.3.0",
     "zod": "^4.4.3"
   }
 }

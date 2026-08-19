@@ -3,7 +3,7 @@
 **Status:** design, except where marked built.
 
 Base path `/api/v1`. Every response is JSON except the WebSocket upgrade and
-Polly audio.
+streamed audio frames.
 
 ---
 
@@ -189,6 +189,12 @@ Passing the JWT itself as a query parameter would put a long-lived credential
 into ALB access logs and browser history. The ticket expires in 60 seconds and
 is worthless once used.
 
+Behind this socket the server holds **one Amazon Nova 2 Sonic bidirectional
+stream per session** — see
+[ADR-0005](../adr/0005_nova_sonic_speech_to_speech.md). The socket is a relay:
+candidate audio in, model audio and transcripts out. There is no separate
+speech-to-text or text-to-speech hop.
+
 ### Message envelope
 
 Both directions use a discriminated union on `type`, parsed with Zod. Unknown
@@ -197,34 +203,53 @@ shouldn't kill the connection.
 
 ### Client → server
 
-| `type`         | Payload                          | Meaning                        |
-| -------------- | -------------------------------- | ------------------------------ |
-| `audio.chunk`  | binary frame                     | Raw PCM from MediaRecorder     |
-| `turn.end`     | `{}`                             | Candidate finished speaking    |
-| `turn.skip`    | `{}`                             | Skip this question             |
-| `session.end`  | `{}`                             | End the interview early        |
-| `ping`         | `{}`                             | Keepalive                      |
+| `type`         | Payload      | Meaning                                                          |
+| -------------- | ------------ | ---------------------------------------------------------------- |
+| `audio.chunk`  | binary frame | 16 kHz 16-bit PCM mono, from an `AudioWorklet`                    |
+| `turn.end`     | `{}`         | Explicit "I'm done" override; Sonic detects turn end on its own   |
+| `turn.skip`    | `{}`         | Skip this question                                                |
+| `session.end`  | `{}`         | End the interview early                                           |
+| `ping`         | `{}`         | Keepalive                                                         |
 
 Audio arrives as binary frames, not base64 in JSON — base64 costs a third more
 bytes and forces a decode per chunk inside the latency budget.
 
+**`MediaRecorder` cannot produce this format.** It emits WebM/Opus containers;
+Sonic requires raw PCM. Capture goes through an `AudioWorklet` that downsamples
+to 16 kHz mono and posts `Int16Array` frames. Any code or doc still referencing
+`MediaRecorder` for the interview loop is stale.
+
+`turn.end` is an override, not the mechanism. Sonic performs its own turn
+detection, so the client should not gate on a silence timer — send the message
+only when the candidate explicitly presses a "done" control.
+
 ### Server → client
 
-| `type`               | Payload                                   | Meaning                       |
-| -------------------- | ----------------------------------------- | ----------------------------- |
-| `transcript.partial` | `{ text }`                                 | Revisable, display only        |
-| `transcript.final`   | `{ questionId, text }`                     | Persisted, sent to Bedrock     |
-| `question.chunk`     | `{ text }`                                 | Streamed Bedrock token span    |
-| `question.complete`  | `{ questionId, text, index, total }`       | Full question text            |
-| `audio.chunk`        | binary frame                               | Polly output                   |
-| `audio.complete`     | `{ questionId }`                           | Playback can finish            |
-| `session.complete`   | `{ sessionId }`                            | No questions remain            |
-| `error`              | `{ code, message, fatal: boolean }`        | Fatal implies close follows    |
-| `pong`               | `{}`                                       | Keepalive response             |
+| `type`               | Payload                             | Meaning                                                     |
+| -------------------- | ----------------------------------- | ----------------------------------------------------------- |
+| `transcript.partial` | `{ text }`                          | Sonic `textOutput`, `role: USER`, speculative — display only |
+| `transcript.final`   | `{ questionId, text }`              | Sonic `textOutput`, `role: USER`, final — persisted          |
+| `interviewer.text`   | `{ text }`                          | Sonic `textOutput`, `role: ASSISTANT` — display only         |
+| `audio.chunk`        | binary frame                        | Sonic `audioOutput`, 24 kHz LPCM                             |
+| `audio.complete`     | `{ questionId }`                    | Playback can finish                                          |
+| `turn.interrupted`   | `{ questionId }`                    | Candidate barged in — stop playback, flush the audio buffer  |
+| `session.complete`   | `{ sessionId }`                     | No questions remain                                          |
+| `error`              | `{ code, message, fatal: boolean }` | Fatal implies close follows                                  |
+| `pong`               | `{}`                                | Keepalive response                                           |
 
-`question.chunk` and `audio.chunk` interleave deliberately: Polly synthesis
-starts on the first complete sentence rather than waiting for the full Bedrock
-generation. That overlap is most of the 1.6–2.0s turn budget.
+Audio and text arrive on the same stream, so there is no synthesis step to
+overlap. The turn budget is Sonic's time-to-first-audio-frame rather than a sum
+of three hops — measure it before quoting a number.
+
+`interviewer.text` is a transcript of speech the model is already producing.
+Never gate playback on it, and never treat it as the canonical question text
+before `audio.complete` — the two are independent event streams from one
+connection.
+
+`turn.interrupted` has no equivalent in the previous design. Barge-in means the
+client can be mid-playback when the candidate starts speaking; the UI must
+handle a transition out of `interviewer-speaking` that the user, not the
+server, initiated.
 
 ### Connection lifecycle
 
@@ -233,12 +258,13 @@ generation. That overlap is most of the 1.6–2.0s turn budget.
   [ADR-0002](../adr/0002-alb-not-api-gateway.md). Client `ping` every 30s is a
   second line of defence, not a substitute.
 - **Reconnect.** Session state lives in Redis, so a reconnect resumes at the
-  current question. The Transcribe stream does not resume — it restarts, and
-  any partial transcript in flight is lost. Re-ask rather than pretending
-  continuity.
-- **Cleanup.** On close, the server must end the Transcribe stream. A leaked
-  stream bills per minute for as long as it stays open. This is the single
-  easiest way to get a surprising Transcribe bill.
+  current question. The Sonic stream does not resume — a new stream starts with
+  no conversation history. Replay prior turns into the fresh session's context
+  or re-ask the question. Don't pretend continuity.
+- **Cleanup.** On close, the server must end the Sonic bidirectional stream. An
+  open stream bills for as long as it stays open, and a browser tab left open
+  with nobody in front of it is the realistic failure mode. This is the single
+  easiest way to get a surprising Bedrock bill.
 - **One connection per session.** A second connect for the same `sessionId`
   closes the first with `code: SESSION_TAKEOVER`.
 
@@ -248,16 +274,21 @@ generation. That overlap is most of the 1.6–2.0s turn budget.
 
 Per Cognito `sub`, enforced in Redis, returned as `429` with `Retry-After`.
 
-| Scope                    | Limit          | Why                              |
-| ------------------------ | -------------- | -------------------------------- |
-| `POST /sessions`         | 5 / hour       | Each runs a Bedrock planning call |
-| WebSocket connects       | 10 / hour      | Each opens a Transcribe stream    |
-| Interview turns          | 60 / session   | Caps runaway loop cost            |
-| All routes               | 100 / minute   | General abuse floor               |
+| Scope              | Limit        | Why                                    |
+| ------------------ | ------------ | -------------------------------------- |
+| `POST /sessions`   | 5 / hour     | Each runs a Bedrock planning call       |
+| WebSocket connects | 5 / hour     | Each opens a billable Sonic stream      |
+| Interview turns    | 60 / session | Caps runaway loop cost                  |
+| Session wall-clock | 30 min       | Hard cap on a single open Sonic stream  |
+| All routes         | 100 / minute | General abuse floor                     |
 
 These are cost controls first and abuse controls second. A bug that reconnects
-in a loop can run up real Bedrock and Transcribe spend in minutes, and nothing
-else in the system will notice.
+in a loop can run up real Bedrock spend in minutes, and nothing else in the
+system will notice.
+
+The wall-clock cap matters more than it looks. Sonic bills by stream duration,
+not by turns taken, so an idle open stream is pure loss — the per-turn limit
+alone does not bound cost.
 
 ---
 
@@ -266,14 +297,18 @@ else in the system will notice.
 The original route sketch had `/chat`, `/speak`, `/evaluate`, `/plan`, and
 `/coach` — one endpoint per agent. Those are gone. Agents are internal
 functions, not a public surface: exposing `/speak` means anyone with a token
-can bill arbitrary Polly synthesis, and exposing `/chat` gives away raw Bedrock
-access wrapped in your credentials.
+can bill arbitrary speech synthesis, and exposing `/chat` gives away raw
+Bedrock access wrapped in your credentials.
 
 Routes are organised around session resources instead. The agent that services
 a request is an implementation detail.
 
 `POST /transcribe` is absent for a different reason — it could not have worked.
-See [ADR-0001](../adr/0001-websocket-transport-for-transcribe.md).
+See [ADR-0001](../adr/0001-websocket-transport-for-transcribe.md). The upstream
+has since changed from Transcribe to Nova 2 Sonic
+([ADR-0005](../adr/0005_nova_sonic_speech_to_speech.md)), but the transport
+argument is unaffected: the upstream is still bidirectional and still cannot be
+served by a request/response route.
 
 ---
 
@@ -283,3 +318,4 @@ See [ADR-0001](../adr/0001-websocket-transport-for-transcribe.md).
 - [`data-model.md`](./data-model.md) — persisted shapes
 - [ADR-0001](../adr/0001-websocket-transport-for-transcribe.md) — transport
 - [ADR-0002](../adr/0002-alb-not-api-gateway.md) — ALB and idle timeout
+- [ADR-0005](../adr/0005_nova_sonic_speech_to_speech.md) — voice loop

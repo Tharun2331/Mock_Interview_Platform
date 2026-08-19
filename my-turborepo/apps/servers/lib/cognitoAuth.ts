@@ -27,11 +27,14 @@ export const AuthMiddleware = async (
     // 2. Verify the token
     const payload = await verifier.verify(token);
 
-    // 3. Attach the user context to the request object
+    // 3. Attach the user context to the request object.
+    // `scope` is optional on the payload type, and reading `.split` off an
+    // absent claim would throw here — caught below and turned into a 401, which
+    // would reject a perfectly valid user. Absent scope means no scopes.
     req.user = {
       id: payload.sub,
       username: payload.username,
-      scopes: payload.scope.split(" "),
+      scopes: payload.scope?.split(" ") ?? [],
     };
 
     next();

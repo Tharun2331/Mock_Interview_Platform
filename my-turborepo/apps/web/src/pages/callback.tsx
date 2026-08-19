@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Hub } from "aws-amplify/utils";
 import { getCurrentUser } from "aws-amplify/auth";
 import { errorMessage } from "@/lib/errors";
+import { MESSAGES } from "@/lib/messages";
 
 // Landing route for the Cognito hosted-UI redirect (matches the client's
 // `callback_urls`). Amplify parses the `?code=` and exchanges it for tokens on
@@ -19,7 +20,7 @@ export function Callback() {
           navigate("/form", { replace: true });
           break;
         case "signInWithRedirect_failure":
-          toast.error("Google sign-in failed. Please try again.");
+          toast.error(MESSAGES.AUTH_GOOGLE_FAILED);
           navigate("/signup", { replace: true });
           break;
       }
@@ -40,7 +41,9 @@ export function Callback() {
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center p-4">
-      <p className="text-muted-foreground text-sm">Signing you in…</p>
+      <p className="text-muted-foreground text-sm">
+        {MESSAGES.CALLBACK_SIGNING_IN}
+      </p>
     </div>
   );
 }

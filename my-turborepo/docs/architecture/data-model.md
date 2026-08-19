@@ -58,13 +58,23 @@ githubUsername   string
 
 ```
 questionId       string   ULID
-questionText     string
+questionText     string   from Sonic textOutput, role: ASSISTANT
 questionType     string   behavioural | technical | role_specific
 askedAt          string   ISO 8601
-transcript       string   final Transcribe output, not partials
+transcript       string   from Sonic textOutput, role: USER — final only, not partials
 audioKey         string   S3 key, nullable — audio persistence is best-effort
 durationMs       number
+interrupted      boolean  candidate barged in over the question
 ```
+
+Both text fields come from the same Sonic `textOutput` event stream,
+distinguished by `role`. They are transcripts of audio that was already spoken,
+not the source of it — never treat `questionText` as canonical before the
+corresponding audio has finished streaming.
+
+`interrupted` exists because barge-in is now possible. An answer given over a
+half-delivered question is not comparable to one given after the full question,
+and the Evaluator needs to know which it is looking at.
 
 **`SESSION#<sid> / EVAL#<qId>`**
 
@@ -80,7 +90,9 @@ evaluatedAt      string   ISO 8601
 
 Recording `modelId` matters: when the primary model is unavailable and a
 request falls back to Mistral, scores from the two aren't strictly comparable.
-Without this attribute that's invisible forever.
+Without this attribute that's invisible forever. This applies to the Evaluator's
+text model only — the interview itself has no fallback, since Nova 2 Sonic is
+the sole speech model in the stack.
 
 **`SESSION#<sid> / EVAL#SUMMARY`**
 
@@ -136,6 +148,10 @@ correct on this point; `overview.md` §6 predates the analysis.
 - Reads for user-facing display can be eventually consistent. The completion
   check that triggers the Coach agent must use a strongly consistent read, or
   it can fire early.
+- Transcript writes happen mid-stream, not at turn end. Sonic emits `textOutput`
+  events as speech is recognised, so persist only events marked final and let
+  partials stay in Redis. Writing every partial would multiply DynamoDB writes
+  by an order of magnitude for data that is immediately superseded.
 
 ### Size limits
 
@@ -161,8 +177,9 @@ lock:session:<sid>        SET NX, single-consumer guard         TTL 30s
 ```
 
 `session:<sid>:state` holds: current question index, turn count, WebSocket
-connection id, and the last few turns of conversation context for Bedrock. All
-of it is rebuildable from DynamoDB.
+connection id, in-flight partial transcripts, and the Sonic stream's prompt and
+content identifiers. All of it is rebuildable from DynamoDB except the stream
+identifiers, which are meaningless after the stream closes anyway.
 
 Rules:
 
@@ -174,6 +191,8 @@ Rules:
 - Rate limiting is keyed by Cognito `sub`, not IP. Per-IP limits punish shared
   networks and don't map to the cost being controlled, which is per-user
   Bedrock spend.
+- Session wall-clock start time lives here and is checked on every turn. Sonic
+  bills by open stream duration, so an unbounded session is an unbounded bill.
 
 ---
 
@@ -181,9 +200,16 @@ Rules:
 
 ```
 resumes/<uid>/<sid>.pdf         uploaded resume
-audio/<sid>/<qId>.webm          per-answer audio
+audio/<sid>/<qId>.pcm           per-answer audio, 16 kHz 16-bit PCM mono
 frontend/                       static assets served via CloudFront
 ```
+
+Audio is raw PCM rather than WebM. That is what the `AudioWorklet` captures and
+what Sonic consumes, so persisting it is a passthrough write of frames already
+on the wire — no transcoding step, no `MediaRecorder`. The tradeoff is size:
+PCM is roughly ten times larger than Opus for the same audio, and it will not
+play in a browser without a WAV header prepended. If playback in the results UI
+matters, write `.wav` instead and accept the 44-byte header.
 
 Two buckets, not one: a private bucket for `resumes/` and `audio/`, and a
 public-read-via-CloudFront bucket for `frontend/`. Putting user uploads in the
@@ -199,6 +225,9 @@ disclosure.
   (these are disposable inputs, not records).
 - Audio persistence is best-effort. A failed audio upload does not fail the
   interview turn; `audioKey` is nullable for exactly this reason.
+- Given PCM's size and the fact that transcripts already carry everything the
+  Evaluator needs, consider a lifecycle rule expiring `audio/` after 30 days.
+  The audio is a debugging aid, not the product.
 
 ---
 
@@ -223,3 +252,4 @@ boundary is a better outcome than an `undefined` surfacing three layers up.
 - [`api.md`](./api.md) — endpoint and WebSocket contracts
 - [ADR-0003](../adr/0003-redis-hot-state-dynamodb-durable.md) — store split
 - [ADR-0004](../adr/0004-sqs-fargate-spot-async-evaluation.md) — async evaluation
+- [ADR-0005](../adr/0005_nova_sonic_speech_to_speech.md) — voice loop
