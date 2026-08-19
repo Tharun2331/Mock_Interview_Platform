@@ -1,5 +1,6 @@
 import { Navigate, Outlet } from "react-router";
 import { useAuthStatus } from "@/lib/auth";
+import { MESSAGES } from "@/lib/messages";
 
 export function RequireAuth() {
   const status = useAuthStatus();
@@ -7,7 +8,7 @@ export function RequireAuth() {
   if (status === "loading") {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <p className="text-muted-foreground text-sm">{MESSAGES.LOADING}</p>
       </div>
     );
   }

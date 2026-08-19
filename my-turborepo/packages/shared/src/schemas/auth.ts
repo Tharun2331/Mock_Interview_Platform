@@ -28,6 +28,15 @@ export const ConfirmSignupSchema = z.object({
 
 export type ConfirmSignupInput = z.infer<typeof ConfirmSignupSchema>;
 
+// Correcting a mistyped address on the confirm page. Email only: the address is
+// the Cognito username, so changing it restarts sign-up rather than updating the
+// pending account in place.
+export const ChangeEmailSchema = z.object({
+  email: z.email("Enter a valid email address."),
+});
+
+export type ChangeEmailInput = z.infer<typeof ChangeEmailSchema>;
+
 // Sign-in only checks that a password was entered — Cognito verifies it.
 // (The full complexity rules live on SignupSchema, where they're enforced.)
 export const SigninSchema = z.object({
