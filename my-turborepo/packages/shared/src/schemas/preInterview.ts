@@ -58,8 +58,28 @@ export const PreInterviewRepo = z.object({
 
 export type PreInterviewRepo = z.infer<typeof PreInterviewRepo>;
 
+// Present only when a resume was uploaded. `text` is returned to the client so
+// it can be handed to POST /plan as `resumeText` — the same way repos are
+// carried today. Once DynamoDB lands both move server-side and this shrinks to
+// a session reference.
+export const PreInterviewResume = z.object({
+  characters: z.number().int().min(0),
+  pages: z.number().int().min(0),
+  text: z.string(),
+  // False when the PDF parsed but yielded almost nothing — a scanned or
+  // image-only resume. A result to report, not an error: the caller can still
+  // proceed on GitHub data alone.
+  usable: z.boolean(),
+});
+
+export type PreInterviewResume = z.infer<typeof PreInterviewResume>;
+
 export const PreInterviewResponse = z.object({
+  // Generated per request. Becomes the DynamoDB session key later; for now it
+  // is what ties the stored S3 object to this submission.
+  sessionId: z.string().min(1),
   repos: z.array(PreInterviewRepo),
+  resume: PreInterviewResume.optional(),
 });
 
 export type PreInterviewResponse = z.infer<typeof PreInterviewResponse>;

@@ -18,6 +18,17 @@ variable "bedrock_text_model_ids" {
   ]
 }
 
+variable "uploads_bucket_arn" {
+  type        = string
+  description = "ARN of the candidate uploads bucket, from the s3 module. Object permissions are scoped to prefixes within it, never the whole bucket."
+}
+
+variable "upload_prefixes" {
+  type        = list(string)
+  description = "Key prefixes inside the uploads bucket the server may read and write. Anything outside these is denied by omission."
+  default     = ["resumes", "audio"]
+}
+
 variable "bedrock_speech_model_id" {
   type        = string
   description = "Speech-to-speech model for the live interview loop. Confirm region availability before changing aws_region — unlike the text models this one has no fallback, and a mismatch fails at runtime rather than at apply."

@@ -35,7 +35,7 @@ resource "aws_cognito_identity_provider" "google" {
     username = "sub"
   }
   lifecycle {
-    ignore_changes = [ provider_details ]
+    ignore_changes = [provider_details]
   }
 }
 
