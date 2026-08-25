@@ -2,6 +2,9 @@ module "iam" {
   source      = "../../modules/iam"
   environment = var.environment
   aws_region  = var.aws_region
+  # Wired through the module output rather than a data lookup, so the
+  # dependency is explicit and the ARN cannot drift.
+  uploads_bucket_arn = module.s3.uploads_bucket_arn
 }
 
 module "ssm" {
@@ -40,6 +43,6 @@ module "cognito" {
 }
 
 module "vpc" {
-  source = "../../modules/vpc"
+  source      = "../../modules/vpc"
   environment = var.environment
 }

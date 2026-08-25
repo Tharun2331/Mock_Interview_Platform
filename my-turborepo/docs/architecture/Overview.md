@@ -248,6 +248,24 @@ rather than transcoding. Wrap in a WAV header if playback in a browser matters.
 Uploads use presigned URLs — the browser writes directly to S3 without
 proxying through Express.
 
+> **Current implementation, 2026-08-19.** Resumes are uploaded as
+> `multipart/form-data` to `POST /api/v1/pre-interview` and proxied through
+> Express, which writes them to S3. Presigned URLs remain the target and are
+> tracked in Phase 7.
+>
+> The interim exists because presigning needs the browser to know a session id
+> and object key before it has either, and because Express has to read the PDF
+> anyway to extract text for the Planner — so the first version of this flow
+> would have uploaded twice or downloaded what it had just signed away. The
+> tradeoff accepted for now is that resume bytes pass through the API and are
+> bounded by an 8 MB cap; audio, which is far larger, should not follow this
+> path.
+>
+> Parsing is `unpdf`. Multipart is read with Bun's own `Request.formData()`
+> rather than `multer` — Express hands handlers a Node `IncomingMessage`, so
+> `apps/servers/lib/multipart.ts` rebuilds a web `Request` over the same stream.
+> One fewer dependency, at the cost of that bridge.
+
 ---
 
 ## 7. Interview session lifecycle

@@ -72,8 +72,11 @@ and everything in Phases 3–6 writes to it.
 ### Backend
 - [x] JWT validation middleware — `lib/cognitoAuth.ts`, verifies locally against Cognito JWKS via `aws-jwt-verify`, attaches `req.user`, JWKS cached in memory
 - [ ] Install `@octokit/rest`, replace axios GitHub call in `routes/preInterview.ts` — installed, not wired
-- [ ] Install `multer` + `unpdf` ← **next up**
-- [ ] Update `routes/preInterview.ts` — add resume PDF upload + parse (parallel with GitHub scrape via `Promise.all`). Feeds `PlanRequest.resumeText`, which is already optional in the schema so the Planner works on GitHub alone until this lands
+- [x] Resume upload + parse — **done 2026-08-19**. `unpdf` installed; **`multer` deliberately not used** — `lib/multipart.ts` bridges Express's Node `IncomingMessage` to a web `Request` so Bun's own `formData()` parses it
+- [x] `lib/s3.ts` — `S3Client` singleton + `putResume()`, raw PDF stored at `resumes/<uid>/<sid>.pdf`
+- [x] Update `routes/preInterview.ts` — accepts JSON *or* multipart on one endpoint; GitHub scrape and PDF parse overlap via `Promise.all`. Returns `sessionId` + optional `resume` text, which feeds `PlanRequest.resumeText`
+- [ ] Frontend: file input in `form.tsx` + switch to `FormData` (route still accepts JSON, so nothing is broken meanwhile)
+- [ ] **Untested until applied:** the S3 write path. Everything else is verified; `UPLOADS_BUCKET` must be set from `terraform output uploads_bucket_id`
 - [ ] `lib/dynamo.ts` — `DynamoDBDocumentClient` singleton
 - [x] `lib/constants.ts` — created 2026-08-19 with Bedrock tuning + planner bounds. Still needs DynamoDB table name and key prefixes when that module lands. Model IDs live in `lib/config.ts` (the SSM-backed boundary), not here
 

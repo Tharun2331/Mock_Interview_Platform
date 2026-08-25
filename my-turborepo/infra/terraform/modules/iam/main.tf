@@ -13,6 +13,14 @@ locals {
   ]
 
   speech_model_arn = "arn:aws:bedrock:${var.aws_region}::foundation-model/${var.bedrock_speech_model_id}"
+
+  # Object-level ARNs, one per allowed prefix. Deliberately not
+  # "${bucket}/*" — that would let a path bug write anywhere in the bucket,
+  # including over the frontend assets if the buckets are ever merged.
+  upload_object_arns = [
+    for prefix in var.upload_prefixes :
+    "${var.uploads_bucket_arn}/${prefix}/*"
+  ]
 }
 
 # Two statements rather than one action list over one resource list. The text
@@ -40,6 +48,19 @@ data "aws_iam_policy_document" "bedrock_invoke" {
     effect    = "Allow"
     actions   = ["bedrock:InvokeModelWithBidirectionalStream"]
     resources = [local.speech_model_arn]
+  }
+
+  # Resumes in, resumes and audio back out. No DeleteObject: nothing in the
+  # application deletes candidate uploads, and lifecycle rules handle expiry —
+  # so granting it would only widen the blast radius of a bug.
+  statement {
+    sid    = "UploadsObjectAccess"
+    effect = "Allow"
+    actions = [
+      "s3:PutObject",
+      "s3:GetObject",
+    ]
+    resources = local.upload_object_arns
   }
 }
 

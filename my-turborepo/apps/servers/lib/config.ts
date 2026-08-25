@@ -50,6 +50,10 @@ export const config = {
   awsRegion:              env("AWS_REGION", "us-east-1"),
   bedrockTextModelIds:    csvList("BEDROCK_TEXT_MODEL_IDS", env("BEDROCK_TEXT_MODEL_IDS", DEFAULT_TEXT_MODELS)),
   githubApiBase:          env("GITHUB_API_BASE", "https://api.github.com"),
+  // From `terraform output uploads_bucket_id`. Not requireEnv: only the upload
+  // path needs it, and failing boot would take down /plan and auth with it.
+  // `lib/s3.ts` raises a clear error if an upload is attempted while unset.
+  uploadsBucket:          env("UPLOADS_BUCKET", ""),
   // Without a timeout a hung upstream holds the request open indefinitely and
   // requests pile up behind it.
   githubTimeoutMs:        Number(env("GITHUB_TIMEOUT_MS", "5000")),
