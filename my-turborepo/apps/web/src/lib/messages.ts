@@ -77,8 +77,10 @@ export const MESSAGES = {
   // --- Pre-interview form ---
   FORM_TITLE: "Start an interview",
   FORM_DESCRIPTION:
-    "Add your GitHub profile so your questions are drawn from your own projects.",
+    "Attach your resume so your questions are drawn from your real experience.",
   FORM_GITHUB_LABEL: "GitHub profile URL",
+  FORM_GITHUB_OPTIONAL: "Optional",
+  FORM_GITHUB_HINT: "Adds questions drawn from your public repositories.",
   FORM_GITHUB_PLACEHOLDER: "https://github.com/your-username",
   FORM_GITHUB_REQUIRED: "Enter your GitHub profile URL to continue.",
   FORM_SUBMIT: "Start interview",
@@ -88,7 +90,40 @@ export const MESSAGES = {
     "We reached GitHub but could not read the response. Try again.",
   FORM_FAILED: "We could not read that GitHub profile. Check the URL and retry.",
 
+  // --- Resume attachment ---
+  RESUME_LABEL: "Resume",
+  RESUME_MISSING: "Attach your resume to continue.",
+  RESUME_CHOOSE: "Choose a PDF",
+  RESUME_REPLACE: "Replace",
+  RESUME_REMOVE: "Remove",
+  RESUME_REMOVED: "Resume removed.",
+  RESUME_NOT_PDF: "That file is not a PDF. Choose a PDF and try again.",
+  RESUME_EMPTY: "That file is empty. Choose a different PDF.",
+
+  // Distinct phases, because one undifferentiated bar looks stalled while a PDF
+  // is being parsed server-side.
+  RESUME_PHASE_UPLOADING: "Uploading your resume",
+  RESUME_PHASE_READING: "Reading your resume and repositories",
+
+  // A thin parse is a result, not a failure — the candidate decides what to do.
+  RESUME_THIN_TITLE: "We could barely read that PDF",
+  RESUME_CONTINUE_ANYWAY: "Continue without it",
+  RESUME_TRY_ANOTHER: "Attach a different PDF",
+
   // --- Screens still stubbed out ---
   INTERVIEW_TITLE: "Interview",
   RESULT_TITLE: "Result",
 } as const;
+
+// Names the limit in the same breath as the violation, matching the server's
+// wording so the two never contradict each other.
+export const resumeTooLarge = (actual: string, limit: string): string =>
+  `That file is ${actual}. The limit is ${limit}.`;
+
+// Quotes the limit up front so it is known before a file is chosen, not only
+// after one is rejected.
+export const resumeHint = (limit: string): string =>
+  `PDF only, up to ${limit}.`;
+
+export const resumeThinDetail = (characters: number): string =>
+  `We only extracted ${characters.toLocaleString()} characters. This usually means the PDF is a scan or an image. You can continue without it, or attach a text-based PDF.`;

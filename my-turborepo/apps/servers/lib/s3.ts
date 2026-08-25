@@ -1,7 +1,7 @@
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { config } from "./config";
 import { UPLOAD } from "./constants";
-import { UploadError } from "./errors";
+import { ServiceError, UploadError } from "./errors";
 import { MESSAGES } from "./messages";
 
 export const s3Client = new S3Client({ region: config.awsRegion });
@@ -11,7 +11,9 @@ export const s3Client = new S3Client({ region: config.awsRegion });
 // routes too — which have nothing to do with S3.
 function requireBucket(): string {
   if (config.uploadsBucket.length === 0) {
-    throw new UploadError(MESSAGES.UPLOAD_BUCKET_UNSET);
+    // ServiceError, not UploadError: nothing about the candidate's file is
+    // wrong. Set UPLOADS_BUCKET from `terraform output uploads_bucket_id`.
+    throw new ServiceError(MESSAGES.UPLOAD_BUCKET_UNSET);
   }
   return config.uploadsBucket;
 }
@@ -50,7 +52,11 @@ export async function putResume(args: {
     );
     return key;
   } catch (error) {
-    if (error instanceof UploadError) throw error;
-    throw new UploadError(MESSAGES.UPLOAD_STORE_FAILED);
+    if (error instanceof UploadError || error instanceof ServiceError) throw error;
+    // The write itself failed — credentials, network, bucket policy. Again not
+    // the candidate's doing, so it must not read as a problem with their file.
+    throw new ServiceError(
+      `${MESSAGES.UPLOAD_STORE_FAILED} ${error instanceof Error ? error.message : ""}`.trim()
+    );
   }
 }

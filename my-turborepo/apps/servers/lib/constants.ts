@@ -10,14 +10,15 @@ export const BEDROCK = {
   TEMPERATURE: 0.3,
 } as const;
 
+import { RESUME_LIMITS, UPLOAD_FIELDS } from "@repo/shared";
+
 export const UPLOAD = {
-  RESUME_FIELD: "resume",
-  GITHUB_FIELD: "gitHub",
-  // Two pages of PDF is well under 1 MB; 8 MB tolerates a design-heavy resume
-  // with embedded fonts. The bridge buffers the file in memory, so this is a
-  // memory bound, not just a politeness limit.
-  MAX_RESUME_BYTES: 8 * 1024 * 1024,
-  RESUME_MIME: "application/pdf",
+  RESUME_FIELD: UPLOAD_FIELDS.RESUME,
+  GITHUB_FIELD: UPLOAD_FIELDS.GITHUB,
+  // Sourced from @repo/shared so the browser rejects at exactly the limit the
+  // server enforces — and both quote the same number back to the user.
+  MAX_RESUME_BYTES: RESUME_LIMITS.MAX_BYTES,
+  RESUME_MIME: RESUME_LIMITS.MIME,
   // Multipart framing — boundaries, part headers, the sibling text field — sits
   // on top of the file itself, so the whole-body budget has to be a little
   // larger than the per-file limit or a file exactly at the cap is refused.
@@ -25,9 +26,7 @@ export const UPLOAD = {
   // Every PDF starts with this. The `type` on an uploaded File is whatever the
   // client claimed, so the header is the only trustworthy signal.
   PDF_MAGIC: "%PDF-",
-  // A parse yielding less than this is a scan or an image-only PDF — a result
-  // to report, not an error to throw.
-  MIN_USEFUL_RESUME_CHARS: 200,
+  MIN_USEFUL_RESUME_CHARS: RESUME_LIMITS.MIN_USEFUL_CHARS,
 } as const;
 
 // How much candidate material goes into the prompt. These are cost and

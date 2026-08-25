@@ -10,7 +10,7 @@ import {
 } from "@repo/shared";
 import { config } from "../lib/config";
 import { UPLOAD } from "../lib/constants";
-import { ResumeParseError, UploadError } from "../lib/errors";
+import { ResumeParseError, ServiceError, UploadError } from "../lib/errors";
 import { MESSAGES } from "../lib/messages";
 import {
   isMultipart,
@@ -78,22 +78,25 @@ preInterviewRouter.post("/", async (req, res) => {
   const sessionId = randomUUID();
 
   try {
-    // Accepts both shapes on one endpoint: JSON when there is no resume, and
-    // multipart when there is. Keeping one route means the GitHub scrape and
-    // the PDF parse stay a single round trip, as the architecture specifies.
-    let gitHubValue: unknown = req.body?.gitHub;
-    let pdfBytes: Uint8Array | undefined;
-
-    if (isMultipart(req)) {
-      const form = await readMultipart(req);
-      gitHubValue = readTextField(form, UPLOAD.GITHUB_FIELD);
-
-      if (form.has(UPLOAD.RESUME_FIELD)) {
-        pdfBytes = (await readPdf(form, UPLOAD.RESUME_FIELD)).bytes;
-      }
+    // The resume is required, so every request carries a file and JSON is no
+    // longer a valid shape for this endpoint.
+    if (!isMultipart(req)) {
+      res.status(415).json({ message: MESSAGES.EXPECTED_MULTIPART });
+      return;
     }
 
-    const parsedBody = PreInterviewBody.safeParse({ gitHub: gitHubValue });
+    const form = await readMultipart(req);
+
+    if (!form.has(UPLOAD.RESUME_FIELD)) {
+      res.status(400).json({ message: MESSAGES.RESUME_REQUIRED });
+      return;
+    }
+
+    const { bytes: pdfBytes } = await readPdf(form, UPLOAD.RESUME_FIELD);
+
+    const parsedBody = PreInterviewBody.safeParse({
+      gitHub: readTextField(form, UPLOAD.GITHUB_FIELD),
+    });
     if (!parsedBody.success) {
       res.status(400).json({
         message: MESSAGES.INVALID_BODY,
@@ -102,11 +105,12 @@ preInterviewRouter.post("/", async (req, res) => {
       return;
     }
 
-    const username = extractGithubUsername(parsedBody.data.gitHub);
-    if (username === null) {
-      res.status(400).json({ message: MESSAGES.MISSING_GITHUB_USER });
-      return;
-    }
+    // Optional now. The schema already proved the URL parses when present, so a
+    // null here means the field was simply omitted.
+    const username =
+      parsedBody.data.gitHub === undefined
+        ? null
+        : extractGithubUsername(parsedBody.data.gitHub);
 
     // AuthMiddleware guarantees req.user; the guard narrows the optional type.
     const userId = req.user?.id;
@@ -116,12 +120,11 @@ preInterviewRouter.post("/", async (req, res) => {
     }
 
     // The two ingestions are independent, so they overlap rather than queue —
-    // the PDF parse is CPU-bound and the GitHub call is network-bound.
+    // the PDF parse is CPU-bound and the GitHub call is network-bound. With no
+    // GitHub profile there is simply nothing to scrape, which is not an error.
     const [repos, resume] = await Promise.all([
-      fetchRepos(username),
-      pdfBytes === undefined
-        ? Promise.resolve(undefined)
-        : ingestResume({ userId, sessionId, bytes: pdfBytes }),
+      username === null ? Promise.resolve<PreInterviewRepo[]>([]) : fetchRepos(username),
+      ingestResume({ userId, sessionId, bytes: pdfBytes }),
     ]);
 
     res.json({ sessionId, repos, resume });
@@ -135,6 +138,15 @@ preInterviewRouter.post("/", async (req, res) => {
 
     if (error instanceof ResumeParseError) {
       res.status(422).json({ message: error.message });
+      return;
+    }
+
+    // 500, and the detail stays in the log. The candidate's file was fine; the
+    // server could not do its job, and telling them to try another PDF would
+    // send them chasing a problem that is not theirs.
+    if (error instanceof ServiceError) {
+      console.error(`[pre-interview] ${error.message}`);
+      res.status(500).json({ message: MESSAGES.UPLOAD_UNAVAILABLE });
       return;
     }
 
