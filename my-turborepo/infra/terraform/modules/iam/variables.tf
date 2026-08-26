@@ -10,12 +10,20 @@ variable "aws_region" {
 
 variable "bedrock_text_model_ids" {
   type        = list(string)
-  description = "Foundation models the text agents (Planner, Evaluator, Coach) may invoke, in fallback order. Verified ACTIVE in us-east-1 on 2026-08-19."
+  description = "Models the text agents (Planner, Evaluator, Coach) may invoke, in fallback order. An id prefixed `us.` is a cross-region inference profile and is granted differently — see locals in main.tf. Each entry verified invocable in us-east-1 on 2026-08-26."
   default = [
     "mistral.ministral-3-8b-instruct",
-    "meta.llama4-scout-17b-instruct-v1:0",
+    # Not `meta.llama4-scout-17b-instruct-v1:0`. The bare foundation-model id
+    # rejects on-demand invocation outright; only the profile form works.
+    "us.meta.llama4-scout-17b-instruct-v1:0",
     "qwen.qwen3-coder-30b-a3b-v1:0",
   ]
+}
+
+variable "inference_profile_regions" {
+  type        = list(string)
+  description = "Regions a `us.` cross-region inference profile may route a request into. The invoke is authorised against the foundation model in the destination region, so every member region needs granting or the fallback fails with an AccessDenied naming a region this config never sets."
+  default     = ["us-east-1", "us-east-2", "us-west-2"]
 }
 
 variable "uploads_bucket_arn" {

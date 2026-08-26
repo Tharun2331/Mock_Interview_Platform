@@ -1,3 +1,5 @@
+data "aws_caller_identity" "current" {}
+
 locals {
   common_tags = {
     Project     = "prepilot"
@@ -5,12 +7,50 @@ locals {
     ManagedBy   = "terraform"
   }
 
+  # An id prefixed with a region code (`us.`) is a system-defined cross-region
+  # inference profile, not a foundation model, and the two take different ARN
+  # shapes. Some models are only invocable through a profile — Llama 4 Scout
+  # returns "Invocation of model ID ... with on-demand throughput isn't
+  # supported" for the bare id — so the chain has to carry both kinds.
+  inference_profile_ids = [
+    for id in var.bedrock_text_model_ids : id
+    if startswith(id, "us.")
+  ]
+
+  foundation_model_ids = [
+    for id in var.bedrock_text_model_ids : id
+    if !startswith(id, "us.")
+  ]
+
   # Foundation-model ARNs carry no account id — the empty segment before
-  # `:foundation-model/` is intentional, not a interpolation bug.
-  text_model_arns = [
-    for id in var.bedrock_text_model_ids :
+  # `:foundation-model/` is intentional, not a interpolation bug. Inference
+  # profiles are the opposite: they are account-scoped resources.
+  foundation_model_arns = [
+    for id in local.foundation_model_ids :
     "arn:aws:bedrock:${var.aws_region}::foundation-model/${id}"
   ]
+
+  inference_profile_arns = [
+    for id in local.inference_profile_ids :
+    "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/${id}"
+  ]
+
+  # A cross-region profile forwards the request into one of its member regions
+  # and the invoke is authorised against the foundation model *there*, not in
+  # the calling region. Granting only the profile ARN produces an AccessDenied
+  # that names a region the config never mentions.
+  inference_profile_model_arns = flatten([
+    for id in local.inference_profile_ids : [
+      for region in var.inference_profile_regions :
+      "arn:aws:bedrock:${region}::foundation-model/${trimprefix(id, "us.")}"
+    ]
+  ])
+
+  text_model_arns = concat(
+    local.foundation_model_arns,
+    local.inference_profile_arns,
+    local.inference_profile_model_arns,
+  )
 
   speech_model_arn = "arn:aws:bedrock:${var.aws_region}::foundation-model/${var.bedrock_speech_model_id}"
 

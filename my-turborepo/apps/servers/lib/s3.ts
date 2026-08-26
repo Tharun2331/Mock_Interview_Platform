@@ -52,7 +52,7 @@ export async function putResume(args: {
     );
     return key;
   } catch (error) {
-    if (error instanceof UploadError || error instanceof ServiceError) throw error;
+    if (error instanceof UploadError || error instanceof ServiceError) throw error; 
     // The write itself failed — credentials, network, bucket policy. Again not
     // the candidate's doing, so it must not read as a problem with their file.
     throw new ServiceError(
