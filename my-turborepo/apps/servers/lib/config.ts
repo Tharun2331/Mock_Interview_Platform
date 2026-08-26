@@ -35,9 +35,15 @@ const csvList = (key: string, value: string): string[] => {
 // `infra/terraform/modules/iam/variables.tf` — the task role is scoped to
 // exactly these ARNs, so an id here that is missing there fails at runtime with
 // AccessDenied, not at deploy time.
+//
+// The `us.` prefix on the Llama entry is a cross-region inference profile, not
+// a typo. The bare `meta.llama4-scout-17b-instruct-v1:0` is rejected outright —
+// "Invocation of model ID ... with on-demand throughput isn't supported" —
+// which silently cost this chain its middle tier: every Ministral failure fell
+// straight through to Qwen. Verified against Bedrock 2026-08-26.
 const DEFAULT_TEXT_MODELS = [
   "mistral.ministral-3-8b-instruct",
-  "meta.llama4-scout-17b-instruct-v1:0",
+  "us.meta.llama4-scout-17b-instruct-v1:0",
   "qwen.qwen3-coder-30b-a3b-v1:0",
 ].join(",");
 
