@@ -5,6 +5,7 @@ module "iam" {
   # Wired through the module output rather than a data lookup, so the
   # dependency is explicit and the ARN cannot drift.
   uploads_bucket_arn = module.s3.uploads_bucket_arn
+  sessions_table_arn = module.dynamodb.table_arn
 }
 
 module "ssm" {
@@ -12,6 +13,24 @@ module "ssm" {
   environment          = var.environment
   google_client_id     = var.google_client_id
   google_client_secret = var.google_client_secret
+  dynamodb_table_name  = module.dynamodb.table_name
+}
+
+module "dynamodb" {
+  source      = "../../modules/dynamodb"
+  environment = var.environment
+
+  # dev is torn down and rebuilt routinely, so both protections are friction
+  # here rather than safety. prod must set both to true — without deletion
+  # protection a single `terraform destroy` erases every recorded interview,
+  # and without PITR there is no way back from a bad write.
+  point_in_time_recovery_enabled = false
+  deletion_protection_enabled    = false
+
+  # dev only. TTL deletes cost no write capacity, so this is the cheapest way
+  # to stop test sessions accumulating. Never set in prod: session data is the
+  # product, and an expiry attribute set by accident would delete it silently.
+  ttl_attribute_name = "expiresAt"
 }
 
 module "s3" {

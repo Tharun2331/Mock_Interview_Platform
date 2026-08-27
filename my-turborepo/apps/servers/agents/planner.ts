@@ -1,7 +1,7 @@
 import {
   PLAN_LIMITS,
   PlanResponseSchema,
-  type PlanRequest,
+  type PlannerInput,
   type PlanResponse,
   type PreInterviewRepo,
 } from "@repo/shared";
@@ -124,7 +124,7 @@ function renderRepos(repos: PreInterviewRepo[]): string {
     .join("\n");
 }
 
-function buildPrompt(req: PlanRequest): string {
+function buildPrompt(req: PlannerInput): string {
   const sections = [
     `Target role: ${req.targetRole}`,
     `Repositories:\n${renderRepos(req.repos)}`,
@@ -159,7 +159,7 @@ function extractJsonObject(raw: string): unknown {
 
 // One typed input object in, one typed output object out. That stability is what
 // lets v2 wrap this as a LangGraph node without touching the route.
-export async function runPlanner(req: PlanRequest): Promise<PlanResponse> {
+export async function runPlanner(req: PlannerInput): Promise<PlanResponse> {
   const raw = await converseText({
     system: SYSTEM_PROMPT,
     prompt: buildPrompt(req),

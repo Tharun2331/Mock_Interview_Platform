@@ -102,6 +102,28 @@ data "aws_iam_policy_document" "bedrock_invoke" {
     ]
     resources = local.upload_object_arns
   }
+
+  # Scoped to the one table, with no index ARN because the table has no GSI.
+  # Every access pattern in data-model.md §1 is a GetItem or a Query on the
+  # base table.
+  #
+  # No DeleteItem: nothing in the application deletes session data — it is the
+  # product, and dev cleanup goes through TTL, which is a DynamoDB-internal
+  # process needing no caller permission. No Scan: every read is keyed, and a
+  # Scan on this table would be a bug that bills like a feature.
+  statement {
+    sid    = "SessionsTableAccess"
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:Query",
+      "dynamodb:BatchWriteItem",
+      "dynamodb:BatchGetItem",
+    ]
+    resources = [var.sessions_table_arn]
+  }
 }
 
 data "aws_iam_policy_document" "server_assume_role" {

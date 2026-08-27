@@ -26,11 +26,46 @@ export class ServiceError extends Error {
   }
 }
 
+// The GitHub scrape failed — unreachable, rate-limited, or a response that did
+// not match the expected shape.
+//
+// Exists so the route can tell a real GitHub failure from any other error in
+// the same handler. Without it the catch-all blamed GitHub for everything,
+// which sends a candidate to re-check a URL that was never wrong.
+export class GithubError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GithubError";
+  }
+}
+
 // The PDF was accepted but its text could not be extracted.
 export class ResumeParseError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ResumeParseError";
+  }
+}
+
+// The session does not exist, or it belongs to someone else. Deliberately one
+// error rather than two: routes map it to a single 404, so the response cannot
+// be used to test whether a given session id is real.
+export class SessionAccessError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SessionAccessError";
+  }
+}
+
+// The session exists and belongs to the caller, but is in a state where the
+// requested change no longer makes sense — re-planning an interview that has
+// already started. Separate from SessionAccessError because ownership is
+// already proven here, so there is no enumeration concern and the response can
+// say what is actually wrong.
+export class SessionStateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SessionStateError";
   }
 }
 

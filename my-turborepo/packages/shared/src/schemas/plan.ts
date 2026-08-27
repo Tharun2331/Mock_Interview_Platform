@@ -53,17 +53,39 @@ export const FocusAreaSchema = z.object({
 
 export type FocusArea = z.infer<typeof FocusAreaSchema>;
 
-// Everything the Planner needs about the candidate. `resumeText` is optional
-// because PDF parsing (`unpdf`) is not wired yet — a plan built from GitHub
-// alone is worse but valid, and making it required would block the endpoint on
-// unfinished work.
+// The wire contract for POST /plan. Deliberately just a session reference and
+// the target role.
+//
+// `repos` and `resumeText` used to be sent here and are not any more. They are
+// candidate material, and accepting them from the client meant a caller could
+// plan against repositories they do not own or a resume that is not theirs —
+// the server had no way to tell. They are read from the session's INPUTS item
+// instead, which only POST /pre-interview writes.
 export const PlanRequestSchema = z.object({
+  // Identifies the session created by POST /pre-interview. Required: the plan
+  // is attached to that session's META item, and the update is conditioned on
+  // the caller owning it — without this the Planner's output has nowhere to go
+  // and the interview cannot be resumed on another device.
+  sessionId: z.string().min(1),
   targetRole: z.string().min(1).max(200),
+});
+
+export type PlanRequest = z.infer<typeof PlanRequestSchema>;
+
+// What the Planner agent itself consumes. Separate from the wire schema on
+// purpose: the agent takes candidate material and returns a plan, and knows
+// nothing about sessions or who is authenticated. Keeping that boundary is what
+// lets the route change how inputs are sourced — client body yesterday, session
+// item today — without touching the agent.
+export const PlannerInputSchema = z.object({
+  targetRole: z.string().min(1).max(200),
+  // Optional: a plan built from GitHub alone is worse but valid, and a resume
+  // that parsed to almost nothing is a real case rather than an error.
   resumeText: z.string().max(PLAN_LIMITS.MAX_RESUME_CHARS).optional(),
   repos: z.array(PreInterviewRepo).max(PLAN_LIMITS.MAX_REPOS).default([]),
 });
 
-export type PlanRequest = z.infer<typeof PlanRequestSchema>;
+export type PlannerInput = z.infer<typeof PlannerInputSchema>;
 
 // The interview plan itself: what to probe, how the round is split, and how hard
 // to pitch it. This is also the shape the model must emit, so it is validated

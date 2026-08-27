@@ -83,12 +83,24 @@ export const MESSAGES = {
   FORM_GITHUB_HINT: "Adds questions drawn from your public repositories.",
   FORM_GITHUB_PLACEHOLDER: "https://github.com/your-username",
   FORM_GITHUB_REQUIRED: "Enter your GitHub profile URL to continue.",
-  FORM_SUBMIT: "Start interview",
+  FORM_ROLE_LABEL: "Target role",
+  FORM_ROLE_HINT:
+    "The role you are practising for. Pick one or type your own.",
+  FORM_ROLE_PLACEHOLDER: "e.g. Backend Engineer",
+  FORM_ROLE_REQUIRED: "Enter the role you are practising for.",
+  // Matches the button through its whole flow: the thing you asked for is a
+  // plan, so the pending and finished states describe the same object.
+  FORM_SUBMIT: "Generate interview plan",
   FORM_SUBMIT_PENDING: "Reading your repositories…",
   FORM_SESSION_EXPIRED: "Your session expired. Sign in again to continue.",
   FORM_UNEXPECTED_RESPONSE:
     "We reached GitHub but could not read the response. Try again.",
+  // Only for a real GitHub failure now. This used to be the catch-all for every
+  // unmapped error, including the backend being unreachable — which told people
+  // to re-check a URL that was perfectly valid.
   FORM_FAILED: "We could not read that GitHub profile. Check the URL and retry.",
+  FORM_UNREACHABLE:
+    "We could not reach PrepPilot. Check your connection and try again.",
 
   // --- Resume attachment ---
   RESUME_LABEL: "Resume",
@@ -110,10 +122,56 @@ export const MESSAGES = {
   RESUME_CONTINUE_ANYWAY: "Continue without it",
   RESUME_TRY_ANOTHER: "Attach a different PDF",
 
+  // --- Session plan ---
+  PLAN_PHASE_BUILDING: "Building your interview plan",
+  PLAN_TITLE: "Session plan",
+  PLAN_READY_BADGE: "Ready",
+  PLAN_DESCRIPTION: "Your session is prepared and ready to begin.",
+  PLAN_STAT_QUESTIONS: "Questions",
+  PLAN_STAT_DURATION: "Duration",
+  PLAN_STAT_FOCUSES: "Focuses",
+  PLAN_FOCUS_AREAS: "Focus areas",
+  PLAN_SOURCE_GITHUB: "From your repositories",
+  PLAN_SOURCE_RESUME: "From your resume",
+  PLAN_BEGIN: "Begin interview",
+  PLAN_START_OVER: "Change these inputs",
+  // Says plainly that the opening level is a starting point, because the
+  // interview moves off it. A fixed-sounding label would misdescribe the
+  // product and read as a verdict before a single question is asked.
+  PLAN_DIFFICULTY_NOTE:
+    "Starts at this level and adjusts to your answers as you go.",
+
+  // The plan comes from a model call, so it needs its own retry path rather
+  // than sending the candidate back to re-upload a resume that stored fine.
+  PLAN_FAILED_TITLE: "We could not build your plan",
+  PLAN_FAILED_RETRY: "Try again",
+  PLAN_FAILED_GENERIC:
+    "Your resume and repositories were saved. Only the plan failed, so trying again will not re-upload anything.",
+  PLAN_SESSION_MISSING:
+    "That session is no longer available. Start again with your resume.",
+  PLAN_ALREADY_STARTED:
+    "This interview has already started, so its plan can no longer be changed.",
+  PLAN_UNEXPECTED_RESPONSE:
+    "We built a plan but could not read it back. Try again.",
+
   // --- Screens still stubbed out ---
   INTERVIEW_TITLE: "Interview",
   RESULT_TITLE: "Result",
 } as const;
+
+// Shortcuts, not an allowlist. The field accepts any role — these exist because
+// typing is friction on a required field, and because a well-formed role name
+// gives the plan better material than "swe" does. Clicking one fills the input,
+// so there is a single source of truth for what was chosen.
+export const TARGET_ROLE_PRESETS = [
+  "Backend Engineer",
+  "Frontend Engineer",
+  "Full Stack Engineer",
+  "Cloud / DevOps Engineer",
+] as const;
+
+export const planFocusCount = (count: number): string =>
+  `${count} focus ${count === 1 ? "area" : "areas"}`;
 
 // Names the limit in the same breath as the violation, matching the server's
 // wording so the two never contradict each other.

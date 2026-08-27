@@ -60,6 +60,13 @@ export const config = {
   // path needs it, and failing boot would take down /plan and auth with it.
   // `lib/s3.ts` raises a clear error if an upload is attempted while unset.
   uploadsBucket:          env("UPLOADS_BUCKET", ""),
+  // From `terraform output sessions_table_name`, and in deployed environments
+  // from SSM at /prepilot/<env>/dynamodb/table_name. Never derived from the
+  // environment name: deriving it is how a misconfigured dev deploy ends up
+  // reading and writing prod's interviews. Same treatment as uploadsBucket —
+  // not requireEnv, because only the persistence path needs it and failing boot
+  // would take down auth and /plan with it.
+  sessionsTable:          env("SESSIONS_TABLE", ""),
   // Without a timeout a hung upstream holds the request open indefinitely and
   // requests pile up behind it.
   githubTimeoutMs:        Number(env("GITHUB_TIMEOUT_MS", "5000")),

@@ -18,10 +18,10 @@ function requireBucket(): string {
   return config.uploadsBucket;
 }
 
-// Cognito subs are UUIDs and session ids are generated here, so both are
-// already safe. Enforced anyway because the IAM policy's prefix scoping assumes
-// keys stay under `resumes/` — a stray path segment from a future caller would
-// quietly undermine that.
+// Cognito subs are UUIDs and session ids are server-generated ULIDs, so both
+// are already safe. Enforced anyway because the IAM policy's prefix scoping
+// assumes keys stay under `resumes/` — a stray path segment from a future
+// caller would quietly undermine that.
 const SAFE_KEY_SEGMENT = /^[A-Za-z0-9._-]+$/;
 
 export function resumeKey(userId: string, sessionId: string): string {
