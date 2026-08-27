@@ -37,6 +37,11 @@ variable "upload_prefixes" {
   default     = ["resumes", "audio"]
 }
 
+variable "sessions_table_arn" {
+  type        = string
+  description = "ARN of the interview sessions table, from the dynamodb module. Wired through the module output rather than reconstructed from the name, so a rename cannot leave this policy pointing at a table that no longer exists."
+}
+
 variable "bedrock_speech_model_id" {
   type        = string
   description = "Speech-to-speech model for the live interview loop. Confirm region availability before changing aws_region — unlike the text models this one has no fallback, and a mismatch fails at runtime rather than at apply."

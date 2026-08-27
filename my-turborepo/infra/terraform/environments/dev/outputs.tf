@@ -26,3 +26,11 @@ output "uploads_bucket_id" {
   description = "Name of the candidate uploads bucket (resumes and interview audio)"
   value       = module.s3.uploads_bucket_id
 }
+
+# The server reads this from SSM at boot. Exposed here as well so local
+# development can set it without a console lookup, the same way UPLOADS_BUCKET
+# is handled today.
+output "sessions_table_name" {
+  description = "Name of the interview sessions table"
+  value       = module.dynamodb.table_name
+}

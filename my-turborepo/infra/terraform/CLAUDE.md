@@ -125,6 +125,37 @@ setting `var.region` for an environment.** This is not a normal region choice:
 - Name resources for what they are, not what environment they're in — the
   environment is already in the state file and the tags.
 
+### Naming: `prepilot` vs `preppilot`
+
+Both spellings are live in this account. That is deliberate, and the split is
+by audience, not by accident:
+
+- **`preppilot`** — anything a human reads. The domain
+  `preppilot.tharunsekar.xyz`, the Cognito user pool. This is the correct
+  spelling of the product name ("Prep" + "Pilot") and user-facing strings must
+  use it.
+- **`prepilot-`** — internal AWS identifiers nobody outside the account sees.
+  IAM roles and policies, security groups, SSM paths, VPC `Name` tags, DynamoDB
+  tables, the `Project` tag. **New modules follow this one.**
+
+So a new table is `prepilot-sessions-${var.environment}` and a new parameter is
+`/prepilot/${var.environment}/...`, matching the ~35 existing internal names.
+
+**The two S3 buckets are a documented exception, not a bug to fix.**
+`preppilot-frontend-*` and `preppilot-uploads-*` carry the user-facing spelling
+on internal resources. They stay that way because an S3 bucket name cannot be
+changed — renaming means destroying and recreating the bucket, which for these
+two means re-pointing a live CloudFront origin and migrating candidate resumes,
+in exchange for nothing a user would ever notice. The CloudFront OAC
+(`preppilot-frontend-*`) is named to match its bucket for the same reason.
+
+Do not "tidy" this by aligning everything on one spelling. Aligning on
+`preppilot` requires migrating the Terraform state bucket and touching the
+`prepilot-terraform` IAM user in `global`, which is shared with prod. Aligning
+on `prepilot` requires replacing both buckets and misspelling the public
+domain. Both are hours of state-level risk for a cosmetic result. If someone
+proposes it, point them here.
+
 ## IAM
 
 Least privilege, and be specific about it:

@@ -27,6 +27,7 @@ hardcoded, and never derived from `NODE_ENV`.
 PK                   SK                Purpose
 ─────────────────────────────────────────────────────────────────────
 SESSION#<sid>        META              session metadata + interview plan
+SESSION#<sid>        INPUTS            scraped repos + extracted resume text
 SESSION#<sid>        ANSWER#<qId>      question text + candidate transcript
 SESSION#<sid>        EVAL#<qId>        per-answer scores + rationale
 SESSION#<sid>        EVAL#SUMMARY      rollup + completion counter
@@ -53,6 +54,33 @@ questionCount    number   total planned questions — the denominator for comple
 resumeKey        string   S3 key
 githubUsername   string
 ```
+
+**`SESSION#<sid> / INPUTS`**
+
+```
+repos            list     scraped GitHub repositories, capped at MAX_REPOS
+resumeText       string   extracted text, truncated to MAX_RESUME_CHARS
+resumeKey        string   S3 key the text was parsed from
+```
+
+Written once by `POST /pre-interview`, read once by `POST /plan`, never updated.
+
+It exists for two reasons. The security one: `POST /plan` used to accept `repos`
+and `resumeText` in its request body, which let any caller plan against
+repositories or a resume that were not theirs — the server had no way to tell.
+Reading them from the session closes that, and it is why the plan endpoint's
+body is now just `{ sessionId, targetRole }`.
+
+The cost one is why this is a separate item rather than attributes on `META`.
+DynamoDB bills an update against the whole item's size, not the delta. This is
+roughly 10 KB, and `META` takes four status updates across a session's life, so
+folding it in would cost about 40 WCU instead of 4 — on the one item the
+interview loop reads repeatedly. Same reasoning as the per-answer transcript
+split below.
+
+The alternative considered was re-parsing the PDF from S3 at plan time, which
+keeps storage smaller but puts an S3 GET and a PDF parse on a path the candidate
+is waiting on.
 
 **`SESSION#<sid> / ANSWER#<qId>`**
 
@@ -116,6 +144,7 @@ generatedAt      string   ISO 8601
 | - | --------------------------- | ---------------------------------------------------- |
 | 1 | Whole session               | `Query PK = SESSION#<sid>`                            |
 | 2 | Session metadata only       | `GetItem PK = SESSION#<sid>, SK = META`               |
+| 2b| Owner + Planner inputs      | `BatchGetItem` on `SK = META` and `SK = INPUTS`       |
 | 3 | Transcript in order         | `Query PK = SESSION#<sid>, SK begins_with ANSWER#`    |
 | 4 | All evaluations             | `Query PK = SESSION#<sid>, SK begins_with EVAL#`      |
 | 5 | User's session history      | `Query PK = USER#<uid>, SK begins_with SESSION#`      |
