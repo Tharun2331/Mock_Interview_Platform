@@ -591,7 +591,15 @@ export class SonicConversation {
   private kickoffNote: string | undefined;
 
   constructor(
-    private readonly args: Omit<SonicSessionArgs, "history" | "onClose"> & {
+    private readonly args: Omit<
+      SonicSessionArgs,
+      "history" | "onClose" | "systemPrompt"
+    > & {
+      // A function, not a string, so each stream is briefed with the state of
+      // the interview at the moment it opens rather than at the moment the
+      // conversation started. Time elapsed is the one thing in the prompt that
+      // is false by the second renewal if it is fixed at construction.
+      systemPrompt: string | (() => string);
       // Supplies the history to replay at renewal time. A callback rather than
       // an array because the exchanges accumulate after this is constructed.
       getHistory: () => readonly CompletedExchange[];
@@ -618,8 +626,9 @@ export class SonicConversation {
   private async open(
     history: readonly CompletedExchange[]
   ): Promise<SonicSession> {
+    const prompt = this.args.systemPrompt;
     const session = new SonicSession({
-      systemPrompt: this.args.systemPrompt,
+      systemPrompt: typeof prompt === "function" ? prompt() : prompt,
       tools: this.args.tools,
       history,
       // Remembered from the first kickoff so every replacement stream can
@@ -696,8 +705,12 @@ export class SonicConversation {
   }
 
   kickoff(note: string): void {
-    // Kept so renewals can replay it as the opening USER turn.
-    this.kickoffNote = note;
+    // Only the FIRST note is kept. It is replayed as the opening USER turn of
+    // every renewed stream, and the opening turn is a fixed historical fact —
+    // a later nudge (the wrap-up) is something said mid-conversation, and
+    // replaying it as the greeting would tell a fresh stream the interview
+    // began with "time is nearly up".
+    this.kickoffNote ??= note;
     this.current?.kickoff(note);
   }
 

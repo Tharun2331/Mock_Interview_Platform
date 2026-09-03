@@ -61,6 +61,10 @@ export function useInterview(sessionId: string) {
   const [state, setState] = useState<InterviewState>({ status: "idle" });
   const [transcript, setTranscript] = useState<TranscriptRow[]>([]);
   const [level, setLevel] = useState(0);
+  // Wall-clock end, set from the server's plan. Null until the interview is
+  // live.
+  const [endsAt, setEndsAt] = useState<number | null>(null);
+  const [remainingMs, setRemainingMs] = useState<number | null>(null);
 
   const captureRef = useRef<CaptureHandle | null>(null);
   const socketRef = useRef<InterviewSocket | null>(null);
@@ -117,6 +121,10 @@ export function useInterview(sessionId: string) {
     (event: InterviewServerEvent) => {
       switch (event.type) {
         case "ready":
+          // The clock starts when the interviewer is actually live, not when
+          // the socket opened — otherwise setup time is charged to the
+          // candidate's interview.
+          setEndsAt(Date.now() + event.targetMinutes * 60_000);
           setState({ status: "recording" });
           break;
 
@@ -250,6 +258,17 @@ export function useInterview(sessionId: string) {
     return () => clearInterval(timer);
   }, [state.status]);
 
+  // Ticks once a second while the interview runs. Floored at zero rather than
+  // going negative: the server enforces the stop, and a counter showing "-2:14"
+  // would say the app has lost track of its own session.
+  useEffect(() => {
+    if (endsAt === null) return;
+    const tick = () => setRemainingMs(Math.max(0, endsAt - Date.now()));
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [endsAt]);
+
   // True whenever the microphone is genuinely open — including while the
   // interviewer is speaking, because it is. Hiding it then would tell the
   // candidate they are not being heard when they are.
@@ -258,5 +277,5 @@ export function useInterview(sessionId: string) {
     state.status === "interviewer-speaking" ||
     state.status === "interrupting";
 
-  return { state, transcript, level, micOpen, start, stop };
+  return { state, transcript, level, micOpen, remainingMs, start, stop };
 }

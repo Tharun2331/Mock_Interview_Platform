@@ -9,7 +9,15 @@ import { BACKEND_URL } from "@/lib/config";
 //   - TEXT frames are JSON control and transcript events.
 
 export type InterviewServerEvent =
-  | { type: "ready"; sessionId: string; targetRole: string | null }
+  | {
+      type: "ready";
+      sessionId: string;
+      targetRole: string | null;
+      // Sent so the client can show a countdown. The candidate having to ask
+      // "what is the time left for the interview to end" mid-session is a UI
+      // failure, not a question they should ever need to voice.
+      targetMinutes: number;
+    }
   | { type: "transcript"; role: string; text: string; final: boolean }
   | { type: "candidateFinished" }
   | { type: "interviewerStarted" }

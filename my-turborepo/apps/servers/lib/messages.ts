@@ -37,6 +37,13 @@ export const MESSAGES = {
   // as a stage direction rather than as the candidate talking, so the model
   // greets them instead of replying to a greeting that never happened.
   INTERVIEW_KICKOFF:    "[The candidate has joined and their microphone is live. Greet them and begin.]",
+  // Also not user-facing. Sent as the planned end approaches so the interview
+  // lands rather than being cut off — the hard stop follows regardless.
+  INTERVIEW_WRAP_UP:    "[Time is nearly up. Ask one final question, then close the interview warmly and call endInterview.]",
+  // The second nudge, sent a minute out. Deliberately leaves no room for another
+  // question: by this point the first nudge has already been ignored once, and
+  // repeating it in the same words invites the same outcome.
+  INTERVIEW_FINAL_CALL: "[Time is up. Do not ask anything else. Thank the candidate in one sentence, then call endInterview on this turn.]",
   // Client-facing. Covers both "no such session" and "not yours" — see
   // SessionAccessError for why those are not distinguished.
   SESSION_NOT_FOUND:    "That interview session could not be found.",

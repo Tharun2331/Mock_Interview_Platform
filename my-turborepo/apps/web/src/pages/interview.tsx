@@ -14,6 +14,17 @@ import { MESSAGES } from "@/lib/messages";
 // and interruptible now, so there are no turns to advance and no question to
 // pause — only one control that always works, which is to stop.
 
+const FIVE_MINUTES_MS = 5 * 60 * 1000;
+
+// mm:ss. Rounded up so the counter reads "1:00" for the whole final minute
+// rather than sitting on "0:00" while time remains.
+function formatRemaining(ms: number): string {
+  const totalSeconds = Math.ceil(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 // What the candidate must know instantly, per state. Every one carries a label
 // as well as a colour: colour alone is never the channel for state.
 function statusFor(state: InterviewState): { label: string; tone: string } {
@@ -83,9 +94,8 @@ export function Interview() {
       ? (routerState as { sessionId: string }).sessionId
       : null;
 
-  const { state, transcript, level, micOpen, start, stop } = useInterview(
-    sessionId ?? ""
-  );
+  const { state, transcript, level, micOpen, remainingMs, start, stop } =
+    useInterview(sessionId ?? "");
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pinned, setPinned] = useState(true);
@@ -197,6 +207,25 @@ export function Interview() {
             />
             <p className={`text-sm font-medium ${status.tone}`}>{status.label}</p>
             <LevelMeter level={level} active={listening} />
+
+            {/* Shown from the start, not only when time runs short. A candidate
+                who has to ask how long is left is being made to manage the
+                app instead of the interview. Turns amber inside the final
+                five minutes, with the label carrying that too — colour is
+                never the only channel. */}
+            {remainingMs !== null ? (
+              <p
+                className={
+                  remainingMs <= FIVE_MINUTES_MS
+                    ? "text-xs tabular-nums text-amber-400"
+                    : "text-xs tabular-nums text-muted-foreground"
+                }
+              >
+                {remainingMs <= FIVE_MINUTES_MS
+                  ? MESSAGES.INTERVIEW_TIME_ENDING(formatRemaining(remainingMs))
+                  : MESSAGES.INTERVIEW_TIME_LEFT(formatRemaining(remainingMs))}
+              </p>
+            ) : null}
           </section>
 
           <section className="flex min-h-0 flex-1 flex-col gap-2">

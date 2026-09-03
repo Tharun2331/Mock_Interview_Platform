@@ -171,6 +171,11 @@ export const MESSAGES = {
   INTERVIEW_SPEAKING: "Interviewer is speaking",
   INTERVIEW_INTERRUPTING: "You interrupted — go ahead",
   INTERVIEW_MIC_ON: "Microphone on",
+  INTERVIEW_TIME_LEFT: (remaining: string): string => `${remaining} remaining`,
+  // Distinct copy for the final stretch, so the change is carried by words as
+  // well as colour.
+  INTERVIEW_TIME_ENDING: (remaining: string): string =>
+    `Wrapping up — ${remaining} remaining`,
   INTERVIEW_TRANSCRIPT: "Transcript",
   INTERVIEW_TRANSCRIPT_EMPTY:
     "Your conversation will appear here as you speak.",

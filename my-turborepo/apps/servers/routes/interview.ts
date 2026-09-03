@@ -5,7 +5,7 @@ import {
   ExchangeBuffer,
   type CompletedExchange,
 } from "../lib/exchangeBuffer";
-import { INTERVIEW_TOOL_NAMES, SONIC } from "../lib/constants";
+import { INTERVIEW, INTERVIEW_TOOL_NAMES, SONIC } from "../lib/constants";
 import { verifier } from "../lib/cognitoAuth";
 import { SessionAccessError, SessionStateError } from "../lib/errors";
 import { MESSAGES } from "../lib/messages";
@@ -18,6 +18,7 @@ import {
 import {
   INTERVIEW_TOOLS,
   buildInterviewSystemPrompt,
+  type InterviewClock,
 } from "../agents/mockInterview";
 
 // The live interview transport.
@@ -40,7 +41,15 @@ const PATH = "/api/v1/interview";
 const AUTH_PROTOCOL_PREFIX = "bearer.";
 
 export type InterviewServerEvent =
-  | { type: "ready"; sessionId: string; targetRole: string | null }
+  | {
+      type: "ready";
+      sessionId: string;
+      targetRole: string | null;
+      // Sent so the client can show a countdown. The candidate having to ask
+      // "what is the time left for the interview to end" mid-session is a UI
+      // failure, not a question they should ever need to voice.
+      targetMinutes: number;
+    }
   | { type: "transcript"; role: string; text: string; final: boolean }
   // The candidate stopped talking and the interviewer has not started. Derived
   // from the arrival of their FINAL ASR transcript, which is the only signal
@@ -69,6 +78,23 @@ function isFinalStage(generationStage: string | null): boolean {
 
 type ToolCall = { toolName: string; toolUseId: string; content: string };
 
+// Where the session stands against its planned length. The single place minutes
+// are derived, so the tool results and the renewed stream's system prompt can
+// never disagree about what time it is.
+//
+// Elapsed rounds down and remaining rounds up, deliberately: the interviewer
+// should never be told it has a minute more than it does.
+function clockOf(state: InterviewState): InterviewClock {
+  const elapsedMs = Date.now() - state.startedAt;
+  return {
+    elapsedMinutes: Math.floor(elapsedMs / 60_000),
+    remainingMinutes: Math.max(
+      0,
+      Math.ceil((state.targetMinutes * 60_000 - elapsedMs) / 60_000)
+    ),
+  };
+}
+
 // Handles a tool the interviewer invoked. Returns whatever should go back on
 // the stream as the tool result.
 //
@@ -81,18 +107,17 @@ function runTool(call: ToolCall, state: InterviewState): unknown {
       // TODO(persistence): write an ANSWER#<qId> item here. Buffered in memory
       // for now so the transport can be verified independently of the
       // DynamoDB write path.
-      return { ok: true, exchangesLogged: state.exchanges };
+      //
+      // The clock rides back on this result rather than only on
+      // getSessionState. This tool is called after every answer and that one is
+      // called when the model thinks to — and it did not think to, in a
+      // measured session that ran to the hard stop with the interviewer still
+      // opening new threads. Putting the time where the model already looks
+      // costs nothing and removes the need for it to ask.
+      return { ok: true, exchangesLogged: state.exchanges, ...clockOf(state) };
     }
     case INTERVIEW_TOOL_NAMES.GET_SESSION_STATE: {
-      const elapsedMs = Date.now() - state.startedAt;
-      return {
-        exchangesLogged: state.exchanges,
-        elapsedMinutes: Math.floor(elapsedMs / 60_000),
-        remainingMinutes: Math.max(
-          0,
-          state.targetMinutes - Math.floor(elapsedMs / 60_000)
-        ),
-      };
+      return { exchangesLogged: state.exchanges, ...clockOf(state) };
     }
     case INTERVIEW_TOOL_NAMES.END_INTERVIEW: {
       state.endRequested = true;
@@ -143,10 +168,14 @@ async function handleConnection(
   // Set once the interview is running, so shutdown can flush an exchange that
   // was in progress when the connection dropped.
   let flushOnClose: (() => Promise<void>) | null = null;
+  // Timers that must not outlive the connection. A pending hard-stop on a
+  // finished interview would fire against a closed session.
+  const clearOnClose: ReturnType<typeof setTimeout>[] = [];
 
   const shutdown = async (reason: string): Promise<void> => {
     if (closing) return;
     closing = true;
+    for (const timer of clearOnClose) clearTimeout(timer);
     // Logged because the client only ever sees generic copy. When an interview
     // ends unexpectedly, this line is the difference between knowing it was an
     // idle timeout, a model-requested end, or a dropped socket, and guessing.
@@ -234,13 +263,28 @@ async function handleConnection(
     let lastFinal = false;
 
     sonic = new SonicConversation({
-      systemPrompt: buildInterviewSystemPrompt(plan),
+      // Re-rendered per stream. The first call happens immediately, where the
+      // clock has nothing to report; every later one carries the real elapsed
+      // time into the replacement stream — which is what keeps a 35-minute
+      // interview from running on a briefing written 30 minutes ago.
+      systemPrompt: () => {
+        const clock = clockOf(state);
+        return buildInterviewSystemPrompt(
+          plan,
+          clock.elapsedMinutes === 0 ? undefined : clock
+        );
+      },
       tools: INTERVIEW_TOOLS,
       // Bedrock closes a stream after ~8 minutes, so a 40-minute interview
       // spans several. The conversation replays these into each replacement.
       getHistory: () => state.history,
+      // The clock is logged with the renewal because the renewal is when it is
+      // written into the replacement stream's system prompt. This line is the
+      // record of what the interviewer was actually told about the time.
       onRenew: (count) =>
-        console.log(`[interview] ${sessionId} stream renewed (#${count})`),
+        console.log(
+          `[interview] ${sessionId} stream renewed (#${count}) — ${clockOf(state).remainingMinutes}m left`
+        ),
       onClose: (reason) => void shutdown(reason),
       onEvent: (event) => {
         switch (event.kind) {
@@ -348,11 +392,46 @@ async function handleConnection(
       type: "ready",
       sessionId,
       targetRole: meta.role ?? null,
+      targetMinutes: plan.targetMinutes,
     });
 
     // Prompts the interviewer to open. Without this Sonic waits for speech and
     // the candidate has to greet a silent interviewer before anything happens.
     sonic.kickoff(MESSAGES.INTERVIEW_KICKOFF);
+
+    // The plan's targetMinutes is guidance in the system prompt, and a measured
+    // 48-minute session against a 40-minute plan proved the model does not hold
+    // itself to it. The clock is therefore enforced here.
+    //
+    // Two stages, because cutting a candidate off mid-sentence at the exact
+    // second is worse than running slightly long: a nudge to start wrapping up,
+    // then a hard close if it keeps going.
+    // Both nudges are logged. Without that line, a session that overruns is
+    // ambiguous between "the nudge never fired" and "the nudge fired and the
+    // model ignored it" — and those have opposite fixes. The first overrun
+    // investigated here cost a round trip precisely because the log could not
+    // tell them apart.
+    const nudge = (stage: string, note: string) => () => {
+      console.log(`[interview] ${sessionId} ${stage} — ${Math.round((Date.now() - state.startedAt) / 60_000)}m elapsed`);
+      sonic?.kickoff(note);
+    };
+
+    const targetMs = plan.targetMinutes * 60_000;
+    const wrapUpTimer = setTimeout(
+      nudge("wrap-up nudge", MESSAGES.INTERVIEW_WRAP_UP),
+      Math.max(0, targetMs - INTERVIEW.WRAP_UP_BEFORE_MS)
+    );
+    // Skipped if the model already ended: a "time is up" turn arriving after a
+    // warm close would reopen a finished interview.
+    const finalCallTimer = setTimeout(() => {
+      if (state.endRequested) return;
+      nudge("final call", MESSAGES.INTERVIEW_FINAL_CALL)();
+    }, Math.max(0, targetMs - INTERVIEW.FINAL_CALL_BEFORE_MS));
+    const hardStopTimer = setTimeout(
+      () => void shutdown("time limit reached"),
+      targetMs + INTERVIEW.HARD_STOP_GRACE_MS
+    );
+    clearOnClose.push(wrapUpTimer, finalCallTimer, hardStopTimer);
 
     socket.on("message", (data: Buffer, isBinary: boolean) => {
       if (isBinary) {
