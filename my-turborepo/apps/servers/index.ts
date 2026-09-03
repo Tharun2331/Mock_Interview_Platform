@@ -4,6 +4,7 @@ import helmet from "helmet";
 import { config } from "./lib/config";
 import { planRouter } from "./routes/plan";
 import { preInterviewRouter } from "./routes/preInterview";
+import { attachInterviewSocket } from "./routes/interview";
 import { AuthMiddleware } from "./lib/cognitoAuth";
 import { apiRateLimiter } from "./lib/rateLimit";
 const app = express();
@@ -25,4 +26,9 @@ app.use(express.json({ limit: config.jsonBodyLimit }));
 app.use("/api/v1/pre-interview", AuthMiddleware, apiRateLimiter, preInterviewRouter);
 app.use("/api/v1/plan", AuthMiddleware, apiRateLimiter, planRouter);
 
-app.listen(config.port);
+// The HTTP server is captured rather than discarded: the interview WebSocket
+// attaches to its `upgrade` event, which is the only place a handshake can be
+// authenticated before a socket exists.
+const server = app.listen(config.port);
+
+attachInterviewSocket(server);

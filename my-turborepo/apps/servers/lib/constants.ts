@@ -33,6 +33,103 @@ export const INTERVIEW_TOOL_NAMES = {
 export const INTERVIEW = {
   MIN_EXCHANGES_PER_AREA: 2,
   MAX_EXCHANGES_PER_AREA: 4,
+  // Follow-ups allowed on one thread before the interviewer must change
+  // subject. Observed without it: four consecutive rephrasings of the same
+  // cache-invalidation question, continuing past "I'm not too sure" — which
+  // reads as interrogation rather than interviewing.
+  MAX_FOLLOWUPS_PER_THREAD: 2,
+  // How long before the planned end the interviewer is told to start wrapping
+  // up. Enough for a closing question and a warm sign-off.
+  WRAP_UP_BEFORE_MS: 3 * 60 * 1000,
+  // The same threshold in whole minutes, because the prompt states it to a
+  // model that reads minutes and cannot divide milliseconds. Derived rather
+  // than written twice: the nudge the server sends and the rule the prompt
+  // states have to name the same moment, or the interviewer is told to wrap up
+  // at a time it was never taught to recognise.
+  get WRAP_UP_AT_REMAINING_MIN(): number {
+    return Math.round(this.WRAP_UP_BEFORE_MS / 60_000);
+  },
+  // Second, blunter nudge, sent this long before the planned end.
+  //
+  // The wrap-up nudge is one text turn injected into a live conversation. If it
+  // lands while the candidate is mid-answer it competes with their speech for
+  // the model's next turn, and a measured session showed exactly that: the
+  // nudge fired at T-3, the interviewer kept opening new threads, and the
+  // candidate ended up asking how much time was left. One delivery attempt at a
+  // single instant is not a mechanism — this is the second attempt.
+  FINAL_CALL_BEFORE_MS: 60 * 1000,
+  // Grace after targetMinutes before the session is closed regardless. The
+  // prompt's time budget is advisory and the model overran it by eight minutes
+  // in a measured 48-minute session, so the clock is enforced in code.
+  HARD_STOP_GRACE_MS: 60 * 1000,
+} as const;
+
+// Nova 2 Sonic stream settings. Separate from BEDROCK above because the voice
+// path shares nothing with the text path — different command, different request
+// handler, different billing model.
+export const SONIC = {
+  MODEL_ID: "amazon.nova-2-sonic-v1:0",
+  // Fixed by what Sonic accepts and emits, not preferences. The browser's
+  // AudioWorklet must produce exactly INPUT_SAMPLE_RATE and the player must
+  // schedule exactly OUTPUT_SAMPLE_RATE, or audio arrives pitched wrong.
+  INPUT_SAMPLE_RATE: 16000,
+  OUTPUT_SAMPLE_RATE: 24000,
+  SAMPLE_SIZE_BITS: 16,
+  CHANNEL_COUNT: 1,
+  VOICE_ID: "matthew",
+  // A two-sentence spoken turn is roughly 50 tokens. 200 leaves headroom while
+  // bounding the damage when the prompt's limit is ignored — which it was, in a
+  // measured session where single turns carried three stacked questions.
+  MAX_TOKENS: 200,
+  TOP_P: 0.9,
+  TEMPERATURE: 0.7,
+  // How eagerly Sonic decides the candidate has stopped talking. MEDIUM is the
+  // documented default; LOW waits longer, which may suit someone thinking
+  // through a hard technical question. Worth retuning against real speech.
+  ENDPOINTING_SENSITIVITY: "MEDIUM",
+  // Transport inactivity timeouts, deliberately well beyond the 8-minute cap
+  // Bedrock itself puts on a bidirectional stream.
+  //
+  // These were 300_000 — five minutes — copied from the AWS sample, whose demo
+  // sessions are short. That is close enough to a real interview's length to
+  // look like a mysterious mid-conversation disconnect, and it would pre-empt
+  // the actual limit and make it impossible to tell the two apart. The
+  // semantic controls (IDLE_TIMEOUT_MS, MAX_SESSION_MS) are the ones meant to
+  // end a session; the transport should not have an opinion.
+  REQUEST_TIMEOUT_MS: 900_000,
+  SESSION_TIMEOUT_MS: 900_000,
+  // A stream with no inbound audio for this long is an abandoned tab, not a
+  // thoughtful pause. Sonic bills by open duration, so this is a cost control
+  // first and a UX one second.
+  IDLE_TIMEOUT_MS: 120_000,
+  // Hard ceiling on a single interview regardless of activity.
+  //
+  // NOT the binding limit. Bedrock closes a bidirectional stream after roughly
+  // 8 minutes regardless of what is set here, and the documented way to run
+  // longer is to open a fresh stream and replay the conversation history. Any
+  // plan with targetMinutes above ~8 therefore needs that renewal to exist —
+  // this value only bounds the total across renewals.
+  MAX_SESSION_MS: 90 * 60 * 1000,
+  // How long Bedrock allows one stream to stay open. Measured at roughly 7m19s
+  // of conversation in a real session, so 8 minutes is the ceiling rather than
+  // a guess. Renewal starts before this, not after — waiting for the stream to
+  // die means the candidate is mid-answer when it happens.
+  STREAM_LIFETIME_MS: 8 * 60 * 1000,
+  // Renewal begins this long before the ceiling. Wide enough to absorb a slow
+  // stream open (~400ms measured) plus the history replay, narrow enough that
+  // it does not throw away usable stream time on every cycle.
+  RENEW_BEFORE_MS: 90 * 1000,
+  // How many past exchanges are replayed into a renewed stream. The whole
+  // conversation would grow the prompt without bound across renewals, and the
+  // interviewer only needs enough context to keep the thread — the session
+  // brief in the system prompt carries the rest.
+  MAX_REPLAYED_EXCHANGES: 6,
+  // Audio is dropped rather than buffered without bound when the client
+  // outruns the stream. 200 frames at 32ms each is roughly six seconds.
+  MAX_QUEUED_AUDIO_FRAMES: 200,
+  // Liveness probe. `ws` gives us ping/pong; a socket that misses two in a row
+  // is gone, and the Sonic stream behind it must not outlive it.
+  HEARTBEAT_MS: 30_000,
 } as const;
 
 import { RESUME_LIMITS, UPLOAD_FIELDS } from "@repo/shared";
