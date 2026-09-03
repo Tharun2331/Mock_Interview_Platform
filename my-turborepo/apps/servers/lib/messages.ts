@@ -27,6 +27,16 @@ export const MESSAGES = {
   // Client-facing. Re-planning after the interview starts would change the
   // focus areas and question count out from under answers already recorded.
   SESSION_ALREADY_STARTED: "This interview has already started, so its plan can no longer be changed.",
+  // Covers both "no plan yet" and "already running in another tab". Both mean
+  // the same thing to the candidate: this session cannot be started here.
+  SESSION_NOT_INTERVIEWABLE: "This interview cannot be started. It may already be running in another tab, or its plan is not ready yet.",
+  // Client-facing. Detail stays in the log: a stream error can carry AWS
+  // internals, and mid-interview is the worst possible moment to show them.
+  INTERVIEW_FAILED:     "The interview connection failed. Your progress so far is saved.",
+  // Not user-facing: sent to the model to make it take the first turn. Written
+  // as a stage direction rather than as the candidate talking, so the model
+  // greets them instead of replying to a greeting that never happened.
+  INTERVIEW_KICKOFF:    "[The candidate has joined and their microphone is live. Greet them and begin.]",
   // Client-facing. Covers both "no such session" and "not yours" — see
   // SessionAccessError for why those are not distinguished.
   SESSION_NOT_FOUND:    "That interview session could not be found.",

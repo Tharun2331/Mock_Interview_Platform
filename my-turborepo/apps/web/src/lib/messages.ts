@@ -154,8 +154,51 @@ export const MESSAGES = {
   PLAN_UNEXPECTED_RESPONSE:
     "We built a plan but could not read it back. Try again.",
 
-  // --- Screens still stubbed out ---
+  // --- Live interview ---
   INTERVIEW_TITLE: "Interview",
+  // Said once, early, in plain words. People default to turn-taking politeness
+  // with software and will not discover interruption on their own.
+  INTERVIEW_INTERRUPT_HINT:
+    "You can jump in any time — the interviewer will stop.",
+  INTERVIEW_START: "Start interview",
+  INTERVIEW_STOP: "End interview",
+  INTERVIEW_MIC_PREPARING: "Waiting for microphone access",
+  INTERVIEW_MIC_EXPLAIN:
+    "PrepPilot needs your microphone to hear your answers. Your browser will ask next.",
+  INTERVIEW_CONNECTING: "Connecting to your interviewer",
+  INTERVIEW_LISTENING: "Listening — you have the floor",
+  INTERVIEW_THINKING: "Thinking",
+  INTERVIEW_SPEAKING: "Interviewer is speaking",
+  INTERVIEW_INTERRUPTING: "You interrupted — go ahead",
+  INTERVIEW_MIC_ON: "Microphone on",
+  INTERVIEW_TRANSCRIPT: "Transcript",
+  INTERVIEW_TRANSCRIPT_EMPTY:
+    "Your conversation will appear here as you speak.",
+  INTERVIEW_ENDED: "Interview ended",
+  INTERVIEW_ENDED_BY_YOU: "You ended the interview.",
+  INTERVIEW_DISCONNECTED:
+    "The connection dropped. Reconnecting would start a new conversation, so this session has ended.",
+  INTERVIEW_CONNECT_FAILED:
+    "We could not reach your interviewer. Check your connection and try again.",
+  INTERVIEW_NO_SESSION:
+    "No interview session was found. Start from your resume and plan.",
+  INTERVIEW_RETRY: "Try again",
+  INTERVIEW_BACK: "Back to setup",
+  INTERVIEW_SPEAKER_YOU: "You",
+  INTERVIEW_SPEAKER_INTERVIEWER: "Interviewer",
+
+  // Microphone failures, mapped from the DOMException name rather than its
+  // message — each needs a different recovery, and the messages differ by
+  // browser while the names do not.
+  MIC_BLOCKED:
+    "Your microphone is blocked. Allow access from the icon in your browser's address bar, then try again.",
+  MIC_NOT_FOUND:
+    "No microphone was found. Connect one and try again.",
+  MIC_IN_USE:
+    "Your microphone is in use by another app. Close it and try again.",
+  MIC_FAILED: "We could not start your microphone. Try again.",
+
+  // --- Screens still stubbed out ---
   RESULT_TITLE: "Result",
 } as const;
 

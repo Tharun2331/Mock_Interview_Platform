@@ -4,12 +4,14 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import {
   BatchGetCommand,
+  PutCommand,
   TransactWriteCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import {
   PLAN_LIMITS,
   SORT_KEY,
+  answerSk,
   SessionInputsSchema,
   SessionMetaSchema,
   sessionPk,
@@ -18,6 +20,8 @@ import {
   type PlannerInput,
   type PlanResponse,
   type PreInterviewRepo,
+  type QuestionType,
+  type SessionMeta,
   type SessionStatus,
 } from "@repo/shared";
 import { dynamoClient, parseItem, requireTable } from "./dynamo";
@@ -206,6 +210,117 @@ export async function loadPlannerInputs(args: {
     // Planner treats absent and empty the same way.
     resumeText: inputs.resumeText.length > 0 ? inputs.resumeText : undefined,
   };
+}
+
+// Writes one completed exchange. Called as the interview runs, never batched to
+// the end: a session that drops mid-way must keep everything said before it,
+// and the whole point of DynamoDB here is that the Evaluator's only input is
+// this transcript.
+//
+// Deliberately not conditioned on anything. A late or duplicate write is far
+// better than a lost answer, and PutItem keyed by questionId is idempotent, so
+// a retry overwrites rather than duplicating.
+export async function recordAnswer(args: {
+  sessionId: string;
+  questionId: string;
+  questionText: string;
+  questionType: QuestionType;
+  transcript: string;
+  askedAt: string;
+  durationMs: number;
+  interrupted: boolean;
+}): Promise<void> {
+  await dynamoClient.send(
+    new PutCommand({
+      TableName: requireTable(),
+      Item: {
+        PK: sessionPk(args.sessionId),
+        SK: answerSk(args.questionId),
+        questionId: args.questionId,
+        questionText: args.questionText,
+        questionType: args.questionType,
+        askedAt: args.askedAt,
+        transcript: args.transcript,
+        // Best-effort and not wired yet — the audio upload path is Phase 4.
+        audioKey: null,
+        durationMs: args.durationMs,
+        interrupted: args.interrupted,
+      },
+    })
+  );
+}
+
+// Terminal state for the session. Separate from recordAnswer so a failure to
+// mark completion never costs an answer that was already written.
+export async function finishInterview(args: {
+  sessionId: string;
+  status: "complete" | "failed";
+}): Promise<void> {
+  await dynamoClient.send(
+    new UpdateCommand({
+      TableName: requireTable(),
+      Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.META },
+      UpdateExpression: "SET #status = :status",
+      // Only from in_progress, so a late close cannot drag a session that has
+      // already moved on to evaluating back to complete.
+      ConditionExpression: "#status = :inProgress",
+      ExpressionAttributeNames: { "#status": "status" },
+      ExpressionAttributeValues: {
+        ":status": args.status,
+        ":inProgress": "in_progress",
+      },
+    })
+  );
+}
+
+// Loads a session for the live interview and moves it to `in_progress`.
+//
+// The status change is a conditional update rather than a read-then-write: it
+// is what stops two browser tabs opening two Sonic streams against one session,
+// which would bill twice and interleave two conversations into one transcript.
+export async function startInterview(args: {
+  sessionId: string;
+  userId: string;
+}): Promise<SessionMeta> {
+  try {
+    const response = await dynamoClient.send(
+      new UpdateCommand({
+        TableName: requireTable(),
+        Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.META },
+        UpdateExpression: "SET #status = :inProgress",
+        // `ready` only. A session still `planning` has no plan to interview
+        // against, and one already `in_progress` is being held by another
+        // connection.
+        ConditionExpression:
+          "attribute_exists(PK) AND userId = :userId AND #status = :ready",
+        ExpressionAttributeNames: { "#status": "status" },
+        ExpressionAttributeValues: {
+          ":inProgress": "in_progress",
+          ":ready": "ready",
+          ":userId": args.userId,
+        },
+        // Returns the whole item so the caller gets the plan without a second
+        // read — the plan is needed immediately to build the system prompt.
+        ReturnValues: "ALL_NEW",
+        ReturnValuesOnConditionCheckFailure: "ALL_OLD",
+      })
+    );
+
+    return parseItem(SessionMetaSchema, response.Attributes, "META");
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException) {
+      const owner = error.Item?.userId?.S;
+      if (owner === args.userId) {
+        throw new SessionStateError(MESSAGES.SESSION_NOT_INTERVIEWABLE);
+      }
+      throw new SessionAccessError(MESSAGES.SESSION_NOT_FOUND);
+    }
+    throw new ServiceError(
+      `${MESSAGES.SESSION_UPDATE_FAILED} — ${
+        error instanceof Error ? error.message : "unknown"
+      }`
+    );
+  }
 }
 
 // Attaches the Planner's output and moves the session to `ready`.

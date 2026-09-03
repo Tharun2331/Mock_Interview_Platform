@@ -3,7 +3,11 @@ import type { NextFunction, Request, Response } from "express";
 import { config } from "./config";
 import { MESSAGES } from "./messages";
 
-const verifier = CognitoJwtVerifier.create({
+// Exported so the WebSocket upgrade handler verifies against the same JWKS
+// cache rather than standing up a second verifier. A browser WebSocket cannot
+// send an Authorization header, so that path reads the token from the
+// handshake's subprotocol instead — different transport, same trust decision.
+export const verifier = CognitoJwtVerifier.create({
   userPoolId: config.cognitoUserPoolId,
   tokenUse: "access",
   clientId: config.cognitoUserPoolClientId,
