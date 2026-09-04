@@ -83,6 +83,86 @@ export function isProfileComplete(profile: UserProfile): boolean {
   );
 }
 
+// PUT /api/v1/profile — the editable display fields, and only those. A resume
+// arrives as multipart on its own route, and `profileVersion` is the server's to
+// set: accepting either here would let a client claim its material was current
+// without having sent any.
+export const ProfileDetailsBody = z.object({
+  username: z.string().trim().min(1).max(PROFILE_LIMITS.MAX_USERNAME),
+  firstName: z.string().trim().min(1).max(PROFILE_LIMITS.MAX_NAME),
+  lastName: z.string().trim().min(1).max(PROFILE_LIMITS.MAX_NAME),
+});
+
+export type ProfileDetailsBody = z.infer<typeof ProfileDetailsBody>;
+
+// What a client is allowed to see. Deliberately not the stored item.
+//
+// `resumeText` is absent even though it is redacted: the browser has no use for
+// it, it is the largest field on the item, and the smallest surface that answers
+// "is this profile complete and how current is it" is the one worth shipping.
+// `resumeKey` is absent too — an S3 key is server-side addressing, and a client
+// that never sees one cannot be the source of a request to read someone else's.
+export const ProfileViewSchema = z.object({
+  userId: z.string().min(1),
+  username: z.string().optional(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  githubUsername: z.string().optional(),
+  hasResume: z.boolean(),
+  repoCount: z.number().int().min(0),
+  profileVersion: z.number().int().min(0),
+  // Computed server-side by `isProfileComplete` rather than re-derived in the
+  // browser. The onboarding redirect turns on this one boolean, and two
+  // implementations of it would eventually disagree about who gets sent where.
+  complete: z.boolean(),
+  updatedAt: z.iso.datetime(),
+});
+
+export type ProfileView = z.infer<typeof ProfileViewSchema>;
+
+export function toProfileView(profile: UserProfile): ProfileView {
+  return {
+    userId: profile.userId,
+    username: profile.username,
+    firstName: profile.firstName,
+    lastName: profile.lastName,
+    githubUsername: profile.githubUsername,
+    hasResume: profile.resumeKey !== undefined,
+    repoCount: profile.repos.length,
+    profileVersion: profile.profileVersion,
+    complete: isProfileComplete(profile),
+    updatedAt: profile.updatedAt,
+  };
+}
+
+// GET /api/v1/profile. Null rather than a 404 for a candidate who has never
+// saved one: "no profile yet" is the expected state on first sign-in and the
+// answer the onboarding guard is asking for, not an error.
+export const ProfileResponseSchema = z.object({
+  profile: ProfileViewSchema.nullable(),
+});
+
+export type ProfileResponse = z.infer<typeof ProfileResponseSchema>;
+
+// POST /api/v1/profile/resume.
+//
+// The redaction summary is reported back on purpose: a candidate handing over a
+// resume deserves to see that personal details were stripped and how many. It
+// carries counts and type names only — a summary that quoted the removed values
+// would undo the removal.
+export const ResumeUploadResponseSchema = z.object({
+  profile: ProfileViewSchema,
+  resume: z.object({
+    characters: z.number().int().min(0),
+    pages: z.number().int().min(0),
+    usable: z.boolean(),
+    redactedCount: z.number().int().min(0),
+    redactedTypes: z.array(z.string()),
+  }),
+});
+
+export type ResumeUploadResponse = z.infer<typeof ResumeUploadResponseSchema>;
+
 // Roles are free text, so "Backend Engineer", "backend engineer" and
 // "Backend  Engineer" are the same interview and must hit the same cache entry.
 // Normalising at comparison time rather than storing a normalised copy keeps the

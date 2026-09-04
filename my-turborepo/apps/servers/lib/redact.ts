@@ -5,7 +5,7 @@ import {
 } from "@aws-sdk/client-comprehend";
 import { config } from "./config";
 import { REDACTION } from "./constants";
-import { ServiceError } from "./errors";
+import { RedactionError, ServiceError } from "./errors";
 import { MESSAGES } from "./messages";
 
 // Strips personal identifiers out of extracted resume text before anything else
@@ -166,7 +166,7 @@ async function collectComprehendSpans(text: string): Promise<Span[]> {
     // future Planner prompt, and nothing downstream could tell that from a
     // properly redacted resume. An upload that fails is recoverable; one that
     // succeeds with PII still in it is not.
-    throw new ServiceError(
+    throw new RedactionError(
       `${MESSAGES.REDACTION_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
       }`

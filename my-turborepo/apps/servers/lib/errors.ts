@@ -69,6 +69,19 @@ export class SessionStateError extends Error {
   }
 }
 
+// PII detection could not run, so the resume was not stored.
+//
+// Its own class rather than a ServiceError because the route has to treat it
+// differently: this is the fail-closed path, and the response has to say the
+// resume was rejected rather than that it was saved. Same reason GithubError
+// exists — a catch-all cannot tell the candidate which dependency let them down.
+export class RedactionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RedactionError";
+  }
+}
+
 // The profile exists but is mid-erasure, so a write to it must not land. Not a
 // SessionAccessError: there is no enumeration concern — the caller is
 // authenticated as the owner — so the response can say what is actually wrong.
