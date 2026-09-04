@@ -6,7 +6,11 @@ function Card({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card"
-      className={cn("bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm", className)}
+      // Lift plus hairline, no shadow — see the elevation note in globals.css.
+      className={cn(
+        "bg-card text-card-foreground border-hairline flex flex-col gap-6 rounded-xl border py-6",
+        className,
+      )}
       {...props}
     />
   );

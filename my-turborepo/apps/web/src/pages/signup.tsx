@@ -24,6 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { AuthLayout } from "@/components/layout/AuthLayout";
 import { GoogleIcon } from "@/components/GoogleIcon";
 import { errorMessage, isAlreadyAuthenticated } from "@/lib/errors";
 import { MESSAGES } from "@/lib/messages";
@@ -103,10 +104,12 @@ export function Signup() {
   }
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center p-4">
-      <Card className="w-full max-w-sm">
+    <AuthLayout>
+      <Card className="w-full">
         <CardHeader>
-          <CardTitle>{MESSAGES.SIGNUP_TITLE}</CardTitle>
+          <CardTitle className="font-display text-3xl">
+            {MESSAGES.SIGNUP_TITLE}
+          </CardTitle>
           <CardDescription>{MESSAGES.SIGNUP_DESCRIPTION}</CardDescription>
         </CardHeader>
 
@@ -123,7 +126,7 @@ export function Signup() {
 
           <div className="mt-6 flex items-center gap-3">
             <Separator className="flex-1" />
-            <span className="text-muted-foreground text-xs">
+            <span className="text-xs text-ink-faint">
               {MESSAGES.SIGNUP_DIVIDER}
             </span>
             <Separator className="flex-1" />
@@ -195,15 +198,18 @@ export function Signup() {
                 ? MESSAGES.SIGNUP_SUBMIT_PENDING
                 : MESSAGES.SIGNUP_SUBMIT}
             </Button>
-            <p className="text-muted-foreground text-sm">
+            <p className="text-sm text-ink-subtle">
               {MESSAGES.SIGNUP_HAS_ACCOUNT}{" "}
-              <Link to="/signin" className="text-primary underline-offset-4 hover:underline">
+              <Link
+                to="/signin"
+                className="text-cue-ink underline-offset-4 hover:underline"
+              >
                 {MESSAGES.SIGNUP_SIGNIN_LINK}
               </Link>
             </p>
           </CardFooter>
         </form>
       </Card>
-    </div>
+    </AuthLayout>
   );
 }

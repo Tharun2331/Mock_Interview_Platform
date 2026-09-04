@@ -61,6 +61,10 @@ export function useInterview(sessionId: string) {
   const [state, setState] = useState<InterviewState>({ status: "idle" });
   const [transcript, setTranscript] = useState<TranscriptRow[]>([]);
   const [level, setLevel] = useState(0);
+  // The interviewer's own amplitude, measured off the playback graph. Kept
+  // separate from `level` rather than folded into it: they are two different
+  // voices, and the screen colours them differently.
+  const [outputLevel, setOutputLevel] = useState(0);
   // Wall-clock end, set from the server's plan. Null until the interview is
   // live.
   const [endsAt, setEndsAt] = useState<number | null>(null);
@@ -254,6 +258,9 @@ export function useInterview(sessionId: string) {
     if (captureRef.current === null) return;
     const timer = setInterval(() => {
       setLevel(captureRef.current?.readLevel() ?? 0);
+      // Polled on the same tick so the two meters never disagree about when a
+      // turn changed hands.
+      setOutputLevel(voiceRef.current?.readLevel() ?? 0);
     }, AUDIO.LEVEL_POLL_MS);
     return () => clearInterval(timer);
   }, [state.status]);
@@ -277,5 +284,14 @@ export function useInterview(sessionId: string) {
     state.status === "interviewer-speaking" ||
     state.status === "interrupting";
 
-  return { state, transcript, level, micOpen, remainingMs, start, stop };
+  return {
+    state,
+    transcript,
+    level,
+    outputLevel,
+    micOpen,
+    remainingMs,
+    start,
+    stop,
+  };
 }

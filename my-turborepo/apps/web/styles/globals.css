@@ -1,120 +1,279 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* PrepPilot's design system.
+ *
+ * Direction comes from docs/design/references/. Those files are patterns to
+ * extract, never palettes to copy: the canvas ladder and hairline depth are
+ * Linear's pattern, the editorial low-weight display is ElevenLabs', the dense
+ * data cards are Supabase's, the short form rhythm is Cal's. The colour is
+ * PrepPilot's own.
+ *
+ * One accent, locked across every screen. The subject is the moment before you
+ * speak, so the accent is the brass of a stage cue lamp — the light that says
+ * you are on. It deliberately avoids emerald, violet and sky, because those
+ * three are spent on interview states and an accent that collides with a state
+ * would make the loudest thing on the interview screen ambiguous.
+ *
+ * Dark only. There is no light theme: the product is one continuous surface
+ * from the landing page to the live interview, and a theme switch would buy
+ * nothing but a second palette to keep honest.
+ */
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
+
   --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* The surface ladder. Hierarchy is carried by lift and hairlines rather than
+     shadow — a drop shadow on a near-black canvas reads as smudge, not depth. */
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+
+  /* The accent, addressable by its own name as well as through `primary`.
+     `text-cue` on a numeral or a rule says "this is the brand's one colour"
+     more honestly than `text-primary`, which reads as "this is a button". */
+  --color-cue: var(--cue);
+  --color-cue-hover: var(--cue-hover);
+  --color-cue-ink: var(--cue-ink);
+  --color-on-cue: var(--on-cue);
+
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+  --color-ink-faint: var(--ink-faint);
+
+  /* Interview states. These are semantic tokens, not decoration: each one is
+     the answer to "what is happening to my microphone right now", and every
+     screen that renders a state must reach for the same value. A component
+     needing `bg-emerald-400` inline to mean "recording" is a hole in this
+     block, not a shortcut. */
+  --color-state-recording: var(--state-recording);
+  --color-state-processing: var(--state-processing);
+  --color-state-speaking: var(--state-speaking);
+  --color-state-listening: var(--state-listening);
+
+  --color-score-strong: var(--score-strong);
+  --color-score-mixed: var(--score-mixed);
+  --color-score-weak: var(--score-weak);
+
+  /* Named apart from the utilities they back. `--font-display: var(--font-display)`
+     would be a variable defined in terms of itself. */
+  --font-display: var(--family-display);
+  --font-sans: var(--family-sans);
+  --font-mono: var(--family-mono);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 12px);
 }
 
+/* Both themes carry the same design: one accent, a four-step surface ladder,
+   hairline depth, and states that mean the same thing in either. What changes
+   is which end of the ladder is the floor.
+ *
+ * Two values genuinely cannot be shared. The gold reads at roughly 9:1 on the
+ * dark canvas but under 2:1 on white, so light mode needs a darker brass
+ * wherever the accent is *text* — `--cue-ink` — while the button *fill* stays
+ * the same gold in both, since it carries dark ink either way. And the state
+ * hues are chosen for their own floor: emerald at #3ecf8e is legible on
+ * near-black and illegible on white.
+ */
 :root {
+  /* 10px. Cards sit at lg/xl, controls at md — soft enough to feel modern,
+     tight enough that the interface reads as an instrument rather than a toy. */
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+
+  --family-display: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --family-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --family-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Light: a warm off-white floor, never pure #fff — the paper tone is what
+     lets a white card lift off the canvas without a shadow. */
+  --canvas: #fafaf9;
+  --surface-1: #ffffff;
+  --surface-2: #f4f4f2;
+  --surface-3: #ebebe8;
+  --hairline: #e4e4e1;
+  --hairline-strong: #d3d3cf;
+
+  --ink: #17171a;
+  --ink-muted: #43464d;
+  --ink-subtle: #6b6f78;
+  --ink-faint: #8e939c;
+
+  /* The cue lamp. Used scarcely, as an accent should be: the brand mark, the
+     primary action, the focus ring, and nothing else. */
+  --cue: #e9a93c;
+  --cue-hover: #f5bc5c;
+  --cue-pressed: #c88a28;
+  --on-cue: #0a0b0d;
+  /* The accent as type. Deep enough to clear 4.5:1 on the light canvas. */
+  --cue-ink: #8f5e10;
+
+  /* The orb's centre highlight. It mixes toward this, so on a dark canvas the
+     core reads as light and on a light canvas it reads as depth — the same
+     shape either way, rather than a bright orb vanishing into white paper. */
+  --orb-tint: #1a1a1a;
+
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --card: var(--surface-1);
+  --card-foreground: var(--ink);
+  --popover: var(--surface-1);
+  --popover-foreground: var(--ink);
+  --primary: var(--cue);
+  --primary-foreground: var(--on-cue);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--ink-subtle);
+  --accent: var(--surface-3);
+  --accent-foreground: var(--ink);
+  --destructive: #c7302f;
+  --destructive-foreground: #ffffff;
+  --border: var(--hairline);
+  --input: var(--hairline-strong);
+  --ring: var(--cue-ink);
+
+  /* Recording is the loudest signal the product ever shows, so it takes the
+     most saturated hue. Processing is deliberately achromatic: a wait is not an
+     event, and colouring it would compete with the states that are. Listening —
+     the interviewer is speaking and the microphone is still open — gets its own
+     identity rather than borrowing from either neighbour, because a candidate
+     who reads it as "recording" talks over the question and one who reads it as
+     "speaking" believes they are not being heard. */
+  --state-recording: #0f8f5b;
+  --state-processing: #6b6f78;
+  --state-speaking: #1f6fb2;
+  --state-listening: #6d3fd4;
+
+  --score-strong: #0f8f5b;
+  --score-mixed: #8f5e10;
+  --score-weak: #c7302f;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Cool near-black, never #000 — pure black flattens the hairlines that carry
+     the whole depth system. */
+  --canvas: #08090b;
+  --surface-1: #101114;
+  --surface-2: #16181c;
+  --surface-3: #1d2025;
+  --hairline: #24272e;
+  --hairline-strong: #31353e;
+
+  --ink: #f4f5f7;
+  --ink-muted: #b4b9c4;
+  --ink-subtle: #868c99;
+  --ink-faint: #5c626e;
+
+  /* The gold clears 9:1 here, so accent-as-text needs no darker cut. */
+  --cue-ink: var(--cue);
+  --orb-tint: #ffffff;
+
+  --popover: var(--surface-2);
+  --destructive: #f2585b;
+  --destructive-foreground: #0a0b0d;
+  --ring: var(--cue);
+
+  --state-recording: #3ecf8e;
+  --state-processing: #868c99;
+  --state-speaking: #6fa8dc;
+  --state-listening: #a78bfa;
+
+  --score-strong: #3ecf8e;
+  --score-mixed: #e9a93c;
+  --score-weak: #f2585b;
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+    /* Inter runs slightly loose here, matching the editorial dialect the
+       display face sets. */
+    letter-spacing: 0.01em;
+  }
+
+  /* One focus treatment everywhere, in the accent, always visible. The
+     interview loop must be fully keyboard-drivable and a candidate tabbing to
+     the stop control needs to see where they are. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring/70 ring-offset-2 ring-offset-background;
+  }
+
+  /* Display copy. Weight stays where the face sits — never bolded, which is
+     what keeps the voice editorial rather than consumer-marketing. */
+  .font-display {
+    font-weight: 400;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer components {
+  /* The signature element: a soft radial bloom standing in for the presence of
+     the interviewer. Its hue is set by the caller from a state token, so the
+     orb is a reading of system state and not decoration sitting next to one.
+     Scale is driven by measured amplitude at the call site, never by a flag. */
+  .presence-orb {
+    background: radial-gradient(
+      circle at 50% 45%,
+      color-mix(in oklab, var(--orb-hue) 88%, var(--orb-tint)) 0%,
+      var(--orb-hue) 42%,
+      color-mix(in oklab, var(--orb-hue) 55%, var(--canvas)) 72%,
+      transparent 100%
+    );
+  }
+
+  /* The same bloom at rest, well behind content, as page atmosphere. Kept to
+     one hue at a time — a field of drifting colours would be a second
+     signature competing with the first. */
+  .orb-atmosphere {
+    background: radial-gradient(
+      circle,
+      color-mix(in oklab, var(--orb-hue) 22%, transparent) 0%,
+      transparent 68%
+    );
+  }
+}
+
+/* The level meter degrades to a static state indicator rather than
+   disappearing: someone who has asked for less motion still needs to know
+   whether their microphone is live. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }

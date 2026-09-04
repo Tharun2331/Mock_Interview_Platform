@@ -9,11 +9,20 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        // Hover lifts to the lighter cue rather than fading the fill. Dropping
+        // opacity on a saturated accent over a near-black canvas dims it toward
+        // the background, which reads as "disabling" instead of "hovering".
+        default: "bg-primary text-primary-foreground hover:bg-cue-hover",
+        // Dark ink on the rose, not white. The destructive token is light
+        // enough that white text lands under 3:1 — and this variant carries the
+        // control a candidate reaches for to stop talking, so it is the last
+        // place in the product to accept unreadable.
         destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/40",
+        // No shadow. Depth on this canvas is the surface ladder plus hairlines;
+        // a drop shadow over near-black renders as a smudge, not a lift.
         outline:
-          "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50",
+          "border border-hairline-strong bg-surface-1 hover:bg-surface-2 hover:text-accent-foreground",
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
         link: "text-primary underline-offset-4 hover:underline",

@@ -267,7 +267,7 @@ export function Form() {
 
   if (submission.status === "planned") {
     return (
-      <div className="flex h-full w-full items-center justify-center p-4">
+      <div className="flex min-h-full w-full items-center justify-center p-4 py-10">
         <SessionPlan
           plan={submission.plan}
           onBegin={() => goToInterview(submission.result, submission.plan)}
@@ -282,11 +282,14 @@ export function Form() {
 
   if (submission.status === "plan-failed") {
     return (
-      <div className="flex h-full w-full items-center justify-center p-4">
+      <div className="flex min-h-full w-full items-center justify-center p-4 py-10">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangleIcon className="size-4 shrink-0 text-muted-foreground" />
+            <CardTitle className="flex items-center gap-2 font-display text-2xl">
+              <AlertTriangleIcon
+                aria-hidden
+                className="size-4 shrink-0 text-score-mixed"
+              />
               {MESSAGES.PLAN_FAILED_TITLE}
             </CardTitle>
             <CardDescription>{submission.message}</CardDescription>
@@ -304,7 +307,7 @@ export function Form() {
             </Button>
             <Button
               variant="ghost"
-              className="w-full cursor-pointer"
+              className="w-full cursor-pointer text-ink-subtle hover:text-ink"
               onClick={() => setSubmission({ status: "idle" })}
             >
               {MESSAGES.PLAN_START_OVER}
@@ -319,17 +322,20 @@ export function Form() {
     const characters = submission.result.resume?.characters ?? 0;
 
     return (
-      <div className="flex h-full w-full items-center justify-center p-4">
+      <div className="flex min-h-full w-full items-center justify-center p-4 py-10">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangleIcon className="size-4 shrink-0 text-muted-foreground" />
+            <CardTitle className="flex items-center gap-2 font-display text-2xl">
+              <AlertTriangleIcon
+                aria-hidden
+                className="size-4 shrink-0 text-score-mixed"
+              />
               {MESSAGES.RESUME_THIN_TITLE}
             </CardTitle>
             <CardDescription>{resumeThinDetail(characters)}</CardDescription>
           </CardHeader>
 
-          <CardFooter className="mt-4 flex-col gap-2">
+          <CardFooter className="mt-2 flex-col gap-2">
             <Button
               className="w-full cursor-pointer"
               onClick={() => void requestPlan(submission.result)}
@@ -338,7 +344,7 @@ export function Form() {
             </Button>
             <Button
               variant="ghost"
-              className="w-full cursor-pointer"
+              className="w-full cursor-pointer text-ink-subtle hover:text-ink"
               onClick={() => {
                 setResume(null);
                 setSubmission({ status: "idle" });
@@ -353,11 +359,18 @@ export function Form() {
   }
 
   return (
-    <div className="flex h-full w-full items-center justify-center p-4">
+    <div className="flex min-h-full w-full items-center justify-center p-4 py-10">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>{MESSAGES.FORM_TITLE}</CardTitle>
-          <CardDescription>{MESSAGES.FORM_DESCRIPTION}</CardDescription>
+          <span className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-ink-faint">
+            {MESSAGES.SETUP_EYEBROW}
+          </span>
+          <CardTitle className="font-display text-3xl">
+            {MESSAGES.FORM_TITLE}
+          </CardTitle>
+          <CardDescription className="leading-relaxed">
+            {MESSAGES.FORM_DESCRIPTION}
+          </CardDescription>
         </CardHeader>
 
         <CardContent className="flex flex-col gap-6">
@@ -436,7 +449,7 @@ export function Form() {
               className={
                 roleError !== null
                   ? "text-xs text-destructive"
-                  : "text-xs text-muted-foreground"
+                  : "text-xs text-ink-subtle"
               }
             >
               {roleError ?? MESSAGES.FORM_ROLE_HINT}
@@ -446,7 +459,7 @@ export function Form() {
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <Label htmlFor="github">{MESSAGES.FORM_GITHUB_LABEL}</Label>
-              <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+              <span className="rounded-full border border-hairline px-2 py-0.5 text-[0.7rem] text-ink-faint">
                 {MESSAGES.FORM_GITHUB_OPTIONAL}
               </span>
             </div>
@@ -461,7 +474,7 @@ export function Form() {
               aria-describedby="github-hint"
               onChange={(e) => setGitHub(e.target.value)}
             />
-            <p id="github-hint" className="text-xs text-muted-foreground">
+            <p id="github-hint" className="text-xs text-ink-subtle">
               {MESSAGES.FORM_GITHUB_HINT}
             </p>
           </div>
@@ -473,7 +486,7 @@ export function Form() {
               change is available without watching the bar. */}
           {isBusy ? (
             <div className="w-full space-y-2" aria-live="polite">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <div className="flex items-center justify-between font-mono text-xs text-ink-subtle">
                 {/* Three named phases, not one bar. Only the upload has real
                     progress to report; the other two are server-side waits, so
                     naming them is the only honest signal that something is
@@ -501,6 +514,7 @@ export function Form() {
           ) : null}
 
           <Button
+            size="lg"
             className="w-full cursor-pointer"
             onClick={handleSubmit}
             disabled={isBusy}
