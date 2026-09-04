@@ -26,7 +26,19 @@ planRouter.post("/", async (req, res) => {
     return;
   }
 
+  // Three awaits, each of which can be slow for a different reason: a DynamoDB
+  // read, a Bedrock generation, a DynamoDB write. The candidate waits on a
+  // progress bar for all three with no way to tell them apart, so the stage
+  // boundaries are logged. Without this a stalled request is indistinguishable
+  // from a slow one, on the server as well as on the client.
+  const startedAt = Date.now();
+  const stage = (name: string): void => {
+    console.log(`[plan] ${parsed.data.sessionId} ${name} +${Date.now() - startedAt}ms`);
+  };
+
   try {
+    stage("loading inputs");
+
     // Read from the session, never from the request. The client is not trusted
     // with the Planner's inputs: accepting repos and resume text on the wire
     // meant a caller could plan against someone else's material, and the server
@@ -36,10 +48,14 @@ planRouter.post("/", async (req, res) => {
       userId,
     });
 
+    stage("calling planner");
+
     const result = await runPlanner({
       targetRole: parsed.data.targetRole,
       ...inputs,
     });
+
+    stage("persisting plan");
 
     // Persisted after the model call, so a Bedrock failure leaves the session
     // at `planning` and the candidate can retry against the same session rather
@@ -52,8 +68,11 @@ planRouter.post("/", async (req, res) => {
       plan: result,
     });
 
+    stage("done");
     res.json(result);
   } catch (error) {
+    stage("failed");
+
     // Unknown session and someone else's session are the same response by
     // design — see SessionAccessError.
     if (error instanceof SessionAccessError) {

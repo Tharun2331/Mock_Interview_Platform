@@ -41,10 +41,23 @@ const csvList = (key: string, value: string): string[] => {
 // "Invocation of model ID ... with on-demand throughput isn't supported" —
 // which silently cost this chain its middle tier: every Ministral failure fell
 // straight through to Qwen. Verified against Bedrock 2026-08-26.
+//
+// Ministral was the primary until 2026-09-03, when it stopped responding in
+// us-east-1: the request is accepted, the connection opens, and no bytes are
+// ever sent back. Not an error the SDK can classify — it surfaces only as
+// `TimeoutError: Stream timed out because of no activity`, so the chain fell
+// through to Llama on every single request and charged the candidate 90s of
+// timeouts first. Measured with `scripts/modelProbe.ts`: Ministral times out
+// at 30s, Llama answers in 280ms, Qwen in 478ms.
+//
+// It is demoted rather than removed, so the chain recovers by itself if the
+// model comes back. NOTE: this contradicts the "Ministral 3 8B for text"
+// locked decision in CLAUDE.md — that line needs updating, or this reverting,
+// once you have decided whether Ministral is coming back.
 const DEFAULT_TEXT_MODELS = [
-  "mistral.ministral-3-8b-instruct",
   "us.meta.llama4-scout-17b-instruct-v1:0",
   "qwen.qwen3-coder-30b-a3b-v1:0",
+  "mistral.ministral-3-8b-instruct",
 ].join(",");
 
 export const config = {

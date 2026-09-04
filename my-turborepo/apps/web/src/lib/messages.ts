@@ -130,6 +130,12 @@ export const MESSAGES = {
   FORM_FAILED: "We could not read that GitHub profile. Check the URL and retry.",
   FORM_UNREACHABLE:
     "We could not reach PrepPilot. Check your connection and try again.",
+  // Distinct from FORM_UNREACHABLE. Both arrive as an axios error with no
+  // response, but the recovery differs: unreachable means nothing answered, so
+  // check the connection; this means the server took the request and never
+  // finished, so the connection is fine and retrying is the whole advice.
+  FORM_TIMED_OUT:
+    "PrepPilot took too long to answer. Nothing was lost — try again.",
 
   // --- Resume attachment ---
   RESUME_LABEL: "Resume",

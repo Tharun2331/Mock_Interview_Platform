@@ -91,7 +91,20 @@ function serverFailure(error: unknown): ServerFailure | null {
 // profile was unreadable, which sent people to re-check a URL that was fine
 // while the real problem was that nothing was listening.
 function isUnreachable(error: unknown): boolean {
-  return axios.isAxiosError(error) && error.response === undefined;
+  return (
+    axios.isAxiosError(error) && error.response === undefined && !isTimeout(error)
+  );
+}
+
+// The client's own timeout firing. It looks identical to "unreachable" — an
+// axios error carrying no response — but it is the opposite situation: the
+// server took the request and never answered, so telling someone to check
+// their connection sends them to fix something that is not broken.
+function isTimeout(error: unknown): boolean {
+  return (
+    axios.isAxiosError(error) &&
+    (error.code === "ECONNABORTED" || error.code === "ETIMEDOUT")
+  );
 }
 
 // Which message a failed plan call deserves. The distinctions matter because
@@ -99,6 +112,7 @@ function isUnreachable(error: unknown): boolean {
 // one cannot be replanned at all, and everything else is worth retrying.
 function planFailureMessage(error: unknown): string {
   if (isUnauthorized(error)) return MESSAGES.FORM_SESSION_EXPIRED;
+  if (isTimeout(error)) return MESSAGES.FORM_TIMED_OUT;
   if (isUnreachable(error)) return MESSAGES.FORM_UNREACHABLE;
   if (!axios.isAxiosError(error)) return MESSAGES.PLAN_FAILED_GENERIC;
 
@@ -256,6 +270,8 @@ export function Form() {
         toast.error(failure.message);
       } else if (isUnauthorized(error)) {
         toast.error(MESSAGES.FORM_SESSION_EXPIRED);
+      } else if (isTimeout(error)) {
+        toast.error(MESSAGES.FORM_TIMED_OUT);
       } else if (isUnreachable(error)) {
         toast.error(MESSAGES.FORM_UNREACHABLE);
       } else {
