@@ -167,6 +167,30 @@ export const UPLOAD = {
   MIN_USEFUL_RESUME_CHARS: RESUME_LIMITS.MIN_USEFUL_CHARS,
 } as const;
 
+// Resume PII stripping, applied once at profile save before the text is stored
+// or shown to any model.
+export const REDACTION = {
+  // Comprehend's full PII entity set is English-only. A resume in another
+  // language still gets the deterministic pass, which is language-independent.
+  LANGUAGE_CODE: "en",
+  // Deliberately low. A false positive costs one stripped word the Planner
+  // could have used; a false negative puts a candidate's home address into a
+  // model prompt and a database. The asymmetry is not close, so this favours
+  // recall over precision.
+  MIN_CONFIDENCE: 0.5,
+  // DetectPiiEntities' real-time ceiling. Unreachable in practice —
+  // PLAN_LIMITS.MAX_RESUME_CHARS caps the input at 20k characters, roughly a
+  // quarter of this — and the redactor throws rather than chunking if it is
+  // ever crossed. See the note in lib/redact.ts on why silent chunking is the
+  // wrong failure mode here.
+  MAX_BYTES: 100_000,
+  // Retries are safe here, unlike the Bedrock path: the call is idempotent,
+  // sub-second, and has no fallback chain behind it to make a second attempt
+  // redundant.
+  MAX_ATTEMPTS: 2,
+  REQUEST_TIMEOUT_MS: 10_000,
+} as const;
+
 // How much candidate material goes into the prompt. These are cost and
 // relevance controls, not correctness ones — the plan is only as good as the
 // signal here, but every extra character is an input token on every request.

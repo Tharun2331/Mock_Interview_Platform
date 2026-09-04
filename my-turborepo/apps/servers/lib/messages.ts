@@ -61,6 +61,13 @@ export const MESSAGES = {
   PROFILE_SAVE_FAILED:  "Could not save the candidate profile.",
   PLAN_CACHE_READ_FAILED: "Could not read the cached interview plan.",
   PLAN_CACHE_SAVE_FAILED: "Could not cache the interview plan.",
+  // Log-facing. Redaction failing closed means the upload fails: storing text
+  // that only the deterministic pass had seen would put names and addresses in
+  // DynamoDB with nothing downstream able to tell.
+  REDACTION_FAILED:     "Could not scan the resume for personal information.",
+  REDACTION_INPUT_TOO_LARGE: "Resume text exceeds the PII scan limit — PLAN_LIMITS.MAX_RESUME_CHARS and REDACTION.MAX_BYTES have drifted apart.",
+  // Client-facing. Says what failed without implying their file was wrong.
+  REDACTION_UNAVAILABLE: "We could not process your resume right now. This is on our side — try again shortly.",
   // Client-facing.
   PROFILE_UNAVAILABLE:  "We could not save your profile right now. This is on our side — try again shortly.",
   // Client-facing. Reached only between an erasure request and the sweep that

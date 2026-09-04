@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1083.0",
+    "@aws-sdk/client-comprehend": "^3.1127.0",
     "@aws-sdk/client-dynamodb": "^3.1119.0",
     "@aws-sdk/client-s3": "^3.1115.0",
     "@aws-sdk/lib-dynamodb": "^3.1119.0",

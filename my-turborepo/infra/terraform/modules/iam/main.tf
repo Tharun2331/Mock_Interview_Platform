@@ -103,6 +103,27 @@ data "aws_iam_policy_document" "bedrock_invoke" {
     resources = local.upload_object_arns
   }
 
+  # PII detection on resume text, run once at profile save before the text is
+  # stored or reaches a model.
+  #
+  # No resource scoping is possible: DetectPiiEntities is a stateless analysis
+  # call that owns nothing, so it takes "*" — the same shape AWS documents for
+  # it. The action list is the control here, and it is deliberately one action.
+  # The async job APIs (StartPiiEntitiesDetectionJob and friends) read and write
+  # S3 on the caller's behalf and are not granted.
+  #
+  # Comprehend is not Bedrock, which is worth naming against the "all AI through
+  # Bedrock" decision in CLAUDE.md: that rule is about model inference and the
+  # agents behind it. This is a managed detection API, chosen over a Bedrock
+  # text model because a purpose-built PII detector beats an LLM at recall on
+  # the one job that must not silently miss anything. See ADR (step 6).
+  statement {
+    sid       = "ComprehendDetectPii"
+    effect    = "Allow"
+    actions   = ["comprehend:DetectPiiEntities"]
+    resources = ["*"]
+  }
+
   # Scoped to the one table, with no index ARN because the table has no GSI.
   # Every access pattern in data-model.md §1 is a GetItem or a Query on the
   # base table.
