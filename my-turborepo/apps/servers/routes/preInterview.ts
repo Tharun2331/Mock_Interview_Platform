@@ -1,15 +1,13 @@
 import { ulid } from "ulid";
 import { Router } from "express";
-import axios from "axios";
-import { z } from "zod";
 import {
   PreInterviewBody,
   extractGithubUsername,
   type PreInterviewRepo,
   type PreInterviewResume,
 } from "@repo/shared";
-import { config } from "../lib/config";
 import { UPLOAD } from "../lib/constants";
+import { fetchRepos } from "../lib/github";
 import {
   GithubError,
   ResumeParseError,
@@ -29,53 +27,16 @@ import { createSession } from "../lib/sessions";
 
 export const preInterviewRouter = Router();
 
-const GithubRepoSchema = z.object({
-  description: z.string().nullable(),
-  name: z.string(),
-  full_name: z.string(),
-  stargazers_count: z.number(),
-});
-
-const GithubReposSchema = z.array(GithubRepoSchema);
-
-async function fetchRepos(username: string): Promise<PreInterviewRepo[]> {
-  let response;
-  try {
-    response = await axios.get(
-      // Encoded despite passing the username allowlist — defence in depth, so
-      // this stays safe if the allowlist is ever widened.
-      `${config.githubApiBase}/users/${encodeURIComponent(username)}/repos`,
-      { timeout: config.githubTimeoutMs }
-    );
-  } catch (error) {
-    // Wrapped rather than left as an AxiosError so the route can tell this
-    // apart from every other failure in the handler.
-    throw new GithubError(
-      `${MESSAGES.GITHUB_FETCH_FAILED} — ${
-        error instanceof Error ? error.message : "unknown"
-      }`
-    );
-  }
-
-  const parsed = GithubReposSchema.safeParse(response.data);
-  if (!parsed.success) {
-    throw new GithubError(MESSAGES.GITHUB_FETCH_FAILED);
-  }
-
-  return parsed.data.map((repo) => ({
-    description: repo.description,
-    name: repo.name,
-    fullName: repo.full_name,
-    starCount: repo.stargazers_count,
-  }));
-}
-
 // Stores the original PDF and returns its extracted text. The raw file is kept
 // so a future parser change can be re-run against past uploads rather than
 // asking candidates to re-submit.
+//
+// SUPERSEDED by POST /api/v1/profile/resume, which redacts before storing. This
+// path still writes raw resume text to SESSION#<sid>/INPUTS and is removed in
+// the step that rewrites this route around the profile. Both write to the same
+// stable S3 key, so they cannot disagree about where a candidate's resume lives.
 async function ingestResume(args: {
   userId: string;
-  sessionId: string;
   bytes: Uint8Array;
 }): Promise<{ resume: PreInterviewResume; resumeKey: string }> {
   const [resumeKey, parsed] = await Promise.all([
@@ -150,7 +111,7 @@ preInterviewRouter.post("/", async (req, res) => {
     // GitHub profile there is simply nothing to scrape, which is not an error.
     const [repos, ingested] = await Promise.all([
       username === null ? Promise.resolve<PreInterviewRepo[]>([]) : fetchRepos(username),
-      ingestResume({ userId, sessionId, bytes: pdfBytes }),
+      ingestResume({ userId, bytes: pdfBytes }),
     ]);
 
     // After the ingestion, not before: there is no session worth recording

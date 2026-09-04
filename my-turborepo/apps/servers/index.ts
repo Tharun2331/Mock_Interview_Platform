@@ -4,6 +4,7 @@ import helmet from "helmet";
 import { config } from "./lib/config";
 import { planRouter } from "./routes/plan";
 import { preInterviewRouter } from "./routes/preInterview";
+import { profileRouter } from "./routes/profile";
 import { attachInterviewSocket } from "./routes/interview";
 import { AuthMiddleware } from "./lib/cognitoAuth";
 import { apiRateLimiter } from "./lib/rateLimit";
@@ -23,6 +24,10 @@ app.use(express.json({ limit: config.jsonBodyLimit }));
 // rather than the IP. The cost is that an unauthenticated flood still reaches
 // token verification — that is JWKS-cached and local, so it is cheap, whereas
 // the GitHub quota this protects is not.
+// Rate limited like the rest: the resume handler fans out to Comprehend, S3 and
+// DynamoDB on one request, which is the most expensive thing an authenticated
+// caller can trigger here.
+app.use("/api/v1/profile", AuthMiddleware, apiRateLimiter, profileRouter);
 app.use("/api/v1/pre-interview", AuthMiddleware, apiRateLimiter, preInterviewRouter);
 app.use("/api/v1/plan", AuthMiddleware, apiRateLimiter, planRouter);
 

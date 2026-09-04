@@ -6,6 +6,9 @@ export const MESSAGES = {
   UNAUTHORIZED_MISSING_TOKEN: "Unauthorized: missing or malformed token",
   UNAUTHORIZED_INVALID_TOKEN: "Unauthorized: invalid token",
   RATE_LIMITED:         "Too many requests. Wait a moment and try again.",
+  // Client-facing, and safe to be specific: the value came from them and the
+  // fix is theirs. Names the shape rather than saying "invalid".
+  INVALID_GITHUB_URL:   "Enter a GitHub profile URL, like https://github.com/your-username.",
   PLAN_FAILED:          "Could not generate an interview plan. Try again.",
 
   UPLOAD_NOT_A_FILE:    "No resume file was included in the upload.",
