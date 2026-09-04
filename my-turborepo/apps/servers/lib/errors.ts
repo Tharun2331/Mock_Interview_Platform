@@ -69,6 +69,16 @@ export class SessionStateError extends Error {
   }
 }
 
+// The profile exists but is mid-erasure, so a write to it must not land. Not a
+// SessionAccessError: there is no enumeration concern — the caller is
+// authenticated as the owner — so the response can say what is actually wrong.
+export class ProfileStateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProfileStateError";
+  }
+}
+
 export class BedrockError extends Error {
   readonly modelsTried: string[];
 

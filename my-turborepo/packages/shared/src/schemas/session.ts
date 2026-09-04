@@ -22,11 +22,19 @@ export const KEY_PREFIX = {
 } as const;
 
 // Fixed sort keys, as opposed to the prefixed ones above.
+//
+// PROFILE and PLAN live under USER#<uid>, not SESSION#<sid>: the candidate's
+// resume and repositories are captured once at onboarding and reused by every
+// session, so they are user-scoped material rather than session-scoped input.
+// PLAN caches the last Planner output so a second interview against the same
+// role and the same material does not pay for a second generation.
 export const SORT_KEY = {
   META: "META",
   INPUTS: "INPUTS",
   COACH: "COACH",
   EVAL_SUMMARY: "EVAL#SUMMARY",
+  PROFILE: "PROFILE",
+  PLAN: "PLAN",
 } as const;
 
 export const sessionPk = (sessionId: string): string =>
@@ -185,6 +193,12 @@ export type SessionCoach = z.infer<typeof SessionCoachSchema>;
 
 // USER#<uid> / SESSION#<sid> — the lookup item that makes a user's history a
 // plain base-table Query, and the reason the table needs no GSI.
+//
+// The USER#<uid> partition is no longer session items alone: it also holds
+// PROFILE and PLAN. Both sort before "SESSION#" lexicographically, so a history
+// query MUST filter with `begins_with(SK, "SESSION#")` rather than reading the
+// whole partition — an unfiltered Query would hand the caller a profile item
+// and fail to parse as a session ref.
 //
 // Written once and never updated. It deliberately carries no `status` and no
 // `role`, both of which change after creation: a denormalised copy has to be
