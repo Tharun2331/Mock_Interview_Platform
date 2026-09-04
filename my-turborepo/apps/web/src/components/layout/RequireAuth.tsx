@@ -1,4 +1,5 @@
 import { Navigate, Outlet } from "react-router";
+import { PresenceOrb } from "@/components/PresenceOrb";
 import { useAuthStatus } from "@/lib/auth";
 import { MESSAGES } from "@/lib/messages";
 
@@ -7,8 +8,14 @@ export function RequireAuth() {
 
   if (status === "loading") {
     return (
-      <div className="flex h-screen w-screen items-center justify-center">
-        <p className="text-muted-foreground text-sm">{MESSAGES.LOADING}</p>
+      // Bootstrapping is one of auth's four renderable conditions, and it gets
+      // the product's canvas rather than an unstyled flash on the way in.
+      <div className="flex h-screen w-full flex-col items-center justify-center gap-5 bg-background">
+        <PresenceOrb
+          hue="var(--cue)"
+          className="size-12 animate-pulse motion-reduce:animate-none"
+        />
+        <p className="text-sm text-ink-subtle">{MESSAGES.LOADING}</p>
       </div>
     );
   }

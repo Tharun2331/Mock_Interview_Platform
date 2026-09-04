@@ -15,6 +15,22 @@ export const BEDROCK = {
   // the few-shot exemplar now supplies the shape that temperature used to
   // have to guess at.
   TEMPERATURE: 0.2,
+  // A 768-token plan from an 8B model lands in a couple of seconds. Anything
+  // past this is a stalled socket, not a slow model — and the caller is a
+  // person watching a progress bar, so failing over to the next model beats
+  // waiting. Applied per HTTP attempt, so the worst case is roughly this
+  // times the length of the fallback chain.
+  REQUEST_TIMEOUT_MS: 30_000,
+  CONNECTION_TIMEOUT_MS: 5_000,
+  // One attempt, not the SDK's default of three.
+  //
+  // Retries and a fallback chain are the same mechanism applied twice, and
+  // stacking them multiplies: a model that accepts the connection and then
+  // sends nothing cost 3 x REQUEST_TIMEOUT_MS before the chain even moved on.
+  // Measured at 92s on a request a candidate was watching a progress bar for.
+  // Falling straight to the next model is both faster and more likely to work
+  // than asking a stalled one again.
+  MAX_ATTEMPTS: 1,
 } as const;
 
 // Tool names the Mock Interview agent calls over the Sonic stream. Referenced

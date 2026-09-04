@@ -28,6 +28,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { errorMessage, isAlreadyAuthenticated } from "@/lib/errors";
+import { AuthLayout } from "@/components/layout/AuthLayout";
 import { MESSAGES } from "@/lib/messages";
 
 // Handed over from the signup page via router state. Email only — the password
@@ -125,15 +126,15 @@ export function Confirm() {
   });
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center p-4">
-      <Card className="w-full max-w-sm">
+    <AuthLayout>
+      <Card className="w-full">
         <CardHeader>
-          <CardTitle>
+          <CardTitle className="font-display text-3xl">
             {isEditingEmail
               ? MESSAGES.CONFIRM_EDIT_EMAIL_TITLE
               : MESSAGES.CONFIRM_TITLE}
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="leading-relaxed">
             {isEditingEmail
               ? MESSAGES.CONFIRM_EDIT_EMAIL_HINT
               : MESSAGES.CONFIRM_DESCRIPTION(state.email)}
@@ -176,7 +177,7 @@ export function Confirm() {
               <Button
                 type="button"
                 variant="ghost"
-                className="w-full cursor-pointer"
+                className="w-full cursor-pointer text-ink-subtle hover:text-ink"
                 onClick={() => {
                   emailForm.reset({ email: state.email });
                   setIsEditingEmail(false);
@@ -216,7 +217,7 @@ export function Confirm() {
               <Button
                 type="button"
                 variant="ghost"
-                className="w-full cursor-pointer"
+                className="w-full cursor-pointer text-ink-subtle hover:text-ink"
                 disabled={isSubmitting}
                 onClick={() => setIsEditingEmail(true)}
               >
@@ -226,6 +227,6 @@ export function Confirm() {
           </form>
         )}
       </Card>
-    </div>
+    </AuthLayout>
   );
 }

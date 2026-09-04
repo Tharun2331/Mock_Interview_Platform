@@ -8,6 +8,15 @@ import { AUDIO } from "@/lib/audioConstants";
 // queued end to end, which only the audio clock can do without gaps.
 export class InterviewerVoice {
   private context: AudioContext | null = null;
+  // Every chunk is routed through this bus rather than straight to the
+  // destination, so one analyser can measure the interviewer's voice the same
+  // way capture.ts measures the candidate's. It is still an ordinary path to
+  // context.destination — the browser recognises it as output, which is what
+  // keeps echo cancellation working.
+  private bus: AnalyserNode | null = null;
+  // Explicitly backed by ArrayBuffer, not ArrayBufferLike: getFloatTimeDomainData
+  // will not accept a view that might sit on a SharedArrayBuffer.
+  private samples: Float32Array<ArrayBuffer> | null = null;
   // When the next chunk should start, on the AudioContext clock. Ahead of
   // currentTime whenever audio is queued.
   private playheadAt = 0;
@@ -22,8 +31,35 @@ export class InterviewerVoice {
       this.context = new AudioContext({
         sampleRate: AUDIO.OUTPUT_SAMPLE_RATE,
       });
+      const bus = this.context.createAnalyser();
+      bus.fftSize = AUDIO.ANALYSER_FFT_SIZE;
+      bus.connect(this.context.destination);
+      this.bus = bus;
+      this.samples = new Float32Array(bus.fftSize);
     }
     return this.context;
+  }
+
+  // Real measured amplitude of what is actually reaching the speakers, 0..1.
+  //
+  // Read from the analyser rather than inferred from "the interviewer is
+  // speaking", for the same reason the microphone meter is: a flag-driven
+  // indicator keeps moving through a gap in the audio, or through a stall, and
+  // an indicator that moves when nothing is playing is worse than none.
+  readLevel(): number {
+    const bus = this.bus;
+    const samples = this.samples;
+    if (bus === null || samples === null || this.playing.size === 0) return 0;
+
+    bus.getFloatTimeDomainData(samples);
+    // Peak, not RMS — matches the capture meter, so the two read at the same
+    // scale and the orb does not jump in size when the floor changes hands.
+    let peak = 0;
+    for (const sample of samples) {
+      const magnitude = Math.abs(sample);
+      if (magnitude > peak) peak = magnitude;
+    }
+    return Math.min(1, peak);
   }
 
   async resume(): Promise<void> {
@@ -59,7 +95,7 @@ export class InterviewerVoice {
 
     const source = context.createBufferSource();
     source.buffer = buffer;
-    source.connect(context.destination);
+    source.connect(this.bus ?? context.destination);
 
     // A small lead the first time, so the first chunk is not scheduled in the
     // past. After that each chunk starts exactly where the previous one ended.
@@ -102,6 +138,9 @@ export class InterviewerVoice {
 
   close(): void {
     this.interrupt();
+    this.bus?.disconnect();
+    this.bus = null;
+    this.samples = null;
     void this.context?.close();
     this.context = null;
   }

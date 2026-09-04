@@ -159,10 +159,8 @@ Default to wrapping a shadcn component in a project component that encodes PrepP
 
 ---
 
-## Visual References
-Before styling or building any screen, check `docs/design/references/README.md` 
-for a relevant reference image, then `view` it directly before writing component code.
-Treat these as the visual source of truth over generic shadcn defaults.
+## Design references
+Before styling any screen, check `docs/design/references/README.md` and consult the matching `*-design.md` file for tone, typography, spacing, and motion. Never copy exact colors or branding from these — extract the pattern, apply PrepPilot's own accent.
 
 
 # Applies to both modes

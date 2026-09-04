@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { Hub } from "aws-amplify/utils";
 import { getCurrentUser } from "aws-amplify/auth";
+import { PresenceOrb } from "@/components/PresenceOrb";
 import { errorMessage } from "@/lib/errors";
 import { MESSAGES } from "@/lib/messages";
 
@@ -40,10 +41,15 @@ export function Callback() {
   }, [navigate]);
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center p-4">
-      <p className="text-muted-foreground text-sm">
-        {MESSAGES.CALLBACK_SIGNING_IN}
-      </p>
+    <div className="flex min-h-screen w-full flex-col items-center justify-center gap-6 bg-background p-4">
+      {/* The same bloom the rest of the product uses, here as the only thing on
+          screen. A redirect landing is a moment of doubt about whether anything
+          is happening, so it gets the brand mark rather than bare text. */}
+      <PresenceOrb
+        hue="var(--cue)"
+        className="size-16 animate-pulse motion-reduce:animate-none"
+      />
+      <p className="text-sm text-ink-muted">{MESSAGES.CALLBACK_SIGNING_IN}</p>
     </div>
   );
 }

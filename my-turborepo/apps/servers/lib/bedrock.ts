@@ -9,6 +9,15 @@ import { BedrockError } from "./errors";
 
 export const bedrockClient = new BedrockRuntimeClient({
   region: config.awsRegion,
+  // Same reasoning as `githubTimeoutMs` on the GitHub call: without these a
+  // stalled upstream holds the candidate's request open indefinitely, and the
+  // fallback chain below never gets to run because the first model never
+  // fails. A timeout is what turns a hang into a fallback.
+  maxAttempts: BEDROCK.MAX_ATTEMPTS,
+  requestHandler: {
+    connectionTimeout: BEDROCK.CONNECTION_TIMEOUT_MS,
+    requestTimeout: BEDROCK.REQUEST_TIMEOUT_MS,
+  },
 });
 
 // One demonstrated input/output pair, shaped exactly like a real call.
@@ -83,7 +92,20 @@ export async function converseText(args: ConverseTextArgs): Promise<string> {
       );
 
       const text = readText(response.output?.message?.content);
-      if (text.length > 0) return text;
+      if (text.length > 0) {
+        // A fallback that works is still a fault, and it used to leave no
+        // trace: the caller saw a slow success and the reason the primary was
+        // skipped never reached a log. That is how a dead primary model hid
+        // behind a working chain while adding a minute and a half to every
+        // request. Only logged when something was actually skipped, so the
+        // healthy path stays quiet.
+        if (failures.length > 0) {
+          console.warn(
+            `[bedrock] answered by ${modelId} after ${failures.length} failed — ${failures.join(" | ")}`
+          );
+        }
+        return text;
+      }
 
       failures.push(`${modelId}: empty response`);
     } catch (error) {

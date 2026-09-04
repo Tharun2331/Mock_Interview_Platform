@@ -1,11 +1,14 @@
 import axios from "axios";
 import { fetchAuthSession } from "aws-amplify/auth";
-import { BACKEND_URL } from "@/lib/config";
+import { API_TIMEOUT_MS, BACKEND_URL } from "@/lib/config";
 
 // The single authenticated client for the PrepPilot API. Every route behind the
 // server's `AuthMiddleware` requires `Authorization: Bearer <token>`, so the
 // header is attached here once rather than remembered at each call site.
-export const api = axios.create({ baseURL: BACKEND_URL });
+export const api = axios.create({
+  baseURL: BACKEND_URL,
+  timeout: API_TIMEOUT_MS,
+});
 
 // Runs per request, not once at startup, because `fetchAuthSession` reads the
 // cached tokens and silently refreshes them when they have expired — a session

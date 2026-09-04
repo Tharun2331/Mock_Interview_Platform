@@ -1,5 +1,16 @@
 export const BACKEND_URL = "http://localhost:8000";
 
+// Upper bound on any single API call. Without one, axios waits forever: a
+// request the server never answers leaves the form pinned on its progress bar
+// with no error, no retry and nothing on screen that says anything is wrong.
+//
+// Generous rather than tight, because the slowest route is `/plan`, which runs
+// a DynamoDB read, a Bedrock generation and a write — and the Bedrock client
+// has its own per-attempt timeout across a three-model fallback chain. This has
+// to outlast that, so the server's own error message wins the race and the
+// client's timeout is only ever the last resort.
+export const API_TIMEOUT_MS = 120_000;
+
 // Cognito user pool — public client values, safe to ship to the browser
 // (the app client has no secret; it uses SRP). Mirror these from the
 // Terraform `cognito` module outputs whenever the pool is re-provisioned.

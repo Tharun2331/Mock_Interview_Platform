@@ -5,6 +5,35 @@ export const MESSAGES = {
   APP_NAME: "PrepPilot",
   LOADING: "Loading…",
 
+  // --- Identity surfaces ---
+  // The thesis, in the subject's own vernacular: the gap this product closes is
+  // between knowing an answer and saying it out loud under time pressure.
+  APP_TAGLINE: "Practise saying it out loud.",
+  APP_PITCH:
+    "A spoken mock interview built from your own resume and repositories. Talk it through, interrupt when you need to, and read back exactly what you said.",
+  // Three claims, each one a thing the product actually does — not features in
+  // the abstract. Numbered because the sequence is real: you attach, you talk,
+  // you read it back.
+  APP_POINTS: [
+    {
+      title: "Questions from your own work",
+      body: "Your resume and public repositories decide what gets asked, so nothing is generic.",
+    },
+    {
+      title: "A conversation, not a form",
+      body: "Speak your answers. Jump in mid-question — the interviewer stops and listens.",
+    },
+    {
+      title: "The transcript is yours",
+      body: "Every answer is written down as you give it, ready to read back afterwards.",
+    },
+  ],
+  FOOTER_NOTE: "Built for practice. Nothing you say here is shared.",
+
+  // Names where the control takes you, not where you are.
+  THEME_TO_DARK: "Switch to dark theme",
+  THEME_TO_LIGHT: "Switch to light theme",
+
   SIGN_OUT: "Sign out",
   SIGN_OUT_FAILED: "Sign out failed. Please try again.",
 
@@ -101,6 +130,12 @@ export const MESSAGES = {
   FORM_FAILED: "We could not read that GitHub profile. Check the URL and retry.",
   FORM_UNREACHABLE:
     "We could not reach PrepPilot. Check your connection and try again.",
+  // Distinct from FORM_UNREACHABLE. Both arrive as an axios error with no
+  // response, but the recovery differs: unreachable means nothing answered, so
+  // check the connection; this means the server took the request and never
+  // finished, so the connection is fine and retrying is the whole advice.
+  FORM_TIMED_OUT:
+    "PrepPilot took too long to answer. Nothing was lost — try again.",
 
   // --- Resume attachment ---
   RESUME_LABEL: "Resume",
@@ -171,12 +206,21 @@ export const MESSAGES = {
   INTERVIEW_SPEAKING: "Interviewer is speaking",
   INTERVIEW_INTERRUPTING: "You interrupted — go ahead",
   INTERVIEW_MIC_ON: "Microphone on",
+  // The clock is rendered as large numerals with a caption under them, so the
+  // word and the digits are separate strings. The composed sentences below are
+  // still used verbatim for the screen-reader announcement, because "34:58"
+  // split from its label reads as bare digits with no unit.
+  INTERVIEW_TIME_LABEL: "remaining",
+  INTERVIEW_TIME_ENDING_LABEL: "wrapping up",
   INTERVIEW_TIME_LEFT: (remaining: string): string => `${remaining} remaining`,
   // Distinct copy for the final stretch, so the change is carried by words as
   // well as colour.
   INTERVIEW_TIME_ENDING: (remaining: string): string =>
     `Wrapping up — ${remaining} remaining`,
   INTERVIEW_TRANSCRIPT: "Transcript",
+  // Offered when the reader has scrolled up to re-read. Auto-scrolling them
+  // back would take the page away mid-sentence.
+  INTERVIEW_JUMP_LATEST: "Jump to latest",
   INTERVIEW_TRANSCRIPT_EMPTY:
     "Your conversation will appear here as you speak.",
   INTERVIEW_ENDED: "Interview ended",
@@ -203,8 +247,22 @@ export const MESSAGES = {
     "Your microphone is in use by another app. Close it and try again.",
   MIC_FAILED: "We could not start your microphone. Try again.",
 
-  // --- Screens still stubbed out ---
-  RESULT_TITLE: "Result",
+  // --- Interview setup chrome ---
+  // An eyebrow naming where the candidate is in a three-step flow. The steps
+  // are real and sequential, which is what earns the numbering.
+  SETUP_EYEBROW: "Step 01 — Your material",
+  PLAN_EYEBROW: "Step 02 — Your plan",
+  INTERVIEW_EYEBROW: "Step 03 — Live",
+
+  // --- Feedback ---
+  // The results screen is reached but not yet fed: scoring lands with the
+  // Evaluator. Saying so plainly beats a skeleton that implies data is seconds
+  // away, or an empty state that reads as a failure.
+  RESULT_TITLE: "Feedback",
+  RESULT_PENDING_TITLE: "Your feedback is not ready yet",
+  RESULT_PENDING_BODY:
+    "Scoring runs after an interview finishes. When it is ready you will find each answer here with what would have made it stronger.",
+  RESULT_BACK: "Start another interview",
 } as const;
 
 // Shortcuts, not an allowlist. The field accepts any role — these exist because
