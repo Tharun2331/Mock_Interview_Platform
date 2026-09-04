@@ -241,7 +241,7 @@ export async function recordAnswer(args: {
         questionType: args.questionType,
         askedAt: args.askedAt,
         transcript: args.transcript,
-        // Best-effort and not wired yet — the audio upload path is Phase 4.
+        // Best-effort and not wired yet — the audio upload path is Phase 5.
         audioKey: null,
         durationMs: args.durationMs,
         interrupted: args.interrupted,
