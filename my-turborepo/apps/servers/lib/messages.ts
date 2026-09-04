@@ -54,6 +54,18 @@ export const MESSAGES = {
   // by definition we do not know — anything that named a specific cause here
   // would be a guess, and the last one sent people to re-check a valid URL.
   UNEXPECTED_FAILED:    "Something went wrong on our side. Try again shortly.",
+  // Log-facing, same reasoning as their SESSION_ counterparts: a storage
+  // failure is a deploy or dependency problem, not something a candidate can
+  // act on. Routes map these to PROFILE_UNAVAILABLE.
+  PROFILE_READ_FAILED:  "Could not read the candidate profile.",
+  PROFILE_SAVE_FAILED:  "Could not save the candidate profile.",
+  PLAN_CACHE_READ_FAILED: "Could not read the cached interview plan.",
+  PLAN_CACHE_SAVE_FAILED: "Could not cache the interview plan.",
+  // Client-facing.
+  PROFILE_UNAVAILABLE:  "We could not save your profile right now. This is on our side — try again shortly.",
+  // Client-facing. Reached only between an erasure request and the sweep that
+  // completes it, so it says the account is going rather than that it is broken.
+  PROFILE_DELETING:     "This account is being deleted and can no longer be changed.",
   // Client-facing counterpart. Says it is our problem, not their file's.
   UPLOAD_UNAVAILABLE:   "We could not store your resume right now. This is on our side — try again shortly, or continue without it.",
   UPLOAD_STORE_FAILED:  "Could not store the resume. Try again.",
