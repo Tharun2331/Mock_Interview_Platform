@@ -1,61 +1,32 @@
 import { ulid } from "ulid";
 import { Router } from "express";
+import { isProfileComplete } from "@repo/shared";
 import {
-  PreInterviewBody,
-  extractGithubUsername,
-  type PreInterviewRepo,
-  type PreInterviewResume,
-} from "@repo/shared";
-import { UPLOAD } from "../lib/constants";
-import { fetchRepos } from "../lib/github";
-import {
-  GithubError,
-  ResumeParseError,
+  ProfileStateError,
   ServiceError,
-  UploadError,
 } from "../lib/errors";
 import { MESSAGES } from "../lib/messages";
-import {
-  isMultipart,
-  readMultipart,
-  readPdf,
-  readTextField,
-} from "../lib/multipart";
-import { parseResume } from "../lib/resume";
-import { putResume } from "../lib/s3";
+import { getProfile } from "../lib/profile";
 import { createSession } from "../lib/sessions";
 
-export const preInterviewRouter = Router();
-
-// Stores the original PDF and returns its extracted text. The raw file is kept
-// so a future parser change can be re-run against past uploads rather than
-// asking candidates to re-submit.
+// Starts an interview session from the candidate's stored profile.
 //
-// SUPERSEDED by POST /api/v1/profile/resume, which redacts before storing. This
-// path still writes raw resume text to SESSION#<sid>/INPUTS and is removed in
-// the step that rewrites this route around the profile. Both write to the same
-// stable S3 key, so they cannot disagree about where a candidate's resume lives.
-async function ingestResume(args: {
-  userId: string;
-  bytes: Uint8Array;
-}): Promise<{ resume: PreInterviewResume; resumeKey: string }> {
-  const [resumeKey, parsed] = await Promise.all([
-    putResume(args),
-    parseResume(args.bytes),
-  ]);
+// This route used to do the ingestion itself: upload a PDF, parse it, scrape
+// GitHub and create a session, all in one multipart request, once per
+// interview. It is the same resume every time, so that work moved to
+// POST /api/v1/profile/resume and happens once. What is left here is the part
+// that is genuinely per-interview — minting a session and snapshotting the
+// material it will be planned against.
+//
+// Consequences of the move:
+//   - No multipart. The body is empty; everything comes from the profile.
+//   - No GitHub call, so the route no longer depends on an upstream that
+//     rate-limits, and a candidate with a stale scrape refreshes it by saving
+//     their profile rather than by starting an interview.
+//   - The resume text copied into INPUTS is REDACTED, because that is the only
+//     form the profile stores. Raw resume text no longer reaches DynamoDB.
 
-  return {
-    resume: {
-      characters: parsed.characters,
-      pages: parsed.pages,
-      text: parsed.text,
-      usable: parsed.characters >= UPLOAD.MIN_USEFUL_RESUME_CHARS,
-    },
-    // Returned rather than recomputed by the caller. The key is what the
-    // session record points at, and deriving it twice is how the two drift.
-    resumeKey,
-  };
-}
+export const preInterviewRouter = Router();
 
 preInterviewRouter.post("/", async (req, res) => {
   // ULID, not UUID. The id becomes the `SESSION#<sid>` sort-key suffix in the
@@ -64,117 +35,66 @@ preInterviewRouter.post("/", async (req, res) => {
   // no client-side sort. A v4 UUID would return them in random order.
   const sessionId = ulid();
 
+  // AuthMiddleware guarantees req.user; the guard narrows the optional type.
+  const userId = req.user?.id;
+  if (userId === undefined) {
+    res.status(401).json({ error: MESSAGES.UNAUTHORIZED_INVALID_TOKEN });
+    return;
+  }
+
   try {
-    // The resume is required, so every request carries a file and JSON is no
-    // longer a valid shape for this endpoint.
-    if (!isMultipart(req)) {
-      res.status(415).json({ message: MESSAGES.EXPECTED_MULTIPART });
+    const profile = await getProfile({ userId });
+
+    // 409 rather than 400: nothing is wrong with the request, the account is
+    // just not ready. The client's onboarding guard should have prevented this,
+    // so reaching it means the guard was bypassed or the profile was cleared in
+    // another tab — either way the fix is to finish onboarding, not to retry.
+    if (profile === null || !isProfileComplete(profile)) {
+      res.status(409).json({ message: MESSAGES.PROFILE_INCOMPLETE });
       return;
     }
 
-    const form = await readMultipart(req);
-
-    if (!form.has(UPLOAD.RESUME_FIELD)) {
-      res.status(400).json({ message: MESSAGES.RESUME_REQUIRED });
+    // isProfileComplete has already proven both are present; these narrow the
+    // optional types without a non-null assertion.
+    const { resumeKey, resumeText } = profile;
+    if (resumeKey === undefined || resumeText === undefined) {
+      res.status(409).json({ message: MESSAGES.PROFILE_INCOMPLETE });
       return;
     }
 
-    const { bytes: pdfBytes } = await readPdf(form, UPLOAD.RESUME_FIELD);
-
-    const parsedBody = PreInterviewBody.safeParse({
-      gitHub: readTextField(form, UPLOAD.GITHUB_FIELD),
+    // Copied into the session rather than read from the profile at plan time,
+    // deliberately. INPUTS is a snapshot: an interview was conducted against
+    // the material as it stood when it started, and a candidate who updates
+    // their resume next month must not retroactively change what a past session
+    // was scored against. `profileVersion` records which snapshot this is.
+    await createSession({
+      sessionId,
+      userId,
+      resumeKey,
+      resumeText,
+      repos: profile.repos,
+      githubUsername: profile.githubUsername ?? null,
+      profileVersion: profile.profileVersion,
     });
-    if (!parsedBody.success) {
-      res.status(400).json({
-        message: MESSAGES.INVALID_BODY,
-        errors: parsedBody.error.flatten(),
-      });
+
+    res.json({ sessionId });
+  } catch (error) {
+    if (error instanceof ProfileStateError) {
+      res.status(409).json({ message: error.message });
       return;
     }
 
-    // Optional now. The schema already proved the URL parses when present, so a
-    // null here means the field was simply omitted.
-    const username =
-      parsedBody.data.gitHub === undefined
-        ? null
-        : extractGithubUsername(parsedBody.data.gitHub);
-
-    // AuthMiddleware guarantees req.user; the guard narrows the optional type.
-    const userId = req.user?.id;
-    if (userId === undefined) {
-      res.status(401).json({ error: MESSAGES.UNAUTHORIZED_INVALID_TOKEN });
-      return;
-    }
-
-    // The two ingestions are independent, so they overlap rather than queue —
-    // the PDF parse is CPU-bound and the GitHub call is network-bound. With no
-    // GitHub profile there is simply nothing to scrape, which is not an error.
-    const [repos, ingested] = await Promise.all([
-      username === null ? Promise.resolve<PreInterviewRepo[]>([]) : fetchRepos(username),
-      ingestResume({ userId, bytes: pdfBytes }),
-    ]);
-
-    // After the ingestion, not before: there is no session worth recording
-    // until the resume is actually stored. Before the response, not after, so a
-    // candidate never receives a sessionId that POST /plan will then reject.
-    //
-    // Caught here rather than by the handler below, which would tell them their
-    // resume failed to store. It did store — the record of it did not.
-    try {
-      await createSession({
-        sessionId,
-        userId,
-        resumeKey: ingested.resumeKey,
-        githubUsername: username,
-        // Stored server-side so POST /plan reads them from the session rather
-        // than from its own request body. They are still returned below for the
-        // client to display — returning candidate material is fine, accepting it
-        // back as the Planner's input is not.
-        repos,
-        resumeText: ingested.resume.text,
-      });
-    } catch (error) {
-      console.error(
-        `[pre-interview] ${error instanceof Error ? error.message : error}`
-      );
+    // The candidate's material is safe in their profile either way — only the
+    // session record failed — so this is worth retrying and says so.
+    if (error instanceof ServiceError) {
+      console.error(`[pre-interview] ${error.message}`);
       res.status(500).json({ message: MESSAGES.SESSION_UNAVAILABLE });
       return;
     }
 
-    res.json({ sessionId, repos, resume: ingested.resume });
-  } catch (error) {
-    // Upload problems describe what the caller sent, so the message is safe to
-    // return and actionable — "That file is 12.4 MB. The limit is 8.0 MB."
-    if (error instanceof UploadError) {
-      res.status(413).json({ message: error.message });
-      return;
-    }
-
-    if (error instanceof ResumeParseError) {
-      res.status(422).json({ message: error.message });
-      return;
-    }
-
-    // 500, and the detail stays in the log. The candidate's file was fine; the
-    // server could not do its job, and telling them to try another PDF would
-    // send them chasing a problem that is not theirs.
-    if (error instanceof ServiceError) {
-      console.error(`[pre-interview] ${error.message}`);
-      res.status(500).json({ message: MESSAGES.UPLOAD_UNAVAILABLE });
-      return;
-    }
-
-    // 502 only for a genuine upstream failure. Previously this was the
-    // catch-all, so any bug in the handler — or a crashed dependency — was
-    // reported to the candidate as a bad GitHub URL, sending them to re-check
-    // something that was never wrong.
-    if (error instanceof GithubError) {
-      console.error(`[pre-interview] ${error.message}`);
-      res.status(502).json({ message: MESSAGES.GITHUB_FETCH_FAILED });
-      return;
-    }
-
-    console.error(`[pre-interview] ${error instanceof Error ? error.message : error}`);
+    console.error(
+      `[pre-interview] ${error instanceof Error ? error.message : error}`
+    );
     res.status(500).json({ message: MESSAGES.UNEXPECTED_FAILED });
   }
 });

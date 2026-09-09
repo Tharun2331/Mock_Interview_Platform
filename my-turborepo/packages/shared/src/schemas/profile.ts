@@ -100,6 +100,20 @@ export const ProfileDetailsBody = z.object({
 
 export type ProfileDetailsBody = z.infer<typeof ProfileDetailsBody>;
 
+// PUT /api/v1/profile/github. Reuses the same preprocessing as the upload form:
+// a blank field arrives as "" rather than absent, and folding it to undefined is
+// what lets "I cleared this box" mean "disconnect" instead of failing the URL
+// check on an empty string.
+export const ProfileGithubBody = z.object({
+  gitHub: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim().length === 0 ? undefined : value,
+    z.string().max(200).optional()
+  ),
+});
+
+export type ProfileGithubBody = z.infer<typeof ProfileGithubBody>;
+
 // What a client is allowed to see. Deliberately not the stored item.
 //
 // `resumeText` is absent even though it is redacted: the browser has no use for

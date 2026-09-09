@@ -292,6 +292,81 @@ export async function deleteProfileItems(args: {
   }
 }
 
+// Replaces the GitHub half of the candidate's material without touching the
+// resume half.
+//
+// Exists because the resume route requires a file. Without this, changing a
+// GitHub URL — or removing it — would mean re-attaching a PDF that has not
+// changed, which is the kind of friction that stops people keeping a profile
+// current.
+//
+// Bumps profileVersion for the same reason the resume path does: repos are
+// Planner input, so a plan built before this is no longer built from the
+// candidate's material.
+export async function saveGithubRepos(args: {
+  userId: string;
+  githubUsername: string | null;
+  repos: PreInterviewRepo[];
+}): Promise<UserProfile> {
+  const TableName = requireTable();
+  const now = new Date().toISOString();
+
+  const setClauses = [
+    "userId = :userId",
+    "#type = :type",
+    "#status = if_not_exists(#status, :active)",
+    "repos = :repos",
+    "createdAt = if_not_exists(createdAt, :now)",
+    "updatedAt = :now",
+  ];
+
+  const values: Record<string, unknown> = {
+    ":userId": args.userId,
+    ":type": ITEM_TYPE.USER_PROFILE,
+    ":active": "active",
+    ":deleting": "deleting",
+    ":repos": args.repos.slice(0, PLAN_LIMITS.MAX_REPOS),
+    ":now": now,
+    ":one": 1,
+  };
+
+  const removeClauses: string[] = [];
+  if (args.githubUsername === null) {
+    removeClauses.push("githubUsername");
+  } else {
+    setClauses.push("githubUsername = :githubUsername");
+    values[":githubUsername"] = args.githubUsername;
+  }
+
+  const expression = [
+    `SET ${setClauses.join(", ")}`,
+    ...(removeClauses.length > 0 ? [`REMOVE ${removeClauses.join(", ")}`] : []),
+    "ADD profileVersion :one",
+  ].join(" ");
+
+  let response;
+  try {
+    response = await dynamoClient.send(
+      new UpdateCommand({
+        TableName,
+        Key: profileKey(args.userId),
+        UpdateExpression: expression,
+        ConditionExpression: NOT_DELETING,
+        ExpressionAttributeNames: { "#status": "status", "#type": "type" },
+        ExpressionAttributeValues: values,
+        ReturnValues: "ALL_NEW",
+      })
+    );
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException) {
+      throw new ProfileStateError(MESSAGES.PROFILE_DELETING);
+    }
+    throw readFailure(error, MESSAGES.PROFILE_SAVE_FAILED);
+  }
+
+  return parseItem(UserProfileSchema, response.Attributes, PROFILE_CONTEXT);
+}
+
 // Null when nothing is cached — a first interview, or a plan already evicted.
 //
 // Throws on a genuine read failure rather than degrading to null, so the route

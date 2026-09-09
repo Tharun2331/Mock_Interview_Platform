@@ -59,32 +59,14 @@ export function extractGithubUsername(input: string): string | null {
   return GITHUB_USERNAME_REGEX.test(username) ? username : null;
 }
 
-// The GitHub profile is optional: the resume is the required input now, and a
-// candidate with no public repositories should not be blocked from starting.
+// One scraped repository, in the camelCase projection the server builds from
+// GitHub's snake_case payload. Stored on the profile, copied into a session's
+// INPUTS snapshot, and read by the Planner.
 //
-// A blank form field arrives as "" rather than absent, so it is folded to
-// undefined before validation — otherwise an untouched input would fail the URL
-// refinement and read as an error the candidate caused.
-export const PreInterviewBody = z.object({
-  gitHub: z.preprocess(
-    (value) =>
-      typeof value === "string" && value.trim().length === 0 ? undefined : value,
-    z
-      .string()
-      .max(200, "That URL is too long to be a GitHub profile.")
-      .refine((value) => extractGithubUsername(value) !== null, {
-        message:
-          "Enter a GitHub profile URL, like https://github.com/your-username.",
-      })
-      .optional()
-  ),
-});
-
-export type PreInterviewBody = z.infer<typeof PreInterviewBody>;
-
-// Response wire shape for POST /api/v1/pre-interview. Mirrors the camelCase
-// projection the route builds from GitHub's snake_case payload, so the client
-// parses the same contract the server promises instead of trusting the body.
+// The rest of this file's wire schemas are gone: POST /pre-interview no longer
+// uploads anything, so PreInterviewBody, PreInterviewResume and
+// PreInterviewResponse described a request and a response that stopped existing
+// when resume ingestion moved to the profile.
 export const PreInterviewRepo = z.object({
   description: z.string().nullable(),
   name: z.string(),
@@ -93,31 +75,3 @@ export const PreInterviewRepo = z.object({
 });
 
 export type PreInterviewRepo = z.infer<typeof PreInterviewRepo>;
-
-// `text` is returned to the client so it can be handed to POST /plan as
-// `resumeText` — the same way repos are carried today. Once DynamoDB lands both
-// move server-side and this shrinks to a session reference.
-export const PreInterviewResume = z.object({
-  characters: z.number().int().min(0),
-  pages: z.number().int().min(0),
-  text: z.string(),
-  // False when the PDF parsed but yielded almost nothing — a scanned or
-  // image-only resume. Still a result rather than an error: the candidate is
-  // shown what was extracted and decides whether to continue or re-upload.
-  usable: z.boolean(),
-});
-
-export type PreInterviewResume = z.infer<typeof PreInterviewResume>;
-
-export const PreInterviewResponse = z.object({
-  // Generated per request. Becomes the DynamoDB session key later; for now it
-  // is what ties the stored S3 object to this submission.
-  sessionId: z.string().min(1),
-  // Empty when no GitHub profile was given, or when the profile has no public
-  // repositories. Absence of repos is normal now, not a failure.
-  repos: z.array(PreInterviewRepo),
-  // Always present — the resume is the required input.
-  resume: PreInterviewResume,
-});
-
-export type PreInterviewResponse = z.infer<typeof PreInterviewResponse>;
