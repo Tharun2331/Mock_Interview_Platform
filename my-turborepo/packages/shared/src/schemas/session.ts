@@ -157,6 +157,20 @@ export const SessionMetaSchema = z.object({
   questionCount: z.number().int().min(0).optional(),
   resumeKey: z.string().min(1).optional(),
   githubUsername: z.string().min(1).optional(),
+  // Which version of the candidate's profile this session's INPUTS were copied
+  // from. This is what the plan cache is checked against — NOT the profile's
+  // current version.
+  //
+  // The distinction only matters when a candidate edits their profile between
+  // starting a session and planning it, but in that window the two disagree and
+  // only this one is right: the Planner reads this session's INPUTS snapshot, so
+  // a plan is reusable when it was built from the same snapshot. Checking the
+  // live profile instead would serve a plan built from new material to a session
+  // still holding the old.
+  //
+  // Optional because sessions created before profiles existed have none, and an
+  // absent version simply never matches a cached plan — a replan, not a crash.
+  profileVersion: z.number().int().min(0).optional(),
 });
 
 export type SessionMeta = z.infer<typeof SessionMetaSchema>;

@@ -85,6 +85,7 @@ export async function createSession(args: {
   githubUsername: string | null;
   repos: PreInterviewRepo[];
   resumeText: string;
+  profileVersion: number;
 }): Promise<void> {
   const TableName = requireTable();
   const createdAt = new Date().toISOString();
@@ -113,6 +114,10 @@ export async function createSession(args: {
                 // removeUndefinedValues, so an omitted profile leaves the
                 // attribute absent rather than present-and-null.
                 githubUsername: args.githubUsername ?? undefined,
+                // The snapshot marker. INPUTS below is a copy of the profile's
+                // material as it stood right now, and this records which
+                // version that was.
+                profileVersion: args.profileVersion,
               },
               // ULID collision is not a realistic failure, but a silent
               // overwrite of somebody's session is bad enough that the guard is
@@ -359,7 +364,9 @@ async function deleteKeyChunk(
 export async function loadPlannerInputs(args: {
   sessionId: string;
   userId: string;
-}): Promise<Pick<PlannerInput, "repos" | "resumeText">> {
+}): Promise<
+  Pick<PlannerInput, "repos" | "resumeText"> & { profileVersion?: number }
+> {
   const TableName = requireTable();
   const pk = sessionPk(args.sessionId);
 
@@ -422,6 +429,9 @@ export async function loadPlannerInputs(args: {
     // An empty extraction is a real outcome — a scanned resume — and the
     // Planner treats absent and empty the same way.
     resumeText: inputs.resumeText.length > 0 ? inputs.resumeText : undefined,
+    // Returned alongside the material rather than read separately, because it
+    // describes exactly this material. The plan cache is checked against it.
+    profileVersion: meta.profileVersion,
   };
 }
 

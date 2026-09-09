@@ -82,6 +82,10 @@ export const MESSAGES = {
   REDACTION_INPUT_TOO_LARGE: "Resume text exceeds the PII scan limit — PLAN_LIMITS.MAX_RESUME_CHARS and REDACTION.MAX_BYTES have drifted apart.",
   // Client-facing. Says what failed without implying their file was wrong.
   REDACTION_UNAVAILABLE: "We could not process your resume right now. This is on our side — try again shortly.",
+  // Client-facing. Reached when a session is started before onboarding is
+  // finished — the client guard should have caught it, so this is a backstop
+  // and names the missing step rather than saying "invalid".
+  PROFILE_INCOMPLETE:   "Add your resume to your profile before starting an interview.",
   // Client-facing.
   PROFILE_UNAVAILABLE:  "We could not save your profile right now. This is on our side — try again shortly.",
   // Client-facing. Reached only between an erasure request and the sweep that

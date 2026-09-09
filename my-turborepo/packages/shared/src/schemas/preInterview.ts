@@ -94,9 +94,10 @@ export const PreInterviewRepo = z.object({
 
 export type PreInterviewRepo = z.infer<typeof PreInterviewRepo>;
 
-// `text` is returned to the client so it can be handed to POST /plan as
-// `resumeText` — the same way repos are carried today. Once DynamoDB lands both
-// move server-side and this shrinks to a session reference.
+// Reported by POST /api/v1/profile/resume now, not by the pre-interview route.
+// `text` is no longer among them: the extracted text is redacted and stored
+// server-side, and handing it back to the client would return the very PII the
+// redaction exists to contain.
 export const PreInterviewResume = z.object({
   characters: z.number().int().min(0),
   pages: z.number().int().min(0),
@@ -109,6 +110,17 @@ export const PreInterviewResume = z.object({
 
 export type PreInterviewResume = z.infer<typeof PreInterviewResume>;
 
+// SUPERSEDED, and knowingly out of date for one step.
+//
+// POST /api/v1/pre-interview no longer uploads anything: it starts a session
+// from the stored profile and returns `{ sessionId }` alone. `repos` and
+// `resume` are not sent any more, so a `safeParse` of a real response now
+// fails.
+//
+// Left in place because apps/web/src/pages/form.tsx is its last consumer and
+// that file is being replaced by the profile page and role selection, not
+// patched. Narrowing this schema first would only break the build a step early
+// and buy a rewrite of a file about to be deleted. Delete both together.
 export const PreInterviewResponse = z.object({
   // Generated per request. Becomes the DynamoDB session key later; for now it
   // is what ties the stored S3 object to this submission.
