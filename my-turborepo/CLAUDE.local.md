@@ -1,15 +1,24 @@
 # PrepPilot AI — Phase Tracker
 > Local only — gitignored. Updated as work progresses.
-> Last updated: 2026-09-04
+> Last updated: 2026-09-09
 
 ---
 
-## Current position: end of Phase 4
+## Current position: end of Phase 4, plus the profile refactor
 
-The candidate can sign in, upload a resume, get a Planner-built session plan,
-and hold a full spoken interview with Nova 2 Sonic that persists its transcript
-to DynamoDB. **Nothing reads that transcript back yet** — the Evaluator, the
-Coach and the results page are all still to build.
+The candidate signs in, saves a profile once (name, resume, GitHub), then picks
+a role and holds a full spoken interview with Nova 2 Sonic that persists its
+transcript to DynamoDB. **Nothing reads that transcript back yet** — the
+Evaluator, the Coach and the results page are all still to build.
+
+**Phase 4.5 — candidate material is user-scoped (2026-09-09).** Resume and
+GitHub moved off the session and onto `USER#<uid>/PROFILE`, captured once
+instead of per interview. Personal identifiers are stripped with Comprehend
+before the text is stored or reaches any model. Plans are cached per user and
+invalidated lazily at plan time. Account erasure exists end to end. Full
+reasoning in [ADR-0007](docs/adr/0007-user-scoped-redacted-candidate-material.md);
+the Redis drop is finally recorded in
+[ADR-0006](docs/adr/0006-drop-redis-dynamodb-alone.md).
 
 | Phase | Status |
 |-------|--------|
@@ -17,6 +26,7 @@ Coach and the results page are all still to build.
 | 2 — Resume + Auth + Database | ✅ Complete |
 | 3 — WebSocket + Speech | ✅ Complete (Redis dropped — see below) |
 | 4 — Sonic end-to-end | 🟡 ~85% — the loop runs; `Result.tsx` waits on Phase 5 |
+| 4.5 — Profile, PII redaction, erasure | ✅ Complete |
 | 5 — Evaluator + SQS | ⬜ Not started |
 | 6 — Coach + RAG | ⬜ Not started |
 | 7 — Deploy + CI/CD | 🔸 ~30% — CloudFront/S3/SSM/DynamoDB modules exist; no ECS, no CI |
@@ -55,12 +65,18 @@ sits behind it, and the transcript it consumes is already being written.
 ### Backend
 - [x] JWT validation middleware — `lib/cognitoAuth.ts`, `aws-jwt-verify` against Cognito JWKS
 - [x] Resume upload + parse — `unpdf`; **`multer` deliberately not used**, `lib/multipart.ts` bridges Express's `IncomingMessage` to a web `Request` so Bun's own `formData()` parses it
-- [x] `lib/s3.ts` — `S3Client` singleton + `putResume()`, raw PDF at `resumes/<uid>/<sid>.pdf`
-- [x] `routes/preInterview.ts` — multipart only; GitHub scrape and PDF parse overlap via `Promise.all`
+- [x] `lib/s3.ts` — `S3Client` singleton, `putResume()` / `deleteResume()`.
+      **Key changed in 4.5:** one object per user at `resumes/<uid>/resume.pdf`,
+      overwritten on re-upload, not `resumes/<uid>/<sid>.pdf`
+- [x] ~~`routes/preInterview.ts` — multipart~~ **superseded in 4.5.** Ingestion
+      moved to `POST /api/v1/profile/resume`; this route now mints a session
+      from the stored profile and takes no body
 - [x] `lib/dynamo.ts` — `DynamoDBDocumentClient` singleton, `requireTable()`, `parseItem()` validate-on-read
 - [x] `lib/sessions.ts` — the whole session lifecycle: `createSession` (one `TransactWriteCommand`), `loadPlannerInputs`, `attachPlan`, `startInterview`, `recordAnswer`, `finishInterview`
 - [x] Frontend `FormData` upload + `ResumeField` component
-- [ ] Replace axios GitHub call with `@octokit/rest` — installed since Phase 1, **still imported nowhere**
+- [ ] Replace axios GitHub call with `@octokit/rest` — installed since Phase 1,
+      **still imported nowhere**. Now lives in `lib/github.ts`, shared by the
+      profile and (until 4.5 removed its need) the pre-interview route
 
 ### Terraform
 - [x] `modules/cognito/` — user pool, app client, Google IdP, `auth.tharunsekar.xyz`
@@ -95,9 +111,9 @@ eventual consistency attached.
 - [x] All user-facing copy in `lib/messages.ts`
 
 **Carry-forward:** the rate limiter store is still in-memory, so the budget is
-per ECS task. The original plan was to move it to Redis — but Redis was dropped
-(below), so this now needs either a DynamoDB-backed store or an accepted
-per-task budget. **Decide before scaling past one task.**
+per ECS task. The original plan was Redis, which was dropped — see
+[ADR-0006](docs/adr/0006-drop-redis-dynamodb-alone.md), which lists the three
+remaining options. **Decide before scaling past one task.**
 
 ---
 
@@ -128,13 +144,12 @@ per-task budget. **Decide before scaling past one task.**
 - [x] `modules/vpc/` — VPC, public + private subnets, NAT, route tables, SGs
 - [x] ~~ElastiCache Redis~~ — **dropped, see below**
 
-**Redis is out of the stack.** No `ioredis`, no `lib/redis.ts`, no ElastiCache
-module. Turn count and question index live in the Sonic session's own state and
-in DynamoDB, which is where the transcript had to go anyway — a second store
-holding a copy of it earned nothing and added an always-on cluster to the bill.
-Consequences: the rate-limiter carry-forward above has no Redis destination,
-and `docs/architecture/data-model.md` still documents Redis keys that no longer
-exist. **The data-model doc is the stale one.**
+**Redis is out of the stack**, and as of 2026-09-09 that is finally written
+down: [ADR-0006](docs/adr/0006-drop-redis-dynamodb-alone.md) supersedes ADR-0003,
+which had sat marked *Accepted* for a month while describing infrastructure that
+was never provisioned. `data-model.md` has been corrected too.
+
+The remaining consequence is the rate-limiter carry-forward above.
 
 ---
 
@@ -160,6 +175,64 @@ exist. **The data-model doc is the stale one.**
 
 ---
 
+## Phase 4.5 — Profile, PII redaction, erasure ✅
+
+Candidate material moved from session-scoped to user-scoped. Reasoning in
+[ADR-0007](docs/adr/0007-user-scoped-redacted-candidate-material.md).
+
+### Data model
+- [x] `USER#<uid>/PROFILE` — names, `resumeKey`, redacted `resumeText`, `repos`,
+      `profileVersion`, `status`
+- [x] `USER#<uid>/PLAN` — one cached plan per user, stamped with the
+      `profileVersion` and `targetRole` it was built from
+- [x] `type` on every item, `.default()`ed so rows written before it still parse
+- [x] `EVAL#SUMMARY` → `SUMMARY` — it sat inside `begins_with("EVAL#")`, which
+      is how completion is derived, so it would have fired the Coach early
+- [x] `expiresAt` written by `sessionExpiresAt()`, one value shared by every item
+      in a session. TTL had been enabled on the dev table for weeks with nothing
+      writing the attribute, so it did nothing
+
+### Backend
+- [x] `lib/profile.ts` — profile and plan-cache access, `ADD profileVersion :one`
+      so concurrent uploads cannot both read 3 and write 4
+- [x] `lib/redact.ts` — Comprehend `DetectPiiEntities` + one phone pattern,
+      **fails closed**. `DATE_TIME` deliberately kept: employment dates are what
+      the Planner judges seniority from
+- [x] `lib/erasure.ts` — mark → sweep → unmark, Cognito last. `AdminDeleteUser`
+      verified against a real user 2026-09-09
+- [x] `lib/github.ts`, `lib/cognitoAdmin.ts`
+- [x] `routes/profile.ts` — `GET`/`PUT`/`DELETE /profile`, `POST /profile/resume`,
+      `PUT /profile/github`
+- [x] `routes/preInterview.ts` rewritten — no multipart, no scrape; mints a
+      session from the profile. 219 lines → 97
+- [x] `routes/plan.ts` — lazy cache check against the **session's**
+      `profileVersion`, not the profile's current one
+
+### Frontend
+- [x] `pages/profile.tsx` — onboarding and edit in one screen
+- [x] `pages/startInterview.tsx` — role selection, `/start`
+- [x] `components/layout/RequireProfile.tsx` — keys on the server's `complete`
+      boolean; a failed fetch is its own state, never a redirect
+- [x] `lib/profile.tsx`, `lib/profileApi.ts`, `lib/httpErrors.ts`
+- [x] `components/DeleteAccount.tsx` — type-to-confirm AlertDialog
+- [x] `pages/form.tsx` **deleted**, with `PreInterviewBody` / `Resume` /
+      `Response`
+
+### Terraform (applied 2026-09-09)
+- [x] `comprehend:DetectPiiEntities`, `s3:DeleteObject`, `dynamodb:DeleteItem`,
+      `cognito-idp:AdminDeleteUser` scoped to the pool ARN
+- [x] `audio/` prefix, its lifecycle rule and `audio_retention_days` removed
+
+### Not done
+- [ ] No Jest. The onboarding guard and the upload state machine are exactly
+      what the frontend skill says to test
+- [ ] `POST /profile/resume` re-scrapes GitHub on every resume upload, even
+      when the URL has not changed — a wasted call against an unauthenticated
+      60/hr quota shared by every user. (`PUT /profile/github` is fine: the
+      client only calls it when the URL actually changed.)
+
+---
+
 ## Phase 5 — Evaluator + SQS ⬜
 
 Nothing started. The transcript it consumes is already being written, so this
@@ -179,8 +252,11 @@ is unblocked today.
 - [ ] `ecs` module — cluster, API service, Spot worker service
 - [ ] **Second IAM role for the worker** — `bedrock:InvokeModel` + DynamoDB
       write on `EVAL#*` only. Never shared with the API role
-- [ ] Audio bucket prefix (`audio/<sid>/<qId>`) if audio retention is wanted —
-      `recordAnswer` currently writes `audioKey: null`
+- ~~Audio bucket prefix~~ — **decided against.** Audio is never persisted; it
+      streams through the WebSocket and is discarded, and the transcript is the
+      durable record. The `audio/` prefix, its lifecycle rule and the `audioKey`
+      attribute were all removed. `durationMs` + transcript length is a usable
+      pacing signal for the Evaluator without storing a byte of voice
 
 ---
 
@@ -236,9 +312,10 @@ Evaluator runs once per question.
 | Ministral primary contradicts CLAUDE.md's locked decision | `lib/config.ts` | High — decide |
 | No CI/CD at all; `.github/workflows/` absent | — | High before deploy |
 | Editing `packages/shared` does not invalidate the dev server's cached module | Bun dev server | Medium — restart after any shared edit |
-| Rate limiter is in-memory and now has no Redis destination | `apps/servers/lib/rateLimit.ts` | Medium — needs a new plan |
-| `data-model.md` still documents Redis keys that no longer exist | `docs/architecture/data-model.md` | Medium — doc is stale |
-| GitHub scraping uses axios; `@octokit/rest` installed, unused | `apps/servers/routes/preInterview.ts` | Medium |
+| Rate limiter is in-memory; per-task budget | `apps/servers/lib/rateLimit.ts` | Medium — options in ADR-0006 |
+| No Jest anywhere; the profile guard and upload state machine are untested | `apps/web/` | Medium — the frontend skill asks for it |
+| `AdminDeleteUser` retry path (`UserNotFoundException`) never exercised for real | `apps/servers/lib/cognitoAdmin.ts` | Low — covered by construction |
+| GitHub scraping uses axios; `@octokit/rest` installed, unused | `apps/servers/lib/github.ts` | Medium |
 | `turbo.json` `build.outputs` is `.next/**` | `turbo.json` | Low |
 | `packages/ui/` unused; app uses its own `components/ui/` | `packages/ui/` | Low — delete |
 | `/api/hello` demo routes still present | `apps/web/src/index.ts` | Low — delete |
@@ -251,6 +328,15 @@ Planner schema reshaped for adaptive interviews · unreachable Llama fallback
 whole Sonic voice loop · 8-minute stream cap via renewal · interview hard timer
 · frontend rebuild · Bedrock hang and silent-fallback (2026-09-04).
 
+**Resolved 2026-09-09 (profile refactor):** raw resume text no longer stored or
+sent to any model · resume re-uploaded once per account instead of once per
+interview · plans reused across interviews · account erasure end to end ·
+`data-model.md` and ADR-0003 corrected · `USER#<uid>/SESSION#<sid>` refs now
+deleted on erasure (they survived every one before) · `EVAL#SUMMARY` moved off
+the `EVAL#` prefix before it could fire the Coach a question early · TTL
+`expiresAt` actually written (the dev table had TTL enabled on an attribute
+nothing populated, so retention was inert).
+
 ---
 
 ## Terraform structure note
@@ -259,7 +345,8 @@ whole Sonic voice loop · 8-minute stream cap via renewal · interview hard time
 directory. **Reality diverged and the module pattern won**: every service is a
 reusable module under `infra/terraform/modules/` (`iam`, `ssm`, `s3`,
 `cloudfront`, `cognito`, `vpc`, `dynamodb`), composed by
-`environments/dev/main.tf`.
+`environments/dev/main.tf`. There is deliberately no `elasticache` module —
+[ADR-0006](docs/adr/0006-drop-redis-dynamodb-alone.md).
 
 Keep doing that — new resources go into a module, not loose into an environment
 root. `infra/terraform/CLAUDE.md` documents the conventions; `CLAUDE.md §7` is

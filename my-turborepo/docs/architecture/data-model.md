@@ -1,10 +1,11 @@
 # Data Model
 
-**Status:** partly implemented. The DynamoDB table and both S3 buckets exist on
-`dev` and are in use. **Redis does not exist and never will** — ElastiCache was
-dropped during Phase 3, so every mention of it below this line is stale and is
-kept only until this document is rewritten. [ADR-0003](../adr/0003-redis-hot-state-dynamodb-durable.md)
-is likewise still marked Accepted and needs superseding.
+**Status:** implemented and current as of 2026-09-09. The DynamoDB table and
+both S3 buckets exist on `dev` and are in use.
+
+There is no Redis — ElastiCache was dropped during Phase 3 before a cluster was
+provisioned. [ADR-0006](../adr/0006-drop-redis-dynamodb-alone.md) records that
+and supersedes ADR-0003.
 
 Two stores: DynamoDB for anything that must survive, S3 for bytes. Interview
 audio is **not** stored at all — it streams through the WebSocket and is
@@ -227,10 +228,11 @@ correct on this point; `overview.md` §6 predates the analysis.
 - Reads for user-facing display can be eventually consistent. The completion
   check that triggers the Coach agent must use a strongly consistent read, or
   it can fire early.
-- Transcript writes happen mid-stream, not at turn end. Sonic emits `textOutput`
-  events as speech is recognised, so persist only events marked final and let
-  partials stay in Redis. Writing every partial would multiply DynamoDB writes
-  by an order of magnitude for data that is immediately superseded.
+- Transcript writes happen per completed exchange, not per event. Sonic emits
+  `textOutput` as speech is recognised, so partials are merged in memory by
+  `lib/exchangeBuffer.ts` and only the completed exchange is written. Persisting
+  every partial would multiply DynamoDB writes by an order of magnitude for data
+  that is immediately superseded.
 
 ### Size limits
 
@@ -247,71 +249,75 @@ wanted, add a TTL attribute in `dev` only, never in `prod`.
 
 ---
 
-## 2. Redis
+## 2. ~~Redis~~ — removed
 
-```
-session:<sid>:state       JSON blob of live interview state    TTL 2h
-ratelimit:<uid>:<minute>  INCR counter                          TTL 60s
-lock:session:<sid>        SET NX, single-consumer guard         TTL 30s
-```
+**There is no Redis.** ElastiCache was dropped during Phase 3, before a cluster
+was ever provisioned — see
+[ADR-0006](../adr/0006-drop-redis-dynamodb-alone.md), which supersedes ADR-0003.
 
-`session:<sid>:state` holds: current question index, turn count, WebSocket
-connection id, in-flight partial transcripts, and the Sonic stream's prompt and
-content identifiers. All of it is rebuildable from DynamoDB except the stream
-identifiers, which are meaningless after the stream closes anyway.
+Where the state this section used to describe actually lives:
 
-Rules:
+| Was going to be in Redis | Actually lives in |
+| --- | --- |
+| `session:<sid>:state` — question index, turn count | The `SonicConversation` object, in the task's memory, for the life of the stream |
+| Partial transcripts | `lib/exchangeBuffer.ts`, merged in memory and written to DynamoDB once an exchange completes |
+| Sonic prompt / content identifiers | The same session object; meaningless once the stream closes |
+| Session wall-clock start | The interview clock in `routes/interview.ts`, which enforces the hard stop in code |
+| `ratelimit:<uid>:<minute>` | **Nowhere durable.** `lib/rateLimit.ts` is an in-memory store, so the budget is per ECS task — the one genuinely unresolved consequence. Options are in ADR-0006 |
+| `lock:session:<sid>` | A conditional update on `META`'s status, which is what stops two tabs opening two streams against one session |
 
-- Nothing in Redis is a source of truth. If losing a value would break the
-  product, it goes to DynamoDB first and Redis second.
-- Every key has a TTL. A key without one is a leak.
-- Redis unavailability degrades the interview, it doesn't end it — rebuild
-  state from DynamoDB and continue.
-- Rate limiting is keyed by Cognito `sub`, not IP. Per-IP limits punish shared
-  networks and don't map to the cost being controlled, which is per-user
-  Bedrock spend.
-- Session wall-clock start time lives here and is checked on every turn. Sonic
-  bills by open stream duration, so an unbounded session is an unbounded bill.
-
----
+The one rule from this section worth keeping, because it now applies to the
+in-memory state instead: **if losing a value would break the product, it goes to
+DynamoDB first.** That is what makes a task restart mid-interview survivable —
+every completed exchange is already written.
 
 ## 3. S3
 
+Two buckets. The frontend bucket is a public CloudFront origin; the uploads
+bucket holds personal data and is never reachable from the internet. One bucket
+serving both roles is one policy mistake away from publishing resumes.
+
 ```
-resumes/<uid>/<sid>.pdf         uploaded resume
-audio/<sid>/<qId>.pcm           per-answer audio, 16 kHz 16-bit PCM mono
-frontend/                       static assets served via CloudFront
+uploads bucket
+  resumes/<uid>/resume.pdf      the candidate's resume, one object per user
+
+frontend bucket
+  /                             static assets served via CloudFront
 ```
 
-Audio is raw PCM rather than WebM. That is what the `AudioWorklet` captures and
-what Sonic consumes, so persisting it is a passthrough write of frames already
-on the wire — no transcoding step, no `MediaRecorder`. The tradeoff is size:
-PCM is roughly ten times larger than Opus for the same audio, and it will not
-play in a browser without a WAV header prepended. If playback in the results UI
-matters, write `.wav` instead and accept the 44-byte header.
+**One object per user, at a stable key, overwritten on re-upload.** It was
+`resumes/<uid>/<sid>.pdf` — one copy per interview, with no way to answer "what
+is this candidate's current resume" without reading their sessions to find out.
+Versioning is deliberately off: what a re-upload loses is the candidate's own
+file, which they still have, and versioning solves accidental deletion rather
+than the staleness this design cares about — that is `profileVersion`.
 
-Two buckets, not one: a private bucket for `resumes/` and `audio/`, and a
-public-read-via-CloudFront bucket for `frontend/`. Putting user uploads in the
-same bucket as CDN-served assets is one misconfigured policy away from a
-disclosure.
+The overwrite is only safe because the upload route writes here **last**.
+Parsing and PII redaction happen first, in memory, so a failure in either leaves
+the previous object untouched rather than replacing a good resume with an
+unusable one.
 
-- Uploads use presigned PUT URLs — the browser writes directly to S3 rather
-  than proxying multipart through Express.
-- Presigned URLs expire in 5 minutes and are scoped to the exact key.
-- The key embeds `<uid>`, and the backend generates it from the verified JWT
-  claim — never from a client-supplied value.
-- Block Public Access on the private bucket, SSE-S3 at minimum, versioning off
-  (these are disposable inputs, not records).
-- **Interview audio is never stored.** It streams through the WebSocket and is
-  discarded; the DynamoDB transcript is the durable record and the only thing
-  the Evaluator and Coach read. There is no `audio/` prefix, no `audioKey`
-  attribute and no lifecycle rule for either.
-- One resume object per user at `resumes/<uid>/resume.pdf`, overwritten on
-  re-upload. The stored PDF keeps its PII deliberately — redaction protects the
-  model boundary, and the redacted text lives on the profile item. The stable
-  key is also what makes erasure a single `DeleteObject` with no `ListBucket`.
+**The stored PDF keeps its PII, deliberately.** The candidate uploaded it
+knowingly, it is the archive a parser change is re-run against, and it is theirs
+to download. Redaction protects the *inference* boundary — the redacted text on
+the profile item is the only form any model sees. The stable key is also what
+makes erasure a single `DeleteObject` with no `s3:ListBucket`, so the server
+never gains the ability to enumerate what other candidates uploaded.
 
----
+**There is no `audio/` prefix.** Interview audio streams through the WebSocket
+and is discarded; the DynamoDB transcript is the durable record and the only
+thing the Evaluator and Coach read. See
+[ADR-0007](../adr/0007-user-scoped-redacted-candidate-material.md).
+
+Other rules:
+
+- The key embeds `<uid>`, generated from the verified JWT claim — never from a
+  client-supplied value. `ProfileView` deliberately does not ship `resumeKey`,
+  so a client that never sees an S3 key cannot be the origin of a request to
+  read someone else's.
+- Block Public Access on all four settings, SSE-S3 by default, TLS-only.
+- `abort_incomplete_multipart_upload` after 7 days. Orphaned parts bill
+  silently, which is the same failure class as a leaked Sonic stream.
 
 ## 4. Schema ownership
 
@@ -332,6 +338,8 @@ boundary is a better outcome than an `undefined` surfacing three layers up.
 
 - [`overview.md`](./overview.md) — system architecture
 - [`api.md`](./api.md) — endpoint and WebSocket contracts
-- [ADR-0003](../adr/0003-redis-hot-state-dynamodb-durable.md) — store split
+- [ADR-0006](../adr/0006-drop-redis-dynamodb-alone.md) — why there is no cache tier (supersedes ADR-0003)
+- [ADR-0007](../adr/0007-user-scoped-redacted-candidate-material.md) — user-scoped material, redaction, lazy replanning
+- [ADR-0003](../adr/0003-redis-hot-state-dynamodb-durable.md) — superseded; the original store split
 - [ADR-0004](../adr/0004-sqs-fargate-spot-async-evaluation.md) — async evaluation
 - [ADR-0005](../adr/0005_nova_sonic_speech_to_speech.md) — voice loop
