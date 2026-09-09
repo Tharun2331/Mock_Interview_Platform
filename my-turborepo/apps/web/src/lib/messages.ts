@@ -151,6 +151,11 @@ export const MESSAGES = {
   // is being parsed server-side.
   RESUME_PHASE_UPLOADING: "Uploading your resume",
   RESUME_PHASE_READING: "Reading your resume and repositories",
+  // One phase, not two, because the browser cannot see where extraction ends
+  // and the personal-details scan begins — it is a single request. Named for
+  // what the server is genuinely doing rather than split into invented steps
+  // with fabricated progress behind them.
+  RESUME_PHASE_SCANNING: "Reading your resume and removing personal details",
 
   // A thin parse is a result, not a failure — the candidate decides what to do.
   RESUME_THIN_TITLE: "We could barely read that PDF",
@@ -263,6 +268,96 @@ export const MESSAGES = {
   RESULT_PENDING_BODY:
     "Scoring runs after an interview finishes. When it is ready you will find each answer here with what would have made it stronger.",
   RESULT_BACK: "Start another interview",
+
+  // --- Profile ---
+  // Captured once and reused by every interview. The first-run framing sells
+  // what the material buys; the returning framing is a plain edit form, because
+  // by then the candidate already knows why they gave it to us.
+  RETRY: "Try again",
+  PROFILE_NAV: "Profile",
+  PROFILE_LOAD_TITLE: "We could not load your profile",
+  PROFILE_LOAD_FAILED:
+    "Your profile could not be loaded. Nothing has been changed — try again.",
+
+  PROFILE_EYEBROW_FIRST: "Step 01 — Your material",
+  PROFILE_EYEBROW_EDIT: "Profile",
+  PROFILE_TITLE_FIRST: "Set up your profile",
+  PROFILE_TITLE_EDIT: "Your profile",
+  // Says what the material buys, concretely, rather than asking for it because
+  // the form has fields.
+  PROFILE_DESCRIPTION_FIRST:
+    "Your resume and repositories decide what you get asked, so the questions come from work you have actually done. You only do this once — every interview reuses it.",
+  PROFILE_DESCRIPTION_EDIT:
+    "Update your material here. Your next interview will be built from whatever is saved on this page.",
+
+  PROFILE_FIRST_LABEL: "First name",
+  PROFILE_LAST_LABEL: "Last name",
+  PROFILE_USERNAME_LABEL: "Display name",
+  PROFILE_USERNAME_HINT: "What the interviewer calls you.",
+  PROFILE_FIRST_REQUIRED: "Enter your first name.",
+  PROFILE_LAST_REQUIRED: "Enter your last name.",
+  PROFILE_USERNAME_REQUIRED: "Enter a display name.",
+
+  // Shown when a resume is already stored and no new file is attached, so an
+  // empty picker does not read as "nothing saved" to someone who saved one
+  // weeks ago.
+  PROFILE_RESUME_ON_FILE:
+    "A resume is already saved. Attach a file only if you want to replace it.",
+
+  PROFILE_PHASE_SAVING: "Saving",
+  PROFILE_SUBMIT_FIRST: "Save and continue",
+  PROFILE_SUBMIT_EDIT: "Save changes",
+  PROFILE_SUBMIT_PENDING: "Saving…",
+  PROFILE_SAVED: "Profile saved.",
+  PROFILE_SAVE_FAILED:
+    "We could not save your profile. This is on our side — try again shortly.",
+
+  // --- Account deletion ---
+  // Irreversible and server-side, so the copy names what goes rather than
+  // saying "your data". People read "delete your account" as "remove the
+  // login" and are genuinely surprised to lose their practice history.
+  DELETE_SECTION_TITLE: "Delete your account",
+  DELETE_SECTION_BODY:
+    "Remove your resume, your interviews and your sign-in. This cannot be undone.",
+  DELETE_OPEN: "Delete account",
+  DELETE_TITLE: "Delete your account?",
+  DELETE_BODY: "This permanently removes:",
+  DELETE_ITEMS: [
+    "Your stored resume",
+    "Every interview you have run, including its transcript and feedback",
+    "Your profile and sign-in",
+  ],
+  DELETE_IRREVERSIBLE:
+    "There is no undo, and no way for us to restore any of it afterwards.",
+  // Lowercase, and compared lowercased — the check should not turn on whether
+  // a phone keyboard capitalised the first letter.
+  DELETE_CONFIRM_WORD: "delete",
+  DELETE_CONFIRM_LABEL: "Type delete to confirm",
+  DELETE_CONFIRM: "Delete my account",
+  DELETE_PENDING: "Deleting…",
+  DELETE_CANCEL: "Keep my account",
+  DELETE_DONE: "Your account and everything in it has been deleted.",
+  // Erasure is resumable by design, so the instruction is to retry rather than
+  // to contact anyone. Some data may already be gone; saying so is more honest
+  // than implying nothing happened.
+  DELETE_FAILED:
+    "We could not finish deleting your account. Some data may already be removed — try again.",
+
+  // --- Interview setup ---
+  START_EYEBROW: "Step 02 — The round",
+  START_TITLE: "What are you interviewing for?",
+  START_DESCRIPTION:
+    "Questions are drawn from your saved resume and repositories, pitched at the role you name here.",
+  START_MATERIAL_TITLE: "Planned from",
+  START_MATERIAL_RESUME: "Your resume",
+  START_MATERIAL_EDIT: "Edit",
+  START_SUBMIT: "Build my interview",
+  START_SUBMIT_PENDING: "Building…",
+  START_PHASE_CREATING: "Preparing your session",
+  // The profile went incomplete between the guard and the request — cleared in
+  // another tab, most likely. Names the fix rather than the error.
+  START_PROFILE_INCOMPLETE:
+    "Your profile is missing something. Finish it, then start your interview.",
 } as const;
 
 // Shortcuts, not an allowlist. The field accepts any role — these exist because
@@ -288,6 +383,15 @@ export const resumeTooLarge = (actual: string, limit: string): string =>
 // after one is rejected.
 export const resumeHint = (limit: string): string =>
   `PDF only, up to ${limit}.`;
+
+// The one thing a candidate handing over a resume most deserves to be told.
+// Counts only — naming the values back would undo the removal — and it says
+// "before saving" because that is the actual order: nothing is stored until the
+// scan has run.
+export const redactionSummary = (count: number): string =>
+  count === 0
+    ? "No personal details were found to remove. Your resume is stored as you sent it."
+    : `Removed ${count} personal ${count === 1 ? "detail" : "details"} — name, contact information and similar — before your resume was used to build questions.`;
 
 export const resumeThinDetail = (characters: number): string =>
   `We only extracted ${characters.toLocaleString()} characters. This usually means the PDF is a scan or an image. You can continue without it, or attach a text-based PDF.`;

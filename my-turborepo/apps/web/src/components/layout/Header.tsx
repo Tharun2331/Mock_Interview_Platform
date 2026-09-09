@@ -1,7 +1,8 @@
 import { signOut } from "aws-amplify/auth";
-import { useNavigate } from "react-router";
+import { NavLink, useNavigate } from "react-router";
 import { toast } from "sonner";
-import { LogOutIcon } from "lucide-react";
+import { LogOutIcon, UserRoundIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 import { BrandMark } from "@/components/BrandMark";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -29,6 +30,27 @@ export function Header() {
       <BrandMark />
       <div className="flex items-center gap-1">
         <ThemeToggle />
+
+        {/* The profile is no longer part of starting an interview, so this is
+            the only way back to it once onboarding is done. NavLink rather
+            than Link so the current page is marked, not just linked.
+
+            Sits between the theme toggle and sign-out: the two account actions
+            stay adjacent, and the destructive one stays last. */}
+        <NavLink
+          to="/profile"
+          className={({ isActive }) =>
+            cn(
+              "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
+              isActive
+                ? "text-ink"
+                : "text-ink-subtle hover:text-ink"
+            )
+          }
+        >
+          <UserRoundIcon aria-hidden className="size-4" />
+          {MESSAGES.PROFILE_NAV}
+        </NavLink>
         <Button
           variant="ghost"
           size="sm"

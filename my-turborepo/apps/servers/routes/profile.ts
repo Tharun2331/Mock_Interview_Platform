@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import {
   PLAN_LIMITS,
   ProfileDetailsBody,
+  ProfileGithubBody,
   extractGithubUsername,
   toProfileView,
   type PreInterviewRepo,
@@ -24,7 +25,12 @@ import {
   readPdf,
   readTextField,
 } from "../lib/multipart";
-import { getProfile, saveProfileDetails, saveResumeAndRepos } from "../lib/profile";
+import {
+  getProfile,
+  saveGithubRepos,
+  saveProfileDetails,
+  saveResumeAndRepos,
+} from "../lib/profile";
 import { redactResumeText } from "../lib/redact";
 import { parseResume } from "../lib/resume";
 import { putResume } from "../lib/s3";
@@ -125,6 +131,54 @@ profileRouter.put("/", async (req, res) => {
 
   try {
     const profile = await saveProfileDetails({ userId, ...parsed.data });
+    res.json({ profile: toProfileView(profile) });
+  } catch (error) {
+    handleFailure(res, error);
+  }
+});
+
+// The GitHub half of the candidate's material, on its own route.
+//
+// Split from the resume upload because that one requires a file: without this,
+// correcting a GitHub URL would mean re-attaching a PDF that has not changed.
+// Sending no `gitHub` clears the connection — the profile schema reads absence
+// as "not given", so removing it is a real operation rather than a gap.
+profileRouter.put("/github", async (req, res) => {
+  const userId = requireUserId(req, res);
+  if (userId === null) return;
+
+  const parsed = ProfileGithubBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      message: MESSAGES.INVALID_GITHUB_URL,
+      errors: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  try {
+    const input = parsed.data.gitHub;
+    let username: string | null = null;
+
+    if (input !== undefined) {
+      username = extractGithubUsername(input);
+      if (username === null) {
+        res.status(400).json({ message: MESSAGES.INVALID_GITHUB_URL });
+        return;
+      }
+    }
+
+    // Scraped before the write, so a profile is never left pointing at a
+    // username whose repositories could not be read.
+    const repos =
+      username === null ? [] : await fetchRepos(username);
+
+    const profile = await saveGithubRepos({
+      userId,
+      githubUsername: username,
+      repos,
+    });
+
     res.json({ profile: toProfileView(profile) });
   } catch (error) {
     handleFailure(res, error);
