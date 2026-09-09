@@ -62,6 +62,17 @@ export const MESSAGES = {
   // act on. Routes map these to PROFILE_UNAVAILABLE.
   PROFILE_READ_FAILED:  "Could not read the candidate profile.",
   PROFILE_SAVE_FAILED:  "Could not save the candidate profile.",
+  PROFILE_DELETE_FAILED: "Could not delete the candidate profile.",
+  RESUME_DELETE_FAILED: "Could not delete the stored resume.",
+  COGNITO_DELETE_FAILED: "Could not delete the Cognito user.",
+  SESSION_DELETE_FAILED: "Could not delete the interview session data.",
+  // Distinct from SESSION_DELETE_FAILED: the calls succeeded but DynamoDB
+  // handed items back unprocessed until the retries ran out. The profile keeps
+  // its `deleting` marker, so re-running the erasure finishes the job.
+  SESSION_DELETE_INCOMPLETE: "Session data was only partly deleted — retry the erasure.",
+  // Client-facing. Erasure is resumable by design, so the honest instruction is
+  // to try again rather than to contact anyone.
+  ACCOUNT_DELETE_FAILED: "We could not finish deleting your account. Some data may remain — try again shortly.",
   PLAN_CACHE_READ_FAILED: "Could not read the cached interview plan.",
   PLAN_CACHE_SAVE_FAILED: "Could not cache the interview plan.",
   // Log-facing. Redaction failing closed means the upload fails: storing text

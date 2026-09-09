@@ -1,4 +1,8 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { config } from "./config";
 import { UPLOAD } from "./constants";
 import { ServiceError, UploadError } from "./errors";
@@ -72,6 +76,27 @@ export async function putResume(args: {
     // the candidate's doing, so it must not read as a problem with their file.
     throw new ServiceError(
       `${MESSAGES.UPLOAD_STORE_FAILED} ${error instanceof Error ? error.message : ""}`.trim()
+    );
+  }
+}
+
+// Removes the archived PDF. The whole of a candidate's S3 footprint is this one
+// object — the reason the stable key was worth moving to, since erasure is a
+// single call rather than a prefix listing across every session they ever ran.
+//
+// S3 treats deleting a missing key as success, which makes this safe to retry:
+// a sweep that failed halfway can simply be run again.
+export async function deleteResume(userId: string): Promise<void> {
+  const key = resumeKey(userId);
+
+  try {
+    await s3Client.send(
+      new DeleteObjectCommand({ Bucket: requireBucket(), Key: key })
+    );
+  } catch (error) {
+    if (error instanceof UploadError || error instanceof ServiceError) throw error;
+    throw new ServiceError(
+      `${MESSAGES.RESUME_DELETE_FAILED} ${error instanceof Error ? error.message : ""}`.trim()
     );
   }
 }

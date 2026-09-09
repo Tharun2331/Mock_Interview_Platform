@@ -4,11 +4,15 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import {
   BatchGetCommand,
+  BatchWriteCommand,
   PutCommand,
+  QueryCommand,
   TransactWriteCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import {
+  ITEM_TYPE,
+  KEY_PREFIX,
   PLAN_LIMITS,
   SORT_KEY,
   answerSk,
@@ -24,6 +28,7 @@ import {
   type SessionMeta,
   type SessionStatus,
 } from "@repo/shared";
+import { SECONDS_PER_DAY, SESSION_RETENTION } from "./constants";
 import { dynamoClient, parseItem, requireTable } from "./dynamo";
 import { ServiceError, SessionAccessError, SessionStateError } from "./errors";
 import { MESSAGES } from "./messages";
@@ -38,6 +43,31 @@ import { MESSAGES } from "./messages";
 // ran. Shared by the pre-flight read and the write's condition expression so
 // the two cannot disagree about what "too late" means.
 const REPLANNABLE_STATUSES: SessionStatus[] = ["planning", "ready"];
+
+// BatchWriteItem's hard cap. Not a tuning value — sending 26 is a validation
+// error, not a slower request.
+const DELETE_BATCH_SIZE = 25;
+
+// Retries for items DynamoDB hands back as unprocessed. Three is enough to ride
+// out throttling on a table this size; past that the sweep should stop and leave
+// its marker rather than spin.
+const DELETE_MAX_ATTEMPTS = 3;
+
+// The one place a session's expiry is computed, so META, INPUTS, every ANSWER
+// and the user's lookup ref all expire at the same instant. Derived per-item
+// from "now" instead, a session written across an hour would have its parts
+// disappear across an hour — leaving a transcript whose META is already gone.
+//
+// Whether the value is honoured is an environment decision, not a code one:
+// DynamoDB ignores the attribute unless the table has TTL enabled on it. The
+// dev table does; prod deliberately does not, because there session data is the
+// product rather than a fixture. Writing it unconditionally means enabling
+// retention later is a Terraform change with no deploy behind it.
+export function sessionExpiresAt(): number {
+  return (
+    Math.floor(Date.now() / 1000) + SESSION_RETENTION.DAYS * SECONDS_PER_DAY
+  );
+}
 
 // Creates the session the moment its inputs exist — before any Bedrock call, so
 // an uploaded resume is never lost to a Planner failure.
@@ -58,6 +88,9 @@ export async function createSession(args: {
 }): Promise<void> {
   const TableName = requireTable();
   const createdAt = new Date().toISOString();
+  // Computed once for all three items, so the parts of one session cannot
+  // expire at different moments.
+  const expiresAt = sessionExpiresAt();
 
   try {
     await dynamoClient.send(
@@ -69,6 +102,8 @@ export async function createSession(args: {
               Item: {
                 PK: sessionPk(args.sessionId),
                 SK: SORT_KEY.META,
+                type: ITEM_TYPE.SESSION_META,
+                expiresAt,
                 sessionId: args.sessionId,
                 userId: args.userId,
                 status: "planning",
@@ -91,6 +126,8 @@ export async function createSession(args: {
               Item: {
                 PK: sessionPk(args.sessionId),
                 SK: SORT_KEY.INPUTS,
+                type: ITEM_TYPE.SESSION_INPUTS,
+                expiresAt,
                 // Capped on the way in. Both bounds come from the shared schema
                 // this item is validated against on read, so a stored item can
                 // never be too large for its own validator to accept.
@@ -109,6 +146,11 @@ export async function createSession(args: {
               Item: {
                 PK: userPk(args.userId),
                 SK: sessionSk(args.sessionId),
+                type: ITEM_TYPE.USER_SESSION_REF,
+                // The ref expires with the session it points at. Without this
+                // it would outlive it and the history page would list an
+                // interview whose every item is gone.
+                expiresAt,
                 sessionId: args.sessionId,
                 userId: args.userId,
                 createdAt,
@@ -133,6 +175,177 @@ export async function createSession(args: {
       }`
     );
   }
+}
+
+// Every session id a candidate owns, for the erasure sweep.
+//
+// `begins_with(SK, "SESSION#")` is not optional. The USER#<uid> partition also
+// holds PROFILE and PLAN, both of which sort before "SESSION#" — an unfiltered
+// Query would return them here and this would try to delete a session whose id
+// is undefined.
+//
+// Paginated properly rather than trusting one page: a candidate with enough
+// history to exceed 1 MB of refs is exactly the one whose leftovers would go
+// unnoticed.
+export async function listUserSessionIds(args: {
+  userId: string;
+}): Promise<string[]> {
+  const TableName = requireTable();
+  const ids: string[] = [];
+  let cursor: Record<string, unknown> | undefined;
+
+  do {
+    let response;
+    try {
+      response = await dynamoClient.send(
+        new QueryCommand({
+          TableName,
+          KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+          ExpressionAttributeValues: {
+            ":pk": userPk(args.userId),
+            ":prefix": KEY_PREFIX.SESSION,
+          },
+          // Only the id is needed. Projecting the whole ref item would read
+          // attributes this never looks at, on every page.
+          ProjectionExpression: "sessionId",
+          ExclusiveStartKey: cursor,
+        })
+      );
+    } catch (error) {
+      throw new ServiceError(
+        `${MESSAGES.SESSION_READ_FAILED} — ${
+          error instanceof Error ? error.message : "unknown"
+        }`
+      );
+    }
+
+    for (const item of response.Items ?? []) {
+      if (typeof item.sessionId === "string") ids.push(item.sessionId);
+    }
+
+    cursor = response.LastEvaluatedKey;
+  } while (cursor !== undefined);
+
+  return ids;
+}
+
+// Deletes every item under one session — META, INPUTS, each ANSWER and EVAL,
+// the eval summary and the coach plan — without needing to know which of them
+// exist. The partition is queried for its keys and whatever comes back is
+// deleted, so a session that never got past `planning` and one that ran to
+// completion take the same path.
+//
+// Deliberately not conditioned on ownership. The only caller has already proved
+// it by finding this id in the candidate's own USER#<uid> partition, and a
+// condition here would make the delete non-idempotent for no gain.
+export async function deleteSessionData(args: {
+  sessionId: string;
+}): Promise<number> {
+  const TableName = requireTable();
+  const pk = sessionPk(args.sessionId);
+  let deleted = 0;
+  let cursor: Record<string, unknown> | undefined;
+
+  do {
+    let response;
+    try {
+      response = await dynamoClient.send(
+        new QueryCommand({
+          TableName,
+          KeyConditionExpression: "PK = :pk",
+          ExpressionAttributeValues: { ":pk": pk },
+          // Keys only — a transcript can be large and none of it is read here.
+          ProjectionExpression: "PK, SK",
+          ExclusiveStartKey: cursor,
+        })
+      );
+    } catch (error) {
+      throw new ServiceError(
+        `${MESSAGES.SESSION_READ_FAILED} — ${
+          error instanceof Error ? error.message : "unknown"
+        }`
+      );
+    }
+
+    const keys = (response.Items ?? []).filter(
+      (item) => typeof item.PK === "string" && typeof item.SK === "string"
+    );
+
+    // BatchWriteItem caps at 25 per call.
+    for (let start = 0; start < keys.length; start += DELETE_BATCH_SIZE) {
+      const chunk = keys.slice(start, start + DELETE_BATCH_SIZE);
+      await deleteKeyChunk(TableName, chunk);
+      deleted += chunk.length;
+    }
+
+    cursor = response.LastEvaluatedKey;
+  } while (cursor !== undefined);
+
+  return deleted;
+}
+
+// Removes the USER#<uid>/SESSION#<sid> lookup items.
+//
+// Easy to miss, and its own function so it cannot be: these refs live in the
+// *user's* partition, not the session's, so deleteSessionData never sees them.
+// Left behind they are invisible — nothing reads a ref whose session is gone —
+// and an erasure that leaves rows keyed to a deleted user behind is exactly the
+// thing erasure was supposed to prevent.
+export async function deleteUserSessionRefs(args: {
+  userId: string;
+  sessionIds: string[];
+}): Promise<number> {
+  const TableName = requireTable();
+  const pk = userPk(args.userId);
+  const keys = args.sessionIds.map((sessionId) => ({
+    PK: pk,
+    SK: sessionSk(sessionId),
+  }));
+
+  for (let start = 0; start < keys.length; start += DELETE_BATCH_SIZE) {
+    await deleteKeyChunk(TableName, keys.slice(start, start + DELETE_BATCH_SIZE));
+  }
+
+  return keys.length;
+}
+
+// BatchWriteItem reports per-item throttling as UnprocessedItems rather than as
+// an error, so a batch can "succeed" having written nothing. Left unretried,
+// that is how a deletion silently leaves data behind.
+async function deleteKeyChunk(
+  TableName: string,
+  keys: Record<string, unknown>[]
+): Promise<void> {
+  let pending = keys.map((Key) => ({ DeleteRequest: { Key } }));
+
+  for (let attempt = 0; attempt < DELETE_MAX_ATTEMPTS; attempt += 1) {
+    let response;
+    try {
+      response = await dynamoClient.send(
+        new BatchWriteCommand({ RequestItems: { [TableName]: pending } })
+      );
+    } catch (error) {
+      throw new ServiceError(
+        `${MESSAGES.SESSION_DELETE_FAILED} — ${
+          error instanceof Error ? error.message : "unknown"
+        }`
+      );
+    }
+
+    const unprocessed = response.UnprocessedItems?.[TableName] ?? [];
+    if (unprocessed.length === 0) return;
+
+    pending = unprocessed.flatMap((request) =>
+      request.DeleteRequest === undefined
+        ? []
+        : [{ DeleteRequest: { Key: request.DeleteRequest.Key ?? {} } }]
+    );
+  }
+
+  // Throwing leaves the profile's `deleting` marker in place, which is what
+  // makes the sweep resumable — every delete in it is idempotent, so a retry
+  // simply finishes the job.
+  throw new ServiceError(MESSAGES.SESSION_DELETE_INCOMPLETE);
 }
 
 // Loads the candidate material the Planner reads, proving ownership on the way.
@@ -236,6 +449,11 @@ export async function recordAnswer(args: {
       Item: {
         PK: sessionPk(args.sessionId),
         SK: answerSk(args.questionId),
+        type: ITEM_TYPE.SESSION_ANSWER,
+        // Recomputed rather than read from META: that would cost a read on
+        // every turn of a live interview to save a few hours of drift on an
+        // expiry measured in months.
+        expiresAt: sessionExpiresAt(),
         questionId: args.questionId,
         questionText: args.questionText,
         questionType: args.questionType,

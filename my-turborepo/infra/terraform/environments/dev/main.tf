@@ -4,8 +4,9 @@ module "iam" {
   aws_region  = var.aws_region
   # Wired through the module output rather than a data lookup, so the
   # dependency is explicit and the ARN cannot drift.
-  uploads_bucket_arn = module.s3.uploads_bucket_arn
-  sessions_table_arn = module.dynamodb.table_arn
+  uploads_bucket_arn    = module.s3.uploads_bucket_arn
+  sessions_table_arn    = module.dynamodb.table_arn
+  cognito_user_pool_arn = module.cognito.cognito_user_pool_arn
 }
 
 module "ssm" {
@@ -30,6 +31,12 @@ module "dynamodb" {
   # dev only. TTL deletes cost no write capacity, so this is the cheapest way
   # to stop test sessions accumulating. Never set in prod: session data is the
   # product, and an expiry attribute set by accident would delete it silently.
+  #
+  # This was enabled here long before anything wrote the attribute, which made
+  # it inert — TTL ignores items that have no matching attribute, so nothing
+  # ever expired. `sessionExpiresAt()` in apps/servers/lib/sessions.ts now
+  # populates it. The name is a contract between the two: rename it on one side
+  # and expiry stops silently rather than failing.
   ttl_attribute_name = "expiresAt"
 }
 

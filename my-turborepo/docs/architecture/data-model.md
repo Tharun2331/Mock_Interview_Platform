@@ -1,11 +1,14 @@
 # Data Model
 
-**Status:** design · Nothing in this document is implemented yet. No DynamoDB
-table, Redis cluster, or S3 bucket exists on `main` or `dev`.
+**Status:** partly implemented. The DynamoDB table and both S3 buckets exist on
+`dev` and are in use. **Redis does not exist and never will** — ElastiCache was
+dropped during Phase 3, so every mention of it below this line is stale and is
+kept only until this document is rewritten. [ADR-0003](../adr/0003-redis-hot-state-dynamodb-durable.md)
+is likewise still marked Accepted and needs superseding.
 
-Three stores, split by lifetime: DynamoDB for anything that must survive,
-Redis for anything that must be fast and may be lost, S3 for bytes. See
-[ADR-0003](../adr/0003-redis-hot-state-dynamodb-durable.md) for why.
+Two stores: DynamoDB for anything that must survive, S3 for bytes. Interview
+audio is **not** stored at all — it streams through the WebSocket and is
+discarded, and the transcript in DynamoDB is the durable record.
 
 ---
 
@@ -21,23 +24,63 @@ hardcoded, and never derived from `NODE_ENV`.
 | `PK`      | String | Partition key |
 | `SK`      | String | Sort key      |
 
-### Item types
+### Item types, and who is responsible for each
 
-```
-PK                   SK                Purpose
-─────────────────────────────────────────────────────────────────────
-SESSION#<sid>        META              session metadata + interview plan
-SESSION#<sid>        INPUTS            scraped repos + extracted resume text
-SESSION#<sid>        ANSWER#<qId>      question text + candidate transcript
-SESSION#<sid>        EVAL#<qId>        per-answer scores + rationale
-SESSION#<sid>        EVAL#SUMMARY      rollup + completion counter
-SESSION#<sid>        COACH             improvement plan
-USER#<uid>           SESSION#<sid>     user → session lookup
-```
+Every row has three owners: something that **writes** it, something that
+**deletes** it on an erasure request, and — for session data — a **TTL** that
+expires it on its own. A blank cell in either of the last two columns is a leak,
+not an omission.
+
+| PK | SK | `type` | Written by | Deleted by | TTL |
+| --- | --- | --- | --- | --- | --- |
+| `SESSION#<sid>` | `META` | `session_meta` | `createSession` | `deleteSessionData` | ✅ |
+| `SESSION#<sid>` | `INPUTS` | `session_inputs` | `createSession` | `deleteSessionData` | ✅ |
+| `SESSION#<sid>` | `ANSWER#<qId>` | `session_answer` | `recordAnswer` | `deleteSessionData` | ✅ |
+| `SESSION#<sid>` | `EVAL#<qId>` | `session_evaluation` | Evaluator worker *(P5)* | `deleteSessionData` | ✅ |
+| `SESSION#<sid>` | `SUMMARY` | `session_eval_summary` | Evaluator worker *(P5)* | `deleteSessionData` | ✅ |
+| `SESSION#<sid>` | `COACH` | `session_coach` | Coach agent *(P6)* | `deleteSessionData` | ✅ |
+| `USER#<uid>` | `SESSION#<sid>` | `user_session_ref` | `createSession` | **`deleteUserSessionRefs`** | ✅ |
+| `USER#<uid>` | `PROFILE` | `user_profile` | `saveProfileDetails`, `saveResumeAndRepos` | `deleteProfileItems` | ❌ |
+| `USER#<uid>` | `PLAN` | `cached_plan` | `putCachedPlan` | `deleteProfileItems` | ❌ |
+
+**The bolded row is why this table exists.** `USER#<uid>/SESSION#<sid>` refs live
+in the *user's* partition while describing a *session*, so `deleteSessionData`
+never saw them and `deleteProfileItems` did not own them. They survived every
+erasure — invisibly, because nothing reads a ref whose session is gone. That is
+the shape of every bug this table is meant to prevent: a denormalised copy with
+a writer and no deleter.
+
+`PROFILE` and `PLAN` carry no TTL on purpose. They are the account, not a
+session artefact, and an account that quietly evaporates after a few quiet
+months is a bug rather than a retention policy. They go only when erasure
+removes them.
+
+**`SUMMARY`, not `EVAL#SUMMARY`.** The rollup sat under the `EVAL#` prefix until
+it was moved, which put it inside the range `Query ... begins_with("EVAL#")`
+returns. That query is how completion is derived, so the rollup would have
+counted as an evaluation and fired the Coach one question early.
 
 `sid` and `qId` are ULIDs, not UUIDs. ULIDs sort lexicographically by creation
 time, so `ANSWER#<qId>` items come back from a Query in the order they were
 asked — no separate sequence attribute, no client-side sort.
+
+### Querying `USER#<uid>`
+
+That partition now holds three item types. `PLAN` and `PROFILE` both sort before
+`SESSION#`, so **a history query must filter `begins_with(SK, "SESSION#")`** — an
+unfiltered Query returns the profile first and fails to parse it as a session
+ref.
+
+### Retention
+
+Session items carry `expiresAt`, a Unix-epoch second set by `sessionExpiresAt()`
+and shared by every item in one session so its parts cannot expire at different
+moments. Whether it is honoured is per-environment: `dev` enables TTL on that
+attribute, `prod` deliberately does not.
+
+TTL deletion is best-effort and can lag by up to 48 hours. That is fine for
+retention and is not fine for an erasure request, which is why the two are
+separate mechanisms rather than one.
 
 ### Item shapes
 
@@ -90,7 +133,6 @@ questionText     string   from Sonic textOutput, role: ASSISTANT
 questionType     string   behavioural | technical | role_specific
 askedAt          string   ISO 8601
 transcript       string   from Sonic textOutput, role: USER — final only, not partials
-audioKey         string   S3 key, nullable — audio persistence is best-effort
 durationMs       number
 interrupted      boolean  candidate barged in over the question
 ```
@@ -122,13 +164,18 @@ Without this attribute that's invisible forever. This applies to the Evaluator's
 text model only — the interview itself has no fallback, since Nova 2 Sonic is
 the sole speech model in the stack.
 
-**`SESSION#<sid> / EVAL#SUMMARY`**
+**`SESSION#<sid> / SUMMARY`**
 
 ```
-completedCount   number   incremented as each evaluation lands
 questionCount    number   copied from META at enqueue time
 averages         map      mean per dimension, written when complete
 ```
+
+No `completedCount`. `ADD completedCount 1` is not idempotent and SQS is
+at-least-once, so a redelivered message over-counts and the Coach fires early.
+Completion is derived from `Query ... begins_with("EVAL#")` instead, which is
+exact by construction — and is exactly why this item must not sit under that
+prefix.
 
 **`SESSION#<sid> / COACH`**
 
@@ -148,7 +195,10 @@ generatedAt      string   ISO 8601
 | 3 | Transcript in order         | `Query PK = SESSION#<sid>, SK begins_with ANSWER#`    |
 | 4 | All evaluations             | `Query PK = SESSION#<sid>, SK begins_with EVAL#`      |
 | 5 | User's session history      | `Query PK = USER#<uid>, SK begins_with SESSION#`      |
-| 6 | Completion progress         | `GetItem PK = SESSION#<sid>, SK = EVAL#SUMMARY`       |
+| 6 | Completion progress         | count of pattern 4 — see below                        |
+| 7 | Score rollup                | `GetItem PK = SESSION#<sid>, SK = SUMMARY`            |
+| 8 | Candidate profile           | `GetItem PK = USER#<uid>, SK = PROFILE`               |
+| 9 | Cached plan                 | `GetItem PK = USER#<uid>, SK = PLAN`                  |
 
 ### The GSI in overview §6 is not needed
 
@@ -167,11 +217,11 @@ correct on this point; `overview.md` §6 predates the analysis.
 - Evaluations are written with `PutItem` keyed by `questionId`. SQS is
   at-least-once, so a redelivered message overwrites the same item rather than
   creating a duplicate.
-- `EVAL#SUMMARY.completedCount` is the exception — `ADD completedCount 1` is
-  not idempotent and a redelivery over-counts. Either guard it with a
-  conditional write on the `EVAL#<qId>` item not already existing, or drop the
-  counter and derive completion from `Query ... begins_with EVAL#`. Deriving is
-  simpler and this document prefers it; the counter exists in
+- **There is no `completedCount`.** `ADD completedCount 1` is not idempotent
+  and a redelivery over-counts, firing the Coach early. Completion is derived
+  from `Query ... begins_with("EVAL#")`, which is exact by construction — and is
+  why the rollup lives at `SUMMARY` rather than under that prefix. The counter
+  exists in
   [ADR-0004](../adr/0004-sqs-fargate-spot-async-evaluation.md) as the original
   design.
 - Reads for user-facing display can be eventually consistent. The completion
@@ -252,11 +302,14 @@ disclosure.
   claim — never from a client-supplied value.
 - Block Public Access on the private bucket, SSE-S3 at minimum, versioning off
   (these are disposable inputs, not records).
-- Audio persistence is best-effort. A failed audio upload does not fail the
-  interview turn; `audioKey` is nullable for exactly this reason.
-- Given PCM's size and the fact that transcripts already carry everything the
-  Evaluator needs, consider a lifecycle rule expiring `audio/` after 30 days.
-  The audio is a debugging aid, not the product.
+- **Interview audio is never stored.** It streams through the WebSocket and is
+  discarded; the DynamoDB transcript is the durable record and the only thing
+  the Evaluator and Coach read. There is no `audio/` prefix, no `audioKey`
+  attribute and no lifecycle rule for either.
+- One resume object per user at `resumes/<uid>/resume.pdf`, overwritten on
+  re-upload. The stored PDF keeps its PII deliberately — redaction protects the
+  model boundary, and the redacted text lives on the profile item. The stable
+  key is also what makes erasure a single `DeleteObject` with no `ListBucket`.
 
 ---
 

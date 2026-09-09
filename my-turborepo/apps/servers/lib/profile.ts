@@ -1,7 +1,13 @@
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
-import { GetCommand, PutCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  DeleteCommand,
+  GetCommand,
+  PutCommand,
+  UpdateCommand,
+} from "@aws-sdk/lib-dynamodb";
 import {
   CachedPlanSchema,
+  ITEM_TYPE,
   PLAN_LIMITS,
   SORT_KEY,
   UserProfileSchema,
@@ -98,6 +104,7 @@ export async function saveProfileDetails(args: {
         Key: profileKey(args.userId),
         UpdateExpression: [
           "SET userId = :userId",
+          "#type = :type",
           "#status = if_not_exists(#status, :active)",
           "username = :username",
           "firstName = :firstName",
@@ -110,9 +117,12 @@ export async function saveProfileDetails(args: {
           "profileVersion = if_not_exists(profileVersion, :zero)",
         ].join(", "),
         ConditionExpression: NOT_DELETING,
-        ExpressionAttributeNames: { "#status": "status" },
+        // Both aliased: `status` and `type` are DynamoDB reserved words, and an
+        // unaliased reserved word fails the request rather than the attribute.
+        ExpressionAttributeNames: { "#status": "status", "#type": "type" },
         ExpressionAttributeValues: {
           ":userId": args.userId,
+          ":type": ITEM_TYPE.USER_PROFILE,
           ":active": "active",
           ":deleting": "deleting",
           ":username": args.username,
@@ -157,6 +167,7 @@ export async function saveResumeAndRepos(args: {
 
   const setClauses = [
     "userId = :userId",
+    "#type = :type",
     "#status = if_not_exists(#status, :active)",
     "resumeKey = :resumeKey",
     "resumeText = :resumeText",
@@ -167,6 +178,7 @@ export async function saveResumeAndRepos(args: {
 
   const values: Record<string, unknown> = {
     ":userId": args.userId,
+    ":type": ITEM_TYPE.USER_PROFILE,
     ":active": "active",
     ":deleting": "deleting",
     ":resumeKey": args.resumeKey,
@@ -207,7 +219,7 @@ export async function saveResumeAndRepos(args: {
         Key: profileKey(args.userId),
         UpdateExpression: expression,
         ConditionExpression: NOT_DELETING,
-        ExpressionAttributeNames: { "#status": "status" },
+        ExpressionAttributeNames: { "#status": "status", "#type": "type" },
         ExpressionAttributeValues: values,
         ReturnValues: "ALL_NEW",
       })
@@ -220,6 +232,64 @@ export async function saveResumeAndRepos(args: {
   }
 
   return parseItem(UserProfileSchema, response.Attributes, PROFILE_CONTEXT);
+}
+
+// Phase one of erasure. Flips the profile to `deleting` and nothing else.
+//
+// This is the only step that has to happen before anything is destroyed, and it
+// is deliberately its own write: from here every mutating path refuses the
+// account, including a request that was already in flight when the deletion
+// arrived. The marker also outlives a failed sweep, which is what makes the
+// sweep resumable — it is removed last, by deleteProfileItems.
+//
+// Returns false when there is no profile to mark. A candidate who signed up and
+// never saved one still has an account to erase, so that is not an error.
+export async function markProfileDeleting(args: {
+  userId: string;
+}): Promise<boolean> {
+  const TableName = requireTable();
+
+  try {
+    await dynamoClient.send(
+      new UpdateCommand({
+        TableName,
+        Key: profileKey(args.userId),
+        UpdateExpression: "SET #status = :deleting, updatedAt = :now",
+        // Without this the update would create the very item it is meant to be
+        // tearing down.
+        ConditionExpression: "attribute_exists(PK)",
+        ExpressionAttributeNames: { "#status": "status" },
+        ExpressionAttributeValues: {
+          ":deleting": "deleting",
+          ":now": new Date().toISOString(),
+        },
+      })
+    );
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException) return false;
+    throw readFailure(error, MESSAGES.PROFILE_SAVE_FAILED);
+  }
+
+  return true;
+}
+
+// Final phase. The PROFILE item goes last on purpose: while it exists carrying
+// `deleting`, it is the record that a sweep was started and may not have
+// finished. Removing it first would leave any survivors unreachable and
+// invisible.
+export async function deleteProfileItems(args: {
+  userId: string;
+}): Promise<void> {
+  const TableName = requireTable();
+
+  // Plan first, profile second — same ordering logic one level down.
+  for (const Key of [cachedPlanKey(args.userId), profileKey(args.userId)]) {
+    try {
+      await dynamoClient.send(new DeleteCommand({ TableName, Key }));
+    } catch (error) {
+      throw readFailure(error, MESSAGES.PROFILE_DELETE_FAILED);
+    }
+  }
 }
 
 // Null when nothing is cached — a first interview, or a plan already evicted.
@@ -271,6 +341,7 @@ export async function putCachedPlan(args: {
         TableName,
         Item: {
           ...cachedPlanKey(args.userId),
+          type: ITEM_TYPE.CACHED_PLAN,
           plan: args.plan,
           targetRole: args.targetRole,
           profileVersion: args.profileVersion,

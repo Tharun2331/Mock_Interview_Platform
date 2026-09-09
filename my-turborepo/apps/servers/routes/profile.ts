@@ -15,6 +15,7 @@ import {
   ServiceError,
   UploadError,
 } from "../lib/errors";
+import { eraseUserAccount } from "../lib/erasure";
 import { fetchRepos } from "../lib/github";
 import { MESSAGES } from "../lib/messages";
 import {
@@ -127,6 +128,55 @@ profileRouter.put("/", async (req, res) => {
     res.json({ profile: toProfileView(profile) });
   } catch (error) {
     handleFailure(res, error);
+  }
+});
+
+// Account erasure. Deletes the candidate's data across DynamoDB and S3, then
+// the Cognito identity itself.
+//
+// No confirmation token, no body: the caller has already proved who they are
+// with a verified access token, and a client-supplied "yes I mean it" adds a
+// field to validate rather than a decision to make. Confirming belongs in the
+// UI, in front of this call.
+//
+// Scoped to the authenticated user with no path parameter, so there is no
+// identifier to tamper with — this route cannot be pointed at anyone else.
+profileRouter.delete("/", async (req, res) => {
+  const userId = requireUserId(req, res);
+  if (userId === null) return;
+
+  // The Cognito username, not the sub. Federated users have usernames like
+  // `google_10937...`, and the admin API keys on that rather than on the sub
+  // every DynamoDB item uses.
+  const username = req.user?.username;
+  if (username === undefined) {
+    res.status(401).json({ error: MESSAGES.UNAUTHORIZED_INVALID_TOKEN });
+    return;
+  }
+
+  try {
+    const summary = await eraseUserAccount({ userId, username });
+
+    // Logged because it is the only record that will exist afterwards — by
+    // design, every row naming this user is gone. Counts only, no identifiers
+    // beyond the sub, which is what the log already keys on.
+    console.log(
+      `[profile] erased ${userId}: ${summary.sessionsDeleted} sessions, ` +
+        `${summary.itemsDeleted} items, profile=${summary.hadProfile}`
+    );
+
+    res.status(204).end();
+  } catch (error) {
+    // Deliberately not routed through handleFailure. A partial erasure is its
+    // own outcome: the marker survives, the account stays locked, and retrying
+    // resumes rather than restarts. The response has to say that instead of
+    // reading as a generic save failure.
+    console.error(
+      `[profile] erasure failed for ${userId} — ${
+        error instanceof Error ? error.message : error
+      }`
+    );
+    res.status(500).json({ message: MESSAGES.ACCOUNT_DELETE_FAILED });
   }
 });
 

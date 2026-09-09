@@ -1,6 +1,7 @@
 import z from "zod";
 import { PLAN_LIMITS, PlanResponseSchema } from "./plan";
 import { PreInterviewRepo } from "./preInterview";
+import { ITEM_TYPE } from "./session";
 
 // User-scoped item shapes for the single DynamoDB table. Sessions used to own
 // the candidate's material — a resume was uploaded per interview and parsed
@@ -34,6 +35,10 @@ export type ProfileStatus = z.infer<typeof ProfileStatusSchema>;
 // schema, for the same reason SessionMetaSchema.plan is optional: requiring a
 // field the writer cannot always supply forces a placeholder that reads as real.
 export const UserProfileSchema = z.object({
+  type: z.literal(ITEM_TYPE.USER_PROFILE).default(ITEM_TYPE.USER_PROFILE),
+  // No `expiresAt`. Session items carry a TTL; this one is the account itself,
+  // and an account that evaporates after a quiet few months is a bug rather
+  // than a retention policy. It goes only when erasure removes it.
   userId: z.string().min(1),
   status: ProfileStatusSchema,
   createdAt: z.iso.datetime(),
@@ -178,6 +183,7 @@ export const normalizeTargetRole = (role: string): string =>
 // roles pays for a regeneration each time, which is the right trade against an
 // unbounded partition for a cache whose miss cost is one Planner call.
 export const CachedPlanSchema = z.object({
+  type: z.literal(ITEM_TYPE.CACHED_PLAN).default(ITEM_TYPE.CACHED_PLAN),
   plan: PlanResponseSchema,
   // Stored as typed, compared normalised.
   targetRole: z.string().min(1).max(200),
