@@ -289,19 +289,31 @@ is unblocked today.
 
 ## Open decisions
 
-**Ministral is dead in us-east-1 (2026-09-03).** It accepts the connection and
-never sends a byte — surfacing only as `TimeoutError: Stream timed out because
-of no activity`. With no client timeout that hung `/plan` indefinitely; with
-one it cost 3 × 30s of retries before the chain fell through to Llama. Fixed by
-demoting it to last in `DEFAULT_TEXT_MODELS`, `maxAttempts: 1`, a 30s request
-timeout, and a warn log whenever a fallback answers.
+**Ministral is back (2026-09-09). Resolved.** It stopped responding in
+us-east-1 on 2026-09-03 — connection accepted, no bytes ever sent, surfacing
+only as `TimeoutError: Stream timed out because of no activity` — and was
+demoted to last so the chain could recover by itself. It has. Re-probed with
+`bun scripts/modelProbe.ts`:
 
-**This contradicts CLAUDE.md's locked decision ("Ministral 3 8B for text").**
-Either that line changes or `lib/config.ts` reverts — decide once you know
-whether Ministral is coming back. Verify with `bun scripts/modelProbe.ts`,
-which times each model in the chain individually. Note the cost consequence:
-Llama 4 Scout 17B and Qwen 3 Coder 30B both bill above Ministral 3 8B, and the
-Evaluator runs once per question.
+| Model | 2026-09-03 | 2026-09-09 |
+|-------|-----------|-----------|
+| `mistral.ministral-3-8b-instruct` | 30s timeout | **362ms** |
+| `us.meta.llama4-scout-17b-instruct-v1:0` | 280ms | 354ms |
+| `qwen.qwen3-coder-30b-a3b-v1:0` | 478ms | **8796ms** |
+
+Ministral is primary again, which restores CLAUDE.md's locked decision and
+matches the order `bedrock_text_model_ids` in the IAM module already documented
+— `lib/config.ts` had drifted from both.
+
+Two things worth carrying forward. **Qwen degraded 18x** and is now a last
+resort rather than a peer; if the first two ever fail together, a candidate
+waits nine seconds. And the outage defences stay regardless of ordering —
+`MAX_ATTEMPTS: 1`, the 30s request timeout, and the warn-on-fallback log are
+what made this cheap to diagnose and survive.
+
+Cost note still applies: the Evaluator runs once per question, so a 15-question
+round multiplies whichever model answers by fifteen. Ministral being primary is
+the cheap outcome.
 
 ---
 
@@ -309,7 +321,6 @@ Evaluator runs once per question.
 
 | Issue | File | Priority |
 |-------|------|----------|
-| Ministral primary contradicts CLAUDE.md's locked decision | `lib/config.ts` | High — decide |
 | No CI/CD at all; `.github/workflows/` absent | — | High before deploy |
 | Editing `packages/shared` does not invalidate the dev server's cached module | Bun dev server | Medium — restart after any shared edit |
 | Rate limiter is in-memory; per-task budget | `apps/servers/lib/rateLimit.ts` | Medium — options in ADR-0006 |

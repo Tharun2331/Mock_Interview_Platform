@@ -42,22 +42,36 @@ const csvList = (key: string, value: string): string[] => {
 // which silently cost this chain its middle tier: every Ministral failure fell
 // straight through to Qwen. Verified against Bedrock 2026-08-26.
 //
-// Ministral was the primary until 2026-09-03, when it stopped responding in
-// us-east-1: the request is accepted, the connection opens, and no bytes are
-// ever sent back. Not an error the SDK can classify — it surfaces only as
-// `TimeoutError: Stream timed out because of no activity`, so the chain fell
-// through to Llama on every single request and charged the candidate 90s of
-// timeouts first. Measured with `scripts/modelProbe.ts`: Ministral times out
-// at 30s, Llama answers in 280ms, Qwen in 478ms.
+// Ministral stopped responding in us-east-1 on 2026-09-03 — the request was
+// accepted, the connection opened, and no bytes were ever sent back. Not an
+// error the SDK can classify: it surfaced only as `TimeoutError: Stream timed
+// out because of no activity`, so every request paid 30s before falling through
+// to Llama. It was demoted rather than removed, precisely so the chain could
+// recover by itself if the model came back.
 //
-// It is demoted rather than removed, so the chain recovers by itself if the
-// model comes back. NOTE: this contradicts the "Ministral 3 8B for text"
-// locked decision in CLAUDE.md — that line needs updating, or this reverting,
-// once you have decided whether Ministral is coming back.
+// It came back. Re-probed 2026-09-09 with `scripts/modelProbe.ts`:
+//
+//   mistral.ministral-3-8b-instruct           362ms
+//   us.meta.llama4-scout-17b-instruct-v1:0    354ms
+//   qwen.qwen3-coder-30b-a3b-v1:0            8796ms
+//
+// So Ministral is primary again, which restores the "Ministral 3 8B for text"
+// locked decision in CLAUDE.md and matches the order `bedrock_text_model_ids`
+// in infra/terraform/modules/iam/variables.tf already documented.
+//
+// Qwen stays last and the reason changed: it is no longer the fast fallback it
+// was on 2026-09-03 (478ms), it is now roughly 25x slower than either model
+// above it. That is a candidate watching a progress bar, so it is a last resort
+// rather than a peer.
+//
+// The defences added during the outage stay, and are not tied to which model is
+// first: MAX_ATTEMPTS 1, a 30s request timeout, and a warn log whenever a
+// fallback answers. They are what made this failure cheap to diagnose and
+// cheap to survive — removing them now would mean rediscovering it the hard way.
 const DEFAULT_TEXT_MODELS = [
+  "mistral.ministral-3-8b-instruct",
   "us.meta.llama4-scout-17b-instruct-v1:0",
   "qwen.qwen3-coder-30b-a3b-v1:0",
-  "mistral.ministral-3-8b-instruct",
 ].join(",");
 
 export const config = {
