@@ -1,6 +1,9 @@
 # ADR-0004: SQS + Fargate Spot for asynchronous evaluation
 
-**Status:** Accepted · **Date:** 2026-08-11
+- **Status:** Accepted, with the completion counter amended
+- **Date:** 2026-08-11
+- **Amended:** 2026-09-09 — the counter below was replaced by a derived count,
+  and the rollup item moved off the `EVAL#` prefix. See "Idempotency".
 
 ## Context
 
@@ -16,9 +19,10 @@ second ECS Fargate service running on **Spot capacity** consumes the queue,
 scores each answer with Bedrock, and writes results to DynamoDB. Messages that
 fail beyond `maxReceiveCount: 3` land in a dead-letter queue.
 
-A completion counter (`UpdateItem` with `ADD completedCount 1` on
-`EVAL#SUMMARY`) tracks progress. When it reaches the question count, the worker
-triggers the Coach agent.
+Completion is derived by counting `EVAL#<qId>` items, not by maintaining a
+counter. When the count reaches the question count, the worker triggers the
+Coach agent. (This ADR originally specified `ADD completedCount 1` on
+`EVAL#SUMMARY`; see "Idempotency" for why that was dropped.)
 
 ## Why Spot is safe here
 
@@ -40,10 +44,16 @@ SQS is at-least-once delivery, so a message can be redelivered after a
 successful write. Evaluations are keyed by `questionId` and written with
 `PutItem`, so a redelivery overwrites the same item rather than double-counting.
 
-The completion counter is the exception — `ADD completedCount 1` is not
-idempotent, and a redelivery would over-count. Guard it with a conditional
-write on the `EVAL#<qId>` item not already existing, or derive completion by
-counting `EVAL#` items instead of maintaining a counter.
+The completion counter was the exception, and it is why there is no longer
+one. `ADD completedCount 1` is not idempotent, so a redelivery over-counts and
+fires the Coach early — on an interview still being scored. Completion is
+derived from `Query ... begins_with("EVAL#")` instead, which is exact by
+construction and also removes a hot single-item write from every evaluation.
+
+That change has a second consequence, found before the worker was built. The
+rollup item sat at `EVAL#SUMMARY`, **inside the range that query returns**, so
+it would have counted as an evaluation and fired the Coach one question early
+anyway. Its sort key is now `SUMMARY`.
 
 ## Rejected: synchronous scoring in the request path
 

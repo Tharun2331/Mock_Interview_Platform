@@ -9,21 +9,39 @@ streamed audio frames.
 
 ## 1. What exists today
 
-One route, on `main`:
+On `dev`. Every route below `/api/v1` is behind Cognito JWT verification and
+the per-user rate limiter.
 
 ```
-POST /api/v1/pre-interview
-  body:     { gitHub: string }
-  200:      { repos: Array<{ description, name, fullName, starCount }> }
-  411:      { message: "Incorrect body" }     ← should be 400
-  500:      { message: "Failed to fetch GitHub repos" }
+GET    /api/v1/profile              -> { profile: ProfileView | null }
+PUT    /api/v1/profile              { username, firstName, lastName }
+POST   /api/v1/profile/resume       multipart: resume (PDF), gitHub?
+                                    -> { profile, resume: { characters, pages,
+                                         usable, redactedCount, redactedTypes } }
+PUT    /api/v1/profile/github       { gitHub? }   omit to disconnect
+DELETE /api/v1/profile              204, erases the account
+
+POST   /api/v1/pre-interview        no body; mints a session from the profile
+                                    -> { sessionId }
+POST   /api/v1/plan                 { sessionId, targetRole } -> PlanResponse
+
+WS     /            access token in the WebSocket subprotocol, verified during
+                    the HTTP upgrade
 ```
 
-It has no auth, no rate limit, returns the wrong status code on validation
-failure, and types the GitHub response as `any`. It is superseded by
-`POST /api/v1/sessions` below and should be removed rather than extended.
+`GET /profile` answers `{ profile: null }` rather than 404 for a candidate who
+has never saved one — that is the expected first-sign-in state and what the
+onboarding guard asks for, not an error.
 
-Everything else in this document is unbuilt.
+`POST /pre-interview` is now a misnomer: it uploads nothing. Resume ingestion
+moved to the profile in
+[ADR-0007](../adr/0007-user-scoped-redacted-candidate-material.md), and this
+route only creates a session and snapshots the profile's material into it.
+
+**Sections 3 and 4 below are a design target, not a description.** They use a
+`/api/v1/sessions` shape that was never built, and several of their routes —
+history, evaluation, coach — wait on Phases 5 and 6. Where the two disagree,
+this section is the one that matches the code.
 
 ---
 
@@ -71,11 +89,17 @@ second one.
 
 ## 3. HTTP routes
 
+> **Design target, not current state.** These use a `/api/v1/sessions` shape
+> that was never built; §1 lists what actually exists. Kept because the response
+> shapes and status-code choices below are still the intended destination, and
+> because several routes here wait on Phases 5 and 6.
+
+
 ### `GET /health`
 
 Unauthenticated. Returns `200` with `{ status: "ok" }`. Used by the ALB target
-group health check — keep it cheap and don't have it touch DynamoDB or Redis,
-or a cache blip will drain your targets.
+group health check — keep it cheap and don't have it touch DynamoDB, or a
+transient table error will drain your targets.
 
 ---
 
@@ -182,8 +206,12 @@ WSS /api/v1/sessions/:sessionId/interview
 Auth happens once, at the handshake, via a short-lived ticket rather than a
 header — browser `WebSocket` cannot set `Authorization`. The client calls
 `POST /api/v1/sessions/:sessionId/ticket` (200, `{ ticket, expiresIn: 60 }`),
-then connects with `?ticket=<value>`. The ticket is single-use, held in Redis,
-and deleted on connect.
+then connects with `?ticket=<value>`. **Not implemented, and the ticket store
+it assumed no longer exists** — see
+[ADR-0006](../adr/0006-drop-redis-dynamodb-alone.md). The implemented handshake
+verifies the access token from the WebSocket subprotocol during the HTTP
+upgrade, which is the only point where a handshake can be rejected before a
+socket exists.
 
 Passing the JWT itself as a query parameter would put a long-lived credential
 into ALB access logs and browser history. The ticket expires in 60 seconds and
@@ -257,9 +285,10 @@ server, initiated.
   timeout defaults to 60 seconds and **must be raised** — see
   [ADR-0002](../adr/0002-alb-not-api-gateway.md). Client `ping` every 30s is a
   second line of defence, not a substitute.
-- **Reconnect.** Session state lives in Redis, so a reconnect resumes at the
-  current question. The Sonic stream does not resume — a new stream starts with
-  no conversation history. Replay prior turns into the fresh session's context
+- **Reconnect.** Completed exchanges are already in DynamoDB, so nothing said
+  is lost. Live turn state is in the task's memory and does not survive, and
+  the Sonic stream does not resume — a new stream starts with no conversation
+  history. Replay prior turns into the fresh session's context
   or re-ask the question. Don't pretend continuity.
 - **Cleanup.** On close, the server must end the Sonic bidirectional stream. An
   open stream bills for as long as it stays open, and a browser tab left open
@@ -272,7 +301,12 @@ server, initiated.
 
 ## 5. Rate limits
 
-Per Cognito `sub`, enforced in Redis, returned as `429` with `Retry-After`.
+Per Cognito `sub`, returned as `429` with `Retry-After`.
+
+**The store is in-memory**, so the budget is per ECS task: at N tasks the
+effective limit is `limit x N`. Redis was the intended destination and was
+dropped — [ADR-0006](../adr/0006-drop-redis-dynamodb-alone.md) lists the
+remaining options. Unresolved; decide before scaling past one task.
 
 | Scope              | Limit        | Why                                    |
 | ------------------ | ------------ | -------------------------------------- |

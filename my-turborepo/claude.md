@@ -1,8 +1,13 @@
 # PrepPilot AI
 
-AI mock-interview platform. A candidate uploads a resume and GitHub username,
-then conducts a live spoken interview in the browser. Answers are scored
-asynchronously and a Coach agent produces an improvement plan.
+AI mock-interview platform. A candidate saves a resume and GitHub username to
+their profile once, then conducts live spoken interviews built from that
+material. Answers are scored asynchronously and a Coach agent produces an
+improvement plan.
+
+Personal identifiers are stripped from the resume before it reaches any model.
+The raw PDF is archived in S3; the redacted text is what the Planner reads. See
+[ADR-0007](docs/adr/0007-user-scoped-redacted-candidate-material.md).
 
 **v1 scope is Mock Interview Mode only.** Concept Mastery Mode is deferred.
 
@@ -14,7 +19,7 @@ asynchronously and a Coach agent produces an improvement plan.
 | ------------------------------- | --------------------------------------------- |
 | System design, request flow     | `docs/architecture/overview.md`               |
 | Routes, WebSocket, error shapes | `docs/architecture/api.md`                    |
-| DynamoDB keys, Redis, S3 layout | `docs/architecture/data-model.md`             |
+| DynamoDB keys, item ownership, S3 layout | `docs/architecture/data-model.md`   |
 | A decision that looks settled   | `docs/adr/` — check for an existing record    |
 | Any UI under the web app   | `.claude/skills/preppilot-frontend/SKILL.md`  |
 | Any `.tf` file                  | `infra/terraform/CLAUDE.md`                   |
@@ -62,18 +67,23 @@ fix `package.json` scripts in the same change.
 Planning documents describe these in present tense. They are **not on `main`**.
 If a task needs one, scaffold it explicitly:
 
-- `packages/shared` — not a workspace. Zod schemas currently live in
-  `apps/servers/types.ts`. The `@shared/*` path alias does not resolve.
+- ~~`packages/shared`~~ — **this now exists and is a workspace.** Zod schemas
+  live in `packages/shared/src/schemas/`, imported as `@repo/shared` (not
+  `@shared/*`). It is the source of truth for every wire shape and every stored
+  item shape.
 - `infra/terraform/` — **exists on `dev`**, with
   `modules/{cloudfront,cognito,iam,s3,ssm,vpc}` and
   `environments/{global,dev,prod}`. Not yet merged to `main`. Modules for
-  `dynamodb`, `elasticache`, `sqs`, `alb`, `ecs`, `bedrock`, and `cloudwatch`
-  do not exist on either branch.
+  `sqs`, `alb`, `ecs`, `bedrock`, and `cloudwatch` do not exist on either
+  branch. `dynamodb` now does. There is deliberately **no `elasticache`
+  module** — see [ADR-0006](docs/adr/0006-drop-redis-dynamodb-alone.md).
 - Any `@aws-sdk/*` package. Note that `@aws-sdk/client-bedrock-runtime` alone
   is not sufficient for the voice loop — Nova 2 Sonic's bidirectional stream
   needs `NodeHttp2Handler` from `@smithy/node-http-handler` as well.
 - `@octokit/rest` — GitHub scraping currently uses `axios` directly
-- `unpdf`, Jest, Husky, lint-staged, Prettier config, `tsconfig.base.json`
+- Jest, Husky, lint-staged, Prettier config, `tsconfig.base.json`. (`unpdf`
+  and the `@aws-sdk/*` clients above are installed; Jest genuinely is not, and
+  nothing in the repo has a test.)
 
 **Nothing currently blocks a bad commit.** There is no pre-commit hook and no
 ESLint rule enforcing the standards below. Follow them by hand until the

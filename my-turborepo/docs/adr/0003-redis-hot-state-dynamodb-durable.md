@@ -1,6 +1,18 @@
 # ADR-0003: Redis for hot state, DynamoDB for durable state
 
-**Status:** Accepted · **Date:** 2026-08-11
+- **Status:** **Superseded** by [ADR-0006](0006-drop-redis-dynamodb-alone.md)
+- **Date:** 2026-08-11
+- **Superseded:** 2026-09-09
+
+> **Nothing below was built.** ElastiCache Redis was dropped during Phase 3,
+> before any cluster was provisioned. There is no `elasticache` module, no
+> `ioredis` dependency and no `lib/redis.ts`. This document is kept as the
+> record of a decision that was reversed, not as a description of the system.
+>
+> The latency premise below assumed a request/response turn. Nova 2 Sonic
+> ([ADR-0005](0005_nova_sonic_speech_to_speech.md)) replaced that with a single
+> bidirectional stream, so there is no per-turn server call for a cache to make
+> faster. See [ADR-0006](0006-drop-redis-dynamodb-alone.md).
 
 ## Context
 

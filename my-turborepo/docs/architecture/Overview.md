@@ -34,10 +34,11 @@ records what actually exists. Where the two differ, section 1 wins.
 - Any AWS integration. No `@aws-sdk/*` package is in the lockfile. Bedrock,
   DynamoDB, Cognito, S3, SQS — none are wired.
 - `infra/terraform/` — **on `dev`, not yet merged to `main`**. Contains
-  `modules/{cloudfront,cognito,iam,s3,ssm,vpc}` and
-  `environments/{global,dev,prod}`. No module yet for DynamoDB, ElastiCache,
+  `modules/{cloudfront,cognito,dynamodb,iam,s3,ssm,vpc}` and
+  `environments/{global,dev,prod}`. `dynamodb` now exists; no module yet for
   SQS, ALB, ECS, Bedrock KB, or CloudWatch.
-- `packages/shared` — not a workspace; the servers uses a local `types.ts`
+- ~~`packages/shared`~~ — this exists now and is a workspace, imported as
+  `@repo/shared`; it is the source of truth for every wire and item shape
 - `@octokit/rest`, `unpdf`, Jest, Husky, lint-staged
 - All four agent functions
 - Resume upload and PDF parsing
@@ -73,11 +74,12 @@ the JWT in the handshake. The ALB routes the connection to an ECS Fargate
 service running Express, which validates the JWT locally against Cognito's
 public JWKS — Cognito never sits in the per-request data path.
 
-Inside the same VPC, the Express service reads and writes live session state to
-ElastiCache Redis (current question, turn count, rate-limit counters) and calls
-out to AWS-managed services through a single scoped IAM task role: Bedrock for
-inference — both Nova 2 Sonic for the live voice loop and Llama 3.1 8B for text
-agents — DynamoDB for durable session data, S3 for resumes and audio, and
+Inside the same VPC, the Express service holds live turn state in the task's own
+memory for the life of a stream and calls out to AWS-managed services through a
+single scoped IAM task role: Bedrock for inference — both Nova 2 Sonic for the
+live voice loop and Llama 4 Scout for text agents — DynamoDB for durable session
+data, Comprehend to strip personal identifiers from a resume before any model
+sees it, S3 for the archived resume PDF, and
 Bedrock Knowledge Base for RAG.
 
 For each live interview, Express holds one Nova 2 Sonic bidirectional stream
@@ -105,9 +107,7 @@ flowchart TB
 
     subgraph VPC["VPC — private subnets"]
         ECS["ECS Fargate (Express)<br/>Planner + Interview + Coach"]
-        Redis["ElastiCache Redis"]
         Worker["Fargate Spot<br/>Evaluator worker"]
-        ECS <-->|session state| Redis
     end
 
     ALB --> ECS
@@ -148,8 +148,8 @@ questions, target difficulty, and focus areas drawn from the candidate's
 repositories and stated skills. Runs once at session start.
 
 **Mock Interview Agent** runs the live interview loop. It owns one Nova 2 Sonic
-bidirectional stream per session, relays audio in both directions, maintains
-state in Redis, and persists transcript events to DynamoDB. It differs from the
+bidirectional stream per session, relays audio in both directions, holds turn
+state in the session object, and persists completed exchanges to DynamoDB. It differs from the
 other three in shape — a long-lived stream rather than a single call — but keeps
 the same typed input/output signature at its boundary.
 
@@ -190,8 +190,14 @@ loop.
 **WebSocket, not WebRTC — and not HTTP.** See
 [ADR-0001](../adr/0001-websocket-transport-for-transcribe.md).
 
-**Redis for hot state, DynamoDB for durable state.** See
-[ADR-0003](../adr/0003-redis-hot-state-dynamodb-durable.md).
+**DynamoDB alone; no cache tier.** ElastiCache was dropped before it was ever
+provisioned. See [ADR-0006](../adr/0006-drop-redis-dynamodb-alone.md), which
+supersedes ADR-0003.
+
+**Candidate material is user-scoped and redacted.** Resume and GitHub are saved
+once to a profile, personal identifiers are stripped before storage, and plans
+are cached per user and invalidated lazily. See
+[ADR-0007](../adr/0007-user-scoped-redacted-candidate-material.md).
 
 **SQS + Fargate Spot for async evaluation.** See
 [ADR-0004](../adr/0004-sqs-fargate-spot-async-evaluation.md).
@@ -207,13 +213,25 @@ loop.
 
 ```
 PK                   SK                Item type
-SESSION#<sid>        META              session metadata, plan
+SESSION#<sid>        META              session metadata, plan, profileVersion
+SESSION#<sid>        INPUTS            snapshot of the profile's material
 SESSION#<sid>        ANSWER#<qId>      question + candidate transcript
 SESSION#<sid>        EVAL#<qId>        per-answer scores
-SESSION#<sid>        EVAL#SUMMARY      overall rollup + completion counter
+SESSION#<sid>        SUMMARY           overall rollup
 SESSION#<sid>        COACH             improvement plan
-USER#<uid>           SESSION#<sid>     lookup by user (GSI on SK)
+USER#<uid>           PROFILE           the candidate's material
+USER#<uid>           PLAN              last plan, cached
+USER#<uid>           SESSION#<sid>     lookup by user
 ```
+
+The rollup is at `SUMMARY`, **not** `EVAL#SUMMARY`. Completion is derived from
+`Query ... begins_with("EVAL#")`, so a rollup under that prefix would count as
+an evaluation and fire the Coach a question early.
+
+There is **no GSI**. The `USER#<uid>/SESSION#<sid>` item makes user history a
+plain base-table Query. That partition now also holds `PROFILE` and `PLAN`, both
+of which sort before `SESSION#`, so a history query must filter
+`begins_with(SK, "SESSION#")`.
 
 A single `Query` on `PK = SESSION#<sid>` returns the entire session state.
 User history is a Query on the `USER#<uid>` partition.
@@ -222,22 +240,10 @@ Full item shapes, access patterns, and consistency rules are in
 [`data-model.md`](./data-model.md). It supersedes this summary — note in
 particular that the GSI once planned here turns out to be unnecessary.
 
-### Redis key layout
-
-```
-session:<sid>:state       JSON blob of live interview state, TTL = 2h
-ratelimit:<uid>:<minute>  INCR counter, 60s TTL
-lock:session:<sid>        SET NX for single-consumer locks (if needed)
-```
-
-Nothing in Redis needs backup; every key is either rebuildable from DynamoDB or
-safe to discard.
-
 ### S3 layout
 
 ```
-resumes/<uid>/<sid>.pdf         input resume
-audio/<sid>/<qId>.pcm           interview audio recordings (16 kHz PCM)
+resumes/<uid>/resume.pdf        the candidate's resume, one object per user
 web/                       static assets served via CloudFront
 ```
 
@@ -281,7 +287,8 @@ connection and seeds it with a system prompt built from the interview plan. Each
 turn: the client streams 16 kHz PCM frames over WSS; Express relays them into
 the Sonic stream; Sonic detects turn end on its own and responds with audio and
 `textOutput` events, which Express relays to the client and writes to DynamoDB,
-updating state in Redis. There is no transcription step and no synthesis step —
+updating the session's in-memory state. There is no transcription step and no
+synthesis step —
 one stream carries both directions.
 
 **Post-session.** Express enqueues each answer to the SQS `eval-queue`, closes
@@ -329,7 +336,6 @@ infra/terraform/
     ├── iam/            task roles + least-privilege policies
     ├── ssm/            parameter store entries for runtime config
     ├── dynamodb/       single table + GSI                      (not built)
-    ├── elasticache/    Redis cluster, subnet group             (not built)
     ├── alb/            listener rules, WebSocket target group  (not built)
     ├── ecs/            cluster, API service, Spot worker       (not built)
     ├── sqs/            eval queue, DLQ, redrive policy         (not built)
@@ -368,8 +374,10 @@ Two ECS task roles, never shared:
 **Main API role** — `bedrock:InvokeModel` / `Converse` scoped to the Llama model
 ARN, `bedrock:InvokeModelWithBidirectionalStream` scoped to the Nova 2 Sonic
 model ARN, DynamoDB read/write on session items, S3 read/write on scoped
-prefixes (`resumes/*`, `audio/*`), `sqs:SendMessage` on the eval queue ARN only,
-network access to Redis via security group. No `transcribe:*` or `polly:*` —
+prefix (`resumes/*`, including `DeleteObject` for erasure),
+`comprehend:DetectPiiEntities`, `cognito-idp:AdminDeleteUser` on the pool ARN,
+and `sqs:SendMessage` on the eval queue ARN only. No `transcribe:*` or
+`polly:*` —
 those services are no longer in the stack.
 
 **Evaluator worker role** — `bedrock:InvokeModel` / `Converse`, DynamoDB write
@@ -421,7 +429,7 @@ is no third option.
 ## 10. Cost model
 
 **Always-on, regardless of usage:** NAT Gateway (~$32/month per AZ plus data
-processing) and ElastiCache. During scaffold weeks with no ECS tasks running,
+processing). During scaffold weeks with no ECS tasks running,
 the NAT Gateway is pure waste — destroy and recreate it between sessions.
 
 **Per-use:** Bedrock text tokens for the Planner, Evaluator, and Coach, plus
@@ -434,7 +442,9 @@ hammering Bedrock; now it is also **an idle open stream**, because Sonic bills b
 stream duration rather than by turns taken. A browser tab left open with nobody
 in front of it accrues cost silently. Two controls, both required: close the
 stream on WebSocket disconnect, and enforce a hard session wall-clock cap. Rate
-limiting in Redis remains a cost control, not just an abuse control.
+limiting remains a cost control, not just an abuse control — though the store
+is still in-memory and therefore per-task. See
+[ADR-0006](../adr/0006-drop-redis-dynamodb-alone.md).
 
 At expected portfolio volumes the self-built stack lands in the same
 single-digit-dollars-per-month range as before, excluding NAT — materially
