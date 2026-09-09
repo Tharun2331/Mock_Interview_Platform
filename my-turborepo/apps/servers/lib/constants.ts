@@ -167,6 +167,22 @@ export const UPLOAD = {
   MIN_USEFUL_RESUME_CHARS: RESUME_LIMITS.MIN_USEFUL_CHARS,
 } as const;
 
+export const SECONDS_PER_DAY = 24 * 60 * 60;
+
+// How long a session's items live before DynamoDB removes them.
+//
+// Only takes effect where the table has TTL enabled on `expiresAt` — dev does,
+// prod does not. Six months is long enough that a candidate can revisit a past
+// interview across a job search, and short enough that storage and the privacy
+// surface both stay bounded.
+//
+// TTL deletion is best-effort and can lag by up to 48 hours, which is fine for
+// retention and would not be fine for erasure. That is why the two are separate
+// mechanisms rather than one.
+export const SESSION_RETENTION = {
+  DAYS: 180,
+} as const;
+
 // Resume PII stripping, applied once at profile save before the text is stored
 // or shown to any model.
 export const REDACTION = {

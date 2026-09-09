@@ -28,13 +28,54 @@ export const KEY_PREFIX = {
 // session, so they are user-scoped material rather than session-scoped input.
 // PLAN caches the last Planner output so a second interview against the same
 // role and the same material does not pay for a second generation.
+//
+// EVAL_SUMMARY is "SUMMARY", NOT "EVAL#SUMMARY".
+//
+// It used to be the latter, which put it inside the range that
+// `Query ... begins_with("EVAL#")` returns. That query is how completion is
+// derived — the Coach fires when the number of EVAL# items reaches
+// `questionCount` — so the rollup would have counted as an evaluation and the
+// Coach would have fired one question early, on an interview that was still
+// being scored. Nothing writes the item yet, so this rename costs nothing now
+// and would have cost a Phase 5 debugging session later.
 export const SORT_KEY = {
   META: "META",
   INPUTS: "INPUTS",
   COACH: "COACH",
-  EVAL_SUMMARY: "EVAL#SUMMARY",
+  EVAL_SUMMARY: "SUMMARY",
   PROFILE: "PROFILE",
   PLAN: "PLAN",
+} as const;
+
+// A self-describing `type` on every item, independent of its keys.
+//
+// The keys already imply the type, so this is not how a reader dispatches — SK
+// is always present and is the cheaper check. What it buys is the item being
+// legible outside this codebase: a PITR export or an S3 dump is a pile of rows
+// where PK/SK parsing is the only way to tell a transcript from a profile, and
+// anything downstream (analytics, a future migration script, an incident) has
+// to reimplement that parsing to read anything.
+//
+// Written with `.default()` rather than required, deliberately. A required
+// literal would reject every item written before this attribute existed —
+// validate-on-read turns that into a hard failure on real sessions. The default
+// materialises the value for old rows on the way out while new writes carry it
+// for real.
+//
+// Consequence worth knowing: `z.discriminatedUnion` cannot use these yet. Union
+// dispatch happens before a member's defaults run, so an item missing `type` is
+// rejected outright rather than defaulted. Once every stored item carries the
+// attribute, these can become required and the union becomes available.
+export const ITEM_TYPE = {
+  SESSION_META: "session_meta",
+  SESSION_INPUTS: "session_inputs",
+  SESSION_ANSWER: "session_answer",
+  SESSION_EVALUATION: "session_evaluation",
+  SESSION_EVAL_SUMMARY: "session_eval_summary",
+  SESSION_COACH: "session_coach",
+  USER_SESSION_REF: "user_session_ref",
+  USER_PROFILE: "user_profile",
+  CACHED_PLAN: "cached_plan",
 } as const;
 
 export const sessionPk = (sessionId: string): string =>
@@ -50,6 +91,25 @@ export const evalSk = (questionId: string): string =>
 
 export const sessionSk = (sessionId: string): string =>
   `${KEY_PREFIX.SESSION}${sessionId}`;
+
+// Unix-epoch seconds for DynamoDB TTL, carried by every session-scoped item.
+//
+// Optional because items written before retention existed have none, and an
+// item without the attribute simply never expires — TTL ignores it rather than
+// treating it as already due. That makes adding this safe for existing rows and
+// makes it useless for them; only new sessions get an expiry.
+//
+// Every writer of a session-scoped item must set it. If one forgets, that item
+// outlives the session it belongs to and becomes an orphan nothing reads and
+// nothing deletes — the same failure mode as an item missing from the erasure
+// sweep, reached by a different route. `sessionExpiresAt()` in lib/sessions.ts
+// is the single source of the value so the parts of a session cannot expire at
+// different times.
+//
+// Deliberately NOT on USER#<uid>/PROFILE or USER#<uid>/PLAN. Those are the
+// account, not a session artefact, and an account that quietly evaporates after
+// a period of not interviewing is a bug, not a retention policy.
+const SessionTtlSchema = z.number().int().positive().optional();
 
 // The lifecycle a session moves through. `failed` is terminal and deliberately
 // distinct from an absent session — a candidate whose interview broke mid-way
@@ -81,6 +141,8 @@ export type QuestionType = z.infer<typeof QuestionTypeSchema>;
 // until after a Bedrock call — losing the session entirely if that call fails —
 // or writing a placeholder plan that reads as real.
 export const SessionMetaSchema = z.object({
+  type: z.literal(ITEM_TYPE.SESSION_META).default(ITEM_TYPE.SESSION_META),
+  expiresAt: SessionTtlSchema,
   sessionId: z.string().min(1),
   userId: z.string().min(1),
   status: SessionStatusSchema,
@@ -112,6 +174,8 @@ export type SessionMeta = z.infer<typeof SessionMetaSchema>;
 // trusting the client to re-send repos and resume text, which it otherwise
 // could substitute with someone else's.
 export const SessionInputsSchema = z.object({
+  type: z.literal(ITEM_TYPE.SESSION_INPUTS).default(ITEM_TYPE.SESSION_INPUTS),
+  expiresAt: SessionTtlSchema,
   repos: z.array(PreInterviewRepo).max(PLAN_LIMITS.MAX_REPOS),
   // Truncated on write to PLAN_LIMITS.MAX_RESUME_CHARS. The parser's output is
   // unbounded — a 60-page PDF is not a resume, but it is a 400 KB item, and the
@@ -128,6 +192,8 @@ export type SessionInputs = z.infer<typeof SessionInputsSchema>;
 // same Sonic `textOutput` stream, distinguished by role, and both are
 // transcripts of audio already spoken rather than the source of it.
 export const SessionAnswerSchema = z.object({
+  type: z.literal(ITEM_TYPE.SESSION_ANSWER).default(ITEM_TYPE.SESSION_ANSWER),
+  expiresAt: SessionTtlSchema,
   questionId: z.string().min(1),
   questionText: z.string(),
   questionType: QuestionTypeSchema,
@@ -148,6 +214,8 @@ export type SessionAnswer = z.infer<typeof SessionAnswerSchema>;
 
 // SESSION#<sid> / EVAL#<qId>
 export const SessionEvaluationSchema = z.object({
+  type: z.literal(ITEM_TYPE.SESSION_EVALUATION).default(ITEM_TYPE.SESSION_EVALUATION),
+  expiresAt: SessionTtlSchema,
   questionId: z.string().min(1),
   correctness: z.number().min(0).max(10),
   clarity: z.number().min(0).max(10),
@@ -170,6 +238,8 @@ export type SessionEvaluation = z.infer<typeof SessionEvaluationSchema>;
 // `Query ... begins_with EVAL#` instead, which is exact by construction and
 // also removes a hot single-item write from every evaluation.
 export const SessionEvalSummarySchema = z.object({
+  type: z.literal(ITEM_TYPE.SESSION_EVAL_SUMMARY).default(ITEM_TYPE.SESSION_EVAL_SUMMARY),
+  expiresAt: SessionTtlSchema,
   questionCount: z.number().int().min(0),
   averages: z
     .object({
@@ -184,6 +254,8 @@ export type SessionEvalSummary = z.infer<typeof SessionEvalSummarySchema>;
 
 // SESSION#<sid> / COACH
 export const SessionCoachSchema = z.object({
+  type: z.literal(ITEM_TYPE.SESSION_COACH).default(ITEM_TYPE.SESSION_COACH),
+  expiresAt: SessionTtlSchema,
   plan: z.array(z.string().min(1)),
   citations: z.array(z.string().min(1)),
   generatedAt: z.iso.datetime(),
@@ -208,6 +280,8 @@ export type SessionCoach = z.infer<typeof SessionCoachSchema>;
 // needs live status. That is a rare read traded for an inconsistency that would
 // otherwise be invisible until a candidate saw a stale label.
 export const UserSessionRefSchema = z.object({
+  type: z.literal(ITEM_TYPE.USER_SESSION_REF).default(ITEM_TYPE.USER_SESSION_REF),
+  expiresAt: SessionTtlSchema,
   sessionId: z.string().min(1),
   userId: z.string().min(1),
   createdAt: z.iso.datetime(),

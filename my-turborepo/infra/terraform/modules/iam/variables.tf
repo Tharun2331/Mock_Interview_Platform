@@ -47,3 +47,8 @@ variable "bedrock_speech_model_id" {
   description = "Speech-to-speech model for the live interview loop. Confirm region availability before changing aws_region — unlike the text models this one has no fallback, and a mismatch fails at runtime rather than at apply."
   default     = "amazon.nova-2-sonic-v1:0"
 }
+
+variable "cognito_user_pool_arn" {
+  type        = string
+  description = "ARN of the Cognito user pool the server may delete users from. Wired through the module output rather than reconstructed, so a pool replacement cannot leave this policy pointing at one that no longer exists."
+}

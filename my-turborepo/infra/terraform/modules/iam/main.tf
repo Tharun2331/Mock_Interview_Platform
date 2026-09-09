@@ -90,17 +90,38 @@ data "aws_iam_policy_document" "bedrock_invoke" {
     resources = [local.speech_model_arn]
   }
 
-  # Resumes in, resumes and audio back out. No DeleteObject: nothing in the
-  # application deletes candidate uploads, and lifecycle rules handle expiry —
-  # so granting it would only widen the blast radius of a bug.
+  # Resumes in, resumes back out, and now deletable.
+  #
+  # DeleteObject was deliberately withheld while nothing removed uploads. That
+  # is no longer true: erasure has to be able to remove a candidate's resume, and
+  # a right that cannot be exercised is not a right. The blast radius stays
+  # bounded by the prefix scoping in local.upload_object_arns — this cannot
+  # reach the frontend bucket or anything outside `resumes/`.
+  #
+  # No ListBucket, which erasure would otherwise need to enumerate objects.
+  # Storing the resume at one stable key per user removed the need: the sweep
+  # deletes a key it can compute, so the server never gains the ability to
+  # enumerate what other candidates have uploaded.
   statement {
     sid    = "UploadsObjectAccess"
     effect = "Allow"
     actions = [
       "s3:PutObject",
       "s3:GetObject",
+      "s3:DeleteObject",
     ]
     resources = local.upload_object_arns
+  }
+
+  # Erasure only. Scoped to the one pool, and deliberately not the wider admin
+  # surface: no AdminCreateUser, no AdminSetUserPassword, no AdminUpdate*. The
+  # server authenticates users against a public JWKS and never needs to manage
+  # them — deleting one on their own request is the single exception.
+  statement {
+    sid       = "CognitoDeleteOwnUser"
+    effect    = "Allow"
+    actions   = ["cognito-idp:AdminDeleteUser"]
+    resources = [var.cognito_user_pool_arn]
   }
 
   # PII detection on resume text, run once at profile save before the text is
@@ -128,10 +149,17 @@ data "aws_iam_policy_document" "bedrock_invoke" {
   # Every access pattern in data-model.md §1 is a GetItem or a Query on the
   # base table.
   #
-  # No DeleteItem: nothing in the application deletes session data — it is the
-  # product, and dev cleanup goes through TTL, which is a DynamoDB-internal
-  # process needing no caller permission. No Scan: every read is keyed, and a
-  # Scan on this table would be a bug that bills like a feature.
+  # DeleteItem is granted now that erasure exists. The earlier note here said
+  # nothing in the application deletes session data because it is the product —
+  # still true of the interview flow, and now untrue of a candidate exercising
+  # their right to have it removed.
+  #
+  # BatchWriteItem could already delete, so this closes a gap between what the
+  # policy said and what it permitted rather than widening one.
+  #
+  # No Scan, unchanged: every read is keyed, including the erasure sweep, which
+  # Queries the two partitions it owns. A Scan on this table would be a bug that
+  # bills like a feature.
   statement {
     sid    = "SessionsTableAccess"
     effect = "Allow"
@@ -139,6 +167,7 @@ data "aws_iam_policy_document" "bedrock_invoke" {
       "dynamodb:GetItem",
       "dynamodb:PutItem",
       "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
       "dynamodb:Query",
       "dynamodb:BatchWriteItem",
       "dynamodb:BatchGetItem",
