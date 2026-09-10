@@ -21,6 +21,7 @@ export const MESSAGES = {
   SESSIONS_TABLE_UNSET: "SESSIONS_TABLE is not set. Run `terraform output sessions_table_name` and set it in apps/servers/.env.",
   EVAL_QUEUE_UNSET:     "EVAL_QUEUE_URL is not set. Run `terraform output eval_queue_url` and set it in apps/servers/.env.",
   EVAL_ENQUEUE_FAILED:  "Could not queue answers for scoring.",
+  EVAL_WRITE_FAILED:    "Could not store the evaluation.",
   // Both log-facing. A stored item that no longer matches its schema is a
   // deploy-skew bug, not something a candidate can act on — the client sees the
   // route's generic failure copy instead.

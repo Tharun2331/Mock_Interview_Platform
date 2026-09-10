@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "bun --hot index.ts",
     "start": "NODE_ENV=production bun index.ts",
+    "dev:worker": "bun --hot worker.ts",
+    "start:worker": "NODE_ENV=production bun worker.ts",
     "check-types": "tsc --noEmit",
     "test": "bun test"
   },

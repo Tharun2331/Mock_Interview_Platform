@@ -167,6 +167,21 @@ export const UPLOAD = {
   MIN_USEFUL_RESUME_CHARS: RESUME_LIMITS.MIN_USEFUL_CHARS,
 } as const;
 
+export const WORKER = {
+  // One receive can return up to 10. Kept at the cap because they are processed
+  // sequentially anyway, and fewer receive calls is fewer billed requests.
+  RECEIVE_BATCH_SIZE: 10,
+  // SQS's long-poll maximum. Without it an idle worker bills a request every
+  // few milliseconds and gets nothing back for each one.
+  LONG_POLL_SECONDS: 20,
+  // Must comfortably exceed one Bedrock call plus its writes, or the message is
+  // redelivered while the first attempt is still running — and that duplicate
+  // pays for a second generation. Ministral answers in well under a second;
+  // this leaves room for a slow one without leaving a failed message invisible
+  // for minutes.
+  VISIBILITY_TIMEOUT_SECONDS: 120,
+} as const;
+
 export const SQS = {
   // SendMessageBatch's hard cap. Not a tuning value — sending 11 is a
   // validation error, not a slower request. Same shape as BatchWriteItem's 25
