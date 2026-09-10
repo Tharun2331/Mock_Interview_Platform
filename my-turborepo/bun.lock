@@ -103,6 +103,7 @@
       },
       "devDependencies": {
         "@repo/typescript-config": "*",
+        "@types/bun": "latest",
         "typescript": "5.9.2",
       },
     },
