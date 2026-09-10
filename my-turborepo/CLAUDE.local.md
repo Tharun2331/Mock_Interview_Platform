@@ -1,6 +1,9 @@
 # PrepPilot AI — Phase Tracker
-> Local only — gitignored. Updated as work progresses.
-> Last updated: 2026-09-09
+> **Tracked and pushed, despite the `.local` name.** It is committed to `dev`
+> and public on GitHub — deliberately, as a record of how the build progressed.
+> The `.claude.local.md` entry in `.gitignore` is a different file and does not
+> match this one. Write nothing here you would not publish.
+> Updated as work progresses. Last updated: 2026-09-09
 
 ---
 
