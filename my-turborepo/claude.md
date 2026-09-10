@@ -32,20 +32,23 @@ duplicate one into the other.
 ## Branches
 
 - **`dev`** — all feature work. This is where you are unless told otherwise.
-- **`main`** — deployment. Merged from `dev`, never committed to directly.
+- **`master`** — deployment. Merged from `dev`, never committed to directly.
+  It is `master`, not `main`: this file said `main` for months and no such
+  branch has ever existed. `git branch -r` lists exactly `origin/dev` and
+  `origin/master`.
 
 Consequences worth holding onto:
 
-- Anything not yet merged to `main` is invisible to tools that read the default
-  branch — including this project's repo indexing. A search returning nothing
-  means "not on `main`", not "doesn't exist". Check `dev` before concluding
-  something is missing.
-- `main` is the deploy trigger, so a merge is a release. Terraform changes
-  reaching `main` means infrastructure changes reaching the deploy pipeline.
+- Anything not yet merged to `master` is invisible to tools that read the
+  default branch — including this project's repo indexing. A search returning
+  nothing means "not on `master`", not "doesn't exist". Check `dev` before
+  concluding something is missing.
+- `master` is the deploy trigger, so a merge is a release. Terraform changes
+  reaching `master` means infrastructure changes reaching the deploy pipeline.
 
 ## Repo reality
 
-Naming is inconsistent across branches: `main` has `apps/backend`, the `dev`
+Naming is inconsistent across branches: `master` has `apps/backend`, the `dev`
 branch and local tree have `apps/servers`, and older docs say `apps/server`.
 **Resolve this before writing cross-package imports.** This file assumes the
 `dev` names, which is where feature work happens.
@@ -64,8 +67,8 @@ fix `package.json` scripts in the same change.
 
 ### Does not exist yet
 
-Planning documents describe these in present tense. They are **not on `main`**.
-If a task needs one, scaffold it explicitly:
+Planning documents describe these in present tense. They are **not on
+`master`**. If a task needs one, scaffold it explicitly:
 
 - ~~`packages/shared`~~ — **this now exists and is a workspace.** Zod schemas
   live in `packages/shared/src/schemas/`, imported as `@repo/shared` (not
@@ -73,7 +76,7 @@ If a task needs one, scaffold it explicitly:
   item shape.
 - `infra/terraform/` — **exists on `dev`**, with
   `modules/{cloudfront,cognito,iam,s3,ssm,vpc}` and
-  `environments/{global,dev,prod}`. Not yet merged to `main`. Modules for
+  `environments/{global,dev,prod}`. Not yet merged to `master`. Modules for
   `sqs`, `alb`, `ecs`, `bedrock`, and `cloudwatch` do not exist on either
   branch. `dynamodb` now does. There is deliberately **no `elasticache`
   module** — see [ADR-0006](docs/adr/0006-drop-redis-dynamodb-alone.md).
@@ -81,13 +84,31 @@ If a task needs one, scaffold it explicitly:
   is not sufficient for the voice loop — Nova 2 Sonic's bidirectional stream
   needs `NodeHttp2Handler` from `@smithy/node-http-handler` as well.
 - `@octokit/rest` — GitHub scraping currently uses `axios` directly
-- Jest, Husky, lint-staged, Prettier config, `tsconfig.base.json`. (`unpdf`
-  and the `@aws-sdk/*` clients above are installed; Jest genuinely is not, and
-  nothing in the repo has a test.)
+- ~~Jest~~ — **tests exist and the runner is `bun test`, not Jest.** It
+  implements the Jest API (`describe`/`it`/`expect` from `bun:test`), so the
+  tests read as Jest tests, but Jest itself is not and should not be installed:
+  both apps are ESM TypeScript run by Bun, and Jest would execute them under
+  Node instead. Tests live in `__tests__/` mirroring source at each workspace
+  root. Run them with `bun run test` from the monorepo root.
+  - AWS is mocked with `aws-sdk-client-mock`, passing the **client class**, not
+    the singleton instance. The root `package.json` pins
+    `"overrides": { "@smithy/types": "4.17.2" }` for it — without that, one
+    `mockClient()` call produces type errors while `bun test` still passes.
+  - `apps/web` tests use happy-dom + React Testing Library. `AudioWorklet` and
+    `AudioContext` do not exist there; stub the boundary and inject events.
+  - Each app has a `bunfig.toml` `[test] preload`, because `lib/config.ts`
+    reads env at module scope and throws. **`apps/servers/__tests__/setup.ts`
+    must assign with `=`, never `??=`** — Bun auto-loads `apps/servers/.env`,
+    and falling back to it points tests at the real dev table and bucket.
+- Husky, lint-staged, Prettier config, `tsconfig.base.json` genuinely do not
+  exist. Note `turbo run lint` is wired at the root but **no workspace defines
+  a `lint` script**, so it reports success while checking nothing.
 
-**Nothing currently blocks a bad commit.** There is no pre-commit hook and no
-ESLint rule enforcing the standards below. Follow them by hand until the
-tooling is wired.
+**CI gates a pull request, nothing gates a commit.**
+`.github/workflows/ci.yml` runs `check-types` and `test` on every PR and push
+to `dev` and `master`. There is still no pre-commit hook and no ESLint rule, so
+the standards below are enforced by hand locally — CI just stops a violation
+that also breaks types or tests from reaching a branch.
 
 ### Known defects — fix, don't build around
 
@@ -140,7 +161,10 @@ tooling is wired.
 
 - **Package manager: `bun`.** Never `npm`, `yarn`, or `pnpm`. Never generate a
   `package-lock.json`.
-- Turborepo drives tasks: `bun run dev`, `build`, `lint`, `check-types`.
+- Turborepo drives tasks: `bun run dev`, `build`, `check-types`, `test`.
+  (`lint` is wired but no workspace implements it — see above.)
+- **Run `bun run check-types` and `bun run test` before pushing.** Those are
+  exactly what CI runs, so a green pair locally means a green pipeline.
 - servers dev port **8000**. web **3000**.
 
 ## web
