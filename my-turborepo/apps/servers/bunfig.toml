@@ -1,0 +1,6 @@
+[test]
+# lib/config.ts calls requireEnv() at module scope, so importing any router
+# throws before a test body runs. The preload sets those variables first.
+# Deliberately a test-only fix rather than making config lazy — boot-time
+# failure on missing config is the behaviour production wants.
+preload = ["./__tests__/setup.ts"]
