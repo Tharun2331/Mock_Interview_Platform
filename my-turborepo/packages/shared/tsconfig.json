@@ -2,8 +2,13 @@
   "extends": "@repo/typescript-config/base.json",
   "compilerOptions": {
     "noEmit": true,
-    "strict": true
+    "strict": true,
+    // `bun:test` types. Without this, `check-types` fails on every test file
+    // even though `bun test` runs them fine.
+    "types": ["bun"]
   },
-  "include": ["src"],
+  // `__tests__` is included deliberately: a test that does not type-check is a
+  // test that can drift from the schema it is guarding, and CI runs both tasks.
+  "include": ["src", "__tests__"],
   "exclude": ["node_modules"]
 }
