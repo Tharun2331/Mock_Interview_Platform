@@ -441,6 +441,32 @@ Cases worth knowing:
   `application/pdf` is rejected
 - The stream cap fires on a body that lies about `content-length` or omits it
 
+### The mock.module rule (learned the hard way, 2026-09-10)
+
+**Never `mock.module` an internal module that another test file is the subject
+of. Mock the leaf that talks to the outside world instead.**
+
+`mock.module` is global and permanent for the process, and Bun runs every test
+file in one process. `routes/plan.test.ts` mocked `agents/planner`; on Linux CI
+that stub was still installed when `agents/planner.test.ts` loaded afterwards,
+so all 24 of its tests ran against the stub. 23 failed. The one that passed was
+the only assertion both fixtures happened to share — which is how a leaked mock
+looks from the outside: mostly broken, confusingly not entirely.
+
+**It never reproduced on Windows**, where the mock key does not match the same
+way. The local suite was green through three passes while the code was wrong.
+The first CI run caught it, which is the clearest argument for the pipeline
+existing at all.
+
+Fixed by `__tests__/helpers/bedrockStub.ts` — one registration of
+`lib/bedrock`, shared by both files, so `agents/planner` is never replaced and
+the route tests exercise the real Planner.
+
+**Remaining hazard:** `routes/profile.test.ts` mocks `lib/github`. Safe only
+because `lib/github.ts` has no test of its own. Anyone writing `github.test.ts`
+must expect to be hijacked — mock `axios` there, or move the github stub into a
+shared helper first.
+
 ### Still untested
 
 - [ ] **Mount-time wiring.** `testApp.ts` mounts routers without the
