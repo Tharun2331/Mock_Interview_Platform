@@ -1,3 +1,5 @@
-[serve.static]
-plugins = ["bun-plugin-tailwind"]
-env = "BUN_PUBLIC_*"
+[test]
+# Registers happy-dom globals (document, window, HTMLElement) before any test
+# module loads. React Testing Library needs them at import time, so this cannot
+# be done inside a test file.
+preload = ["./__tests__/setup.ts"]

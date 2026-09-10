@@ -33,7 +33,7 @@ the Redis drop is finally recorded in
 | 5 — Evaluator + SQS | ⬜ Not started |
 | 6 — Coach + RAG | ⬜ Not started |
 | 7 — Deploy + CI/CD | 🔸 ~30% — CloudFront/S3/SSM/DynamoDB modules exist; no ECS, no CI |
-| Testing (cross-cutting) | 🟡 Pass 1 done — 142 tests on pure logic and shared schemas. Routes and React are pass 2 |
+| Testing (cross-cutting) | 🟢 Passes 1 and 2 done — 228 tests across all three workspaces. Mount-time middleware wiring still uncovered |
 
 **Next highest-leverage step:** `agents/evaluator.ts`. Everything downstream —
 the Coach, the results page, the whole post-interview half of the product —
@@ -343,15 +343,70 @@ The cases worth knowing are the ones encoding a real defect or near-miss:
 No production code changed and no defects surfaced — every test asserts current
 behaviour and passed first run.
 
-### Pass 2 ⬜ — routes and React
+### Pass 2 ✅ — routes and React (228 tests total)
 
-- [ ] Route handlers with mocked AWS. **Chosen approach: `aws-sdk-client-mock`
-      at the SDK layer.** Open risk: it is not officially tested against Bun —
-      verify before building on it, fall back to `mock.module()` on the `lib/*`
-      client singletons, which needs no production change
-- [ ] `RequireProfile` onboarding guard and the resume upload state machine
-      (needs `happy-dom` + Testing Library; read the frontend skill first)
-- [ ] `useInterview` ten-state union
+**`aws-sdk-client-mock` works under `bun test`.** The risk flagged in pass 1 is
+closed, but three things were needed to get there and none are obvious:
+
+1. **Pass the CLASS, not the singleton instance** — `mockClient(DynamoDBDocumentClient)`.
+   It stubs the prototype, so the already-constructed `dynamoClient` in
+   `lib/dynamo.ts` is intercepted. Passing the instance also works but does not
+   generalise to modules that build their own client.
+2. **`overrides: { "@smithy/types": "4.17.2" }` in the root package.json.**
+   Without it a single `mockClient()` call produced **11 type errors**:
+   `aws-sdk-client-mock` declares no `@smithy/types` of its own and resolved
+   4.16.0 while `lib-dynamodb` uses 4.17.2, so the structural `Client` types
+   did not match. Runtime was fine throughout — this was type-only, and it
+   would have failed CI while passing locally under `bun test`.
+3. **`.on()` ordering matters** — register the catch-all FIRST and the specific
+   input matcher after it. Reversed, the catch-all swallows everything.
+
+Test-only infrastructure, no production code changed:
+- `bunfig.toml` in both apps with a `preload`. `lib/config.ts` (both sides)
+  reads env at module scope and throws, so a router or component cannot even be
+  imported without it. Deliberately preferred to making config lazy —
+  failing loudly on missing config is what production wants.
+- `apps/web` uses **happy-dom** + React Testing Library. `AudioWorklet`,
+  `AudioContext` and `WebSocket` are stubbed at the module boundary per the
+  frontend skill; injected events drive the hook.
+- `__tests__/helpers/testApp.ts` mounts a router on a throwaway Express app on
+  port 0. It does NOT import `index.ts`, which calls `app.listen()` and
+  `attachInterviewSocket()` at module scope.
+
+- [x] `routes/profile.test.ts` (22) — the `handleFailure` status mapping, and
+      that `ServiceError`/`GithubError` detail never reaches the client
+- [x] `useInterview.test.ts` (31) — the ten-state union
+- [x] `RequireProfile.test.tsx` (9) — the onboarding guard
+- [x] `httpErrors.test.ts` (24) — field vs global failure scoping
+
+Cases worth knowing:
+- `GET /profile` never serialises `resumeText` or `resumeKey` — asserted
+  against the raw response body, not the parsed object
+- A DynamoDB failure returns generic copy; the response is asserted NOT to
+  contain the AWS exception name or the table name
+- A failed GitHub scrape leaves **zero** `UpdateCommand` calls — the profile is
+  never left pointing at a username whose repos could not be read
+- `PUT /profile` must not contain `ADD profileVersion`; `PUT /profile/github`
+  must — a name change cannot evict the plan cache, repos must
+- `micOpen` is true in `interviewer-speaking`. The skill calls hiding it a
+  privacy misrepresentation; this is the test that stops someone tidying it away
+- `candidateFinished` arriving after `interviewerStarted` is ignored — the ASR
+  FINAL and the interviewer's first audio race on one connection
+- A `closed` event's specific reason survives the socket close that follows,
+  rather than being overwritten with generic disconnect copy
+- **`RequireProfile` never redirects on a failed fetch.** Doing so would
+  re-onboard a returning candidate, and the resume re-upload would bump
+  `profileVersion` and discard a good cached plan
+
+### Still untested
+
+- [ ] **Mount-time wiring.** `testApp.ts` mounts routers without the
+      `helmet` / `cors` / `AuthMiddleware` / `apiRateLimiter` chain that
+      `index.ts` wraps them in. Handler behaviour is covered; the wiring is not
+- [ ] `routes/plan.ts`, `routes/preInterview.ts`, `routes/interview.ts`
+- [ ] `lib/sonic.ts`, `lib/erasure.ts`, `lib/redact.ts`, `lib/multipart.ts`
+- [ ] The resume upload state machine in the UI (`ResumeField`) — the hook and
+      the guard are done, the upload phases are not
 
 ---
 
@@ -392,8 +447,8 @@ the cheap outcome.
 | No CI/CD at all; `.github/workflows/` absent | — | High before deploy |
 | Editing `packages/shared` does not invalidate the dev server's cached module | Bun dev server | Medium — restart after any shared edit |
 | Rate limiter is in-memory; per-task budget | `apps/servers/lib/rateLimit.ts` | Medium — options in ADR-0006 |
-| No tests under `apps/web` at all; the profile guard and upload state machine are untested | `apps/web/` | Medium — the frontend skill asks for it. Testing pass 2 |
-| No route tests; every handler's auth guard and status mapping is unexercised | `apps/servers/routes/` | Medium — testing pass 2 |
+| Router mount-time wiring (helmet/cors/auth/rate-limit) is untested — `index.ts` calls `listen()` at module scope, so tests mount routers directly | `apps/servers/index.ts` | Medium — would need `app` exported and the listen guarded |
+| The resume upload state machine in the UI is still untested | `apps/web/src/components/ResumeField.tsx` | Medium — the frontend skill asks for it |
 | `AdminDeleteUser` retry path (`UserNotFoundException`) never exercised for real | `apps/servers/lib/cognitoAdmin.ts` | Low — covered by construction |
 | GitHub scraping uses axios; `@octokit/rest` installed, unused | `apps/servers/lib/github.ts` | Medium |
 | `turbo.json` `build.outputs` is `.next/**` | `turbo.json` | Low |
