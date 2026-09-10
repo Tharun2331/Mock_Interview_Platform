@@ -26,14 +26,23 @@ export type ConverseArgs = {
 
 type Behaviour = { kind: "reply"; text: string } | { kind: "error"; error: Error };
 
+// Mirrors lib/bedrock's ConverseResult. `modelId` is part of the contract, not
+// a detail: the Evaluator persists it on every EVAL# item.
+export type ConverseResult = { text: string; modelId: string };
+
+const DEFAULT_MODEL_ID = "mistral.ministral-3-8b-instruct";
+
 let behaviour: Behaviour = { kind: "reply", text: "" };
+let modelId = DEFAULT_MODEL_ID;
 let lastArgs: ConverseArgs | undefined;
 
-export const converseText = mock(async (args: ConverseArgs): Promise<string> => {
-  lastArgs = args;
-  if (behaviour.kind === "error") throw behaviour.error;
-  return behaviour.text;
-});
+export const converseText = mock(
+  async (args: ConverseArgs): Promise<ConverseResult> => {
+    lastArgs = args;
+    if (behaviour.kind === "error") throw behaviour.error;
+    return { text: behaviour.text, modelId };
+  }
+);
 
 // Relative to THIS file, so it resolves to apps/servers/lib/bedrock.
 mock.module("../../lib/bedrock", () => ({ converseText }));
@@ -57,8 +66,14 @@ export function converseCallCount(): number {
   return converseText.mock.calls.length;
 }
 
+/** Which model the chain should report as having answered. */
+export function setAnsweringModel(id: string): void {
+  modelId = id;
+}
+
 export function resetBedrockStub(): void {
   behaviour = { kind: "reply", text: "" };
+  modelId = DEFAULT_MODEL_ID;
   lastArgs = undefined;
   converseText.mockClear();
 }
