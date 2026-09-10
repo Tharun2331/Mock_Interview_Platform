@@ -1,23 +1,13 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import type { PlannerInput, PlanResponse } from "@repo/shared";
-
-// converseText is the Bedrock boundary. Stubbing it lets these tests drive the
-// two things the Planner actually owns: the prompt it builds, and how it
-// handles whatever a model hands back — which is where the failure modes live.
-type ConverseArgs = {
-  system: string;
-  prompt: string;
-  exampleTurns?: Array<{ user: string; assistant: string }>;
-};
-
-let lastCall: ConverseArgs | undefined;
-let reply = "";
-
-const converseText = mock(async (args: ConverseArgs) => {
-  lastCall = args;
-  return reply;
-});
-mock.module("../../lib/bedrock", () => ({ converseText }));
+// The shared stub, imported before the subject so `lib/bedrock` is already
+// replaced when agents/planner binds it. See the note in that file for why the
+// Bedrock leaf is mocked rather than the planner itself.
+import {
+  lastConverseCall,
+  resetBedrockStub,
+  setModelReply,
+} from "../helpers/bedrockStub";
 
 const { runPlanner } = await import("../../agents/planner");
 const { PROMPT } = await import("../../lib/constants");
@@ -45,9 +35,8 @@ async function plan(input: Partial<PlannerInput> = {}) {
 }
 
 beforeEach(() => {
-  reply = JSON.stringify(VALID_PLAN);
-  lastCall = undefined;
-  converseText.mockClear();
+  resetBedrockStub();
+  setModelReply(JSON.stringify(VALID_PLAN));
 });
 
 // Models wrap JSON in prose or fences despite being told not to, and that is
@@ -58,21 +47,21 @@ describe("extracting the model's JSON", () => {
   });
 
   it("survives a markdown fence", async () => {
-    reply = "```json\n" + JSON.stringify(VALID_PLAN) + "\n```";
+    setModelReply("```json\n" + JSON.stringify(VALID_PLAN) + "\n```");
 
     expect(await plan()).toEqual(VALID_PLAN);
   });
 
   it("survives commentary before and after", async () => {
-    reply = `Here is the plan you asked for:\n${JSON.stringify(
+    setModelReply(`Here is the plan you asked for:\n${JSON.stringify(
       VALID_PLAN
-    )}\nLet me know if you need changes.`;
+    )}\nLet me know if you need changes.`);
 
     expect(await plan()).toEqual(VALID_PLAN);
   });
 
   it("takes the outermost braces, so nested objects survive intact", async () => {
-    reply = `prefix ${JSON.stringify(VALID_PLAN)} suffix`;
+    setModelReply(`prefix ${JSON.stringify(VALID_PLAN)} suffix`);
 
     const result = await plan();
 
@@ -81,20 +70,20 @@ describe("extracting the model's JSON", () => {
   });
 
   it("rejects a reply with no JSON object at all", async () => {
-    reply = "I cannot help with that request.";
+    setModelReply("I cannot help with that request.");
 
     await expect(plan()).rejects.toThrow(BedrockError);
     await expect(plan()).rejects.toThrow(/no JSON object/i);
   });
 
   it("rejects a reply whose braces do not parse", async () => {
-    reply = "{ focusAreas: [oops] }";
+    setModelReply("{ focusAreas: [oops] }");
 
     await expect(plan()).rejects.toThrow(/not valid JSON/i);
   });
 
   it("rejects a closing brace that precedes the opening one", async () => {
-    reply = "} definitely not an object {";
+    setModelReply("} definitely not an object {");
 
     await expect(plan()).rejects.toThrow(BedrockError);
   });
@@ -104,28 +93,28 @@ describe("extracting the model's JSON", () => {
 // second "model output" schema that can drift from what the client expects.
 describe("validating the generation", () => {
   it("rejects a plan whose question mix totals zero", async () => {
-    reply = JSON.stringify({
+    setModelReply(JSON.stringify({
       ...VALID_PLAN,
       questionMix: { behavioural: 0, technical: 0, roleSpecific: 0 },
-    });
+    }));
 
     await expect(plan()).rejects.toThrow(BedrockError);
   });
 
   it("rejects a plan with too few focus areas", async () => {
-    reply = JSON.stringify({ ...VALID_PLAN, focusAreas: [VALID_PLAN.focusAreas[0]] });
+    setModelReply(JSON.stringify({ ...VALID_PLAN, focusAreas: [VALID_PLAN.focusAreas[0]] }));
 
     await expect(plan()).rejects.toThrow(BedrockError);
   });
 
   it("rejects an out-of-range targetMinutes", async () => {
-    reply = JSON.stringify({ ...VALID_PLAN, targetMinutes: 120 });
+    setModelReply(JSON.stringify({ ...VALID_PLAN, targetMinutes: 120 }));
 
     await expect(plan()).rejects.toThrow(BedrockError);
   });
 
   it("rejects an invented difficulty", async () => {
-    reply = JSON.stringify({ ...VALID_PLAN, startingDifficulty: "staff" });
+    setModelReply(JSON.stringify({ ...VALID_PLAN, startingDifficulty: "staff" }));
 
     await expect(plan()).rejects.toThrow(BedrockError);
   });
@@ -133,7 +122,7 @@ describe("validating the generation", () => {
   // The message names the failing path, which is what makes a bad generation
   // diagnosable from a log line rather than reproducible-only.
   it("names the offending field in the error", async () => {
-    reply = JSON.stringify({ ...VALID_PLAN, targetMinutes: 120 });
+    setModelReply(JSON.stringify({ ...VALID_PLAN, targetMinutes: 120 }));
 
     await expect(plan()).rejects.toThrow(/targetMinutes/);
   });
@@ -147,7 +136,7 @@ describe("rendering repositories into the prompt", () => {
       repos: [repo("small", 3), repo("big", 400), repo("mid", 42)],
     });
 
-    const prompt = lastCall?.prompt ?? "";
+    const prompt = lastConverseCall()?.prompt ?? "";
     expect(prompt.indexOf("big")).toBeLessThan(prompt.indexOf("mid"));
     expect(prompt.indexOf("mid")).toBeLessThan(prompt.indexOf("small"));
   });
@@ -159,7 +148,7 @@ describe("rendering repositories into the prompt", () => {
 
     await plan({ repos: many });
 
-    const lines = (lastCall?.prompt ?? "")
+    const lines = (lastConverseCall()?.prompt ?? "")
       .split("\n")
       .filter((line) => line.startsWith("- repo-"));
     expect(lines).toHaveLength(PROMPT.MAX_REPOS);
@@ -172,7 +161,7 @@ describe("rendering repositories into the prompt", () => {
 
     await plan({ repos: many });
 
-    const prompt = lastCall?.prompt ?? "";
+    const prompt = lastConverseCall()?.prompt ?? "";
     // repo-0 has the fewest stars and must be the one cut.
     expect(prompt).toContain(`repo-${PROMPT.MAX_REPOS + 4}`);
     expect(prompt).not.toContain("- repo-0 ");
@@ -182,7 +171,7 @@ describe("rendering repositories into the prompt", () => {
     await plan({ repos: [repo("verbose", 10, "x".repeat(400))] });
 
     const line =
-      (lastCall?.prompt ?? "").split("\n").find((l) => l.startsWith("- verbose")) ?? "";
+      (lastConverseCall()?.prompt ?? "").split("\n").find((l) => l.startsWith("- verbose")) ?? "";
     expect(line.length).toBeLessThan(400);
     expect(line).toContain("x".repeat(PROMPT.MAX_REPO_DESCRIPTION_CHARS));
   });
@@ -191,14 +180,14 @@ describe("rendering repositories into the prompt", () => {
     await plan({ repos: [repo("bare", 5, null)] });
 
     const line =
-      (lastCall?.prompt ?? "").split("\n").find((l) => l.startsWith("- bare")) ?? "";
+      (lastConverseCall()?.prompt ?? "").split("\n").find((l) => l.startsWith("- bare")) ?? "";
     expect(line).toBe("- bare (5★)");
   });
 
   it("says so plainly when there are no repositories", async () => {
     await plan({ repos: [] });
 
-    expect(lastCall?.prompt).toContain("No public repositories provided.");
+    expect(lastConverseCall()?.prompt).toContain("No public repositories provided.");
   });
 });
 
@@ -206,27 +195,27 @@ describe("building the prompt", () => {
   it("always states the target role", async () => {
     await plan({ targetRole: "Platform Engineer" });
 
-    expect(lastCall?.prompt).toContain("Target role: Platform Engineer");
+    expect(lastConverseCall()?.prompt).toContain("Target role: Platform Engineer");
   });
 
   // A plan built from GitHub alone is worse but valid.
   it("omits the resume section entirely when there is none", async () => {
     await plan({ resumeText: undefined });
 
-    expect(lastCall?.prompt).not.toContain("Resume:");
+    expect(lastConverseCall()?.prompt).not.toContain("Resume:");
   });
 
   it("omits it for a resume that is only whitespace", async () => {
     await plan({ resumeText: "   \n\t " });
 
-    expect(lastCall?.prompt).not.toContain("Resume:");
+    expect(lastConverseCall()?.prompt).not.toContain("Resume:");
   });
 
   // Truncated rather than rejected — a plan from a partial resume beats none.
   it("truncates an over-long resume instead of failing", async () => {
     await plan({ resumeText: "r".repeat(PROMPT.MAX_RESUME_CHARS + 2_000) });
 
-    const prompt = lastCall?.prompt ?? "";
+    const prompt = lastConverseCall()?.prompt ?? "";
     expect(prompt).toContain("Resume:");
     expect(prompt.split("Resume:\n")[1]?.length).toBe(PROMPT.MAX_RESUME_CHARS);
   });
@@ -236,12 +225,12 @@ describe("building the prompt", () => {
   it("sends one few-shot exemplar rather than prefilling the reply", async () => {
     await plan();
 
-    expect(lastCall?.exampleTurns).toHaveLength(1);
-    expect(lastCall?.exampleTurns?.[0]?.user).toContain("Target role:");
+    expect(lastConverseCall()?.exampleTurns).toHaveLength(1);
+    expect(lastConverseCall()?.exampleTurns?.[0]?.user).toContain("Target role:");
     // The exemplar's assistant turn must itself be valid JSON, or it teaches
     // the model the wrong shape.
     const exemplar: unknown = JSON.parse(
-      lastCall?.exampleTurns?.[0]?.assistant ?? "null"
+      lastConverseCall()?.exampleTurns?.[0]?.assistant ?? "null"
     );
     expect(exemplar).not.toBeNull();
   });
@@ -249,7 +238,7 @@ describe("building the prompt", () => {
   it("sends a system prompt that pins the output contract", async () => {
     await plan();
 
-    const system = lastCall?.system ?? "";
+    const system = lastConverseCall()?.system ?? "";
     expect(system).toContain("focusAreas");
     expect(system).toContain("startingDifficulty");
     // Candidate material is data to analyse, never instructions to follow.

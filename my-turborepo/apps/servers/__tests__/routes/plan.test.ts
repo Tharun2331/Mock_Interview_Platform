@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
   BatchGetCommand,
@@ -23,11 +23,21 @@ const PLAN: PlanResponse = {
   reasoning: "why",
 };
 
-// Bedrock is the one dependency mocked at the module boundary — everything else
-// goes through the real lib/sessions and lib/profile against a mocked SDK, so
-// this exercises the key layout and the conditional writes as well as the route.
-const runPlanner = mock(async (_input: unknown): Promise<PlanResponse> => PLAN);
-mock.module("../../agents/planner", () => ({ runPlanner }));
+// Bedrock is the one dependency stubbed, and it is stubbed at the `lib/bedrock`
+// leaf rather than by replacing `agents/planner`.
+//
+// That distinction is not stylistic. `mock.module` is global and permanent for
+// the process, so mocking `agents/planner` here hijacked agents/planner.test.ts
+// on Linux CI — it loaded afterwards and got this file's stub. Mocking the leaf
+// means the REAL planner runs here, which makes these route tests stronger too:
+// the plan in the response is genuinely parsed out of a model reply.
+import {
+  converseCallCount,
+  lastConverseCall,
+  resetBedrockStub,
+  setModelFailure,
+  setModelReply,
+} from "../helpers/bedrockStub";
 
 const { planRouter } = await import("../../routes/plan");
 const { MESSAGES } = await import("../../lib/messages");
@@ -103,8 +113,9 @@ const BODY = { sessionId: SESSION_ID, targetRole: "Backend Engineer" };
 
 beforeEach(() => {
   ddb.reset();
-  runPlanner.mockClear();
-  runPlanner.mockImplementation(async () => PLAN);
+  resetBedrockStub();
+  // A well-formed generation by default; failure cases override it.
+  setModelReply(JSON.stringify(PLAN));
 });
 
 afterEach(async () => {
@@ -149,12 +160,13 @@ describe("validation", () => {
       repos: [{ description: null, name: "evil", fullName: "x/evil", starCount: 9 }],
     });
 
-    const passed = runPlanner.mock.calls[0]?.[0];
-    expect(passed).toEqual({
-      targetRole: "Backend Engineer",
-      repos: INPUTS.repos,
-      resumeText: "redacted text",
-    });
+    // Asserted on the prompt the real Planner built, which is the last point
+    // the client's material could still have crept in.
+    const prompt = lastConverseCall()?.prompt ?? "";
+    expect(prompt).toContain("redacted text");
+    expect(prompt).toContain("- a (1★)");
+    expect(prompt).not.toContain("someone else's resume");
+    expect(prompt).not.toContain("evil");
   });
 });
 
@@ -168,7 +180,7 @@ describe("the plan cache", () => {
     const response = await postPlan(url, BODY);
 
     expect(response.status).toBe(200);
-    expect(runPlanner).not.toHaveBeenCalled();
+    expect(converseCallCount()).toBe(0);
     // Still persisted to the session — a cache hit is not a no-op.
     expect(ddb.commandCalls(UpdateCommand)).toHaveLength(1);
   });
@@ -182,7 +194,7 @@ describe("the plan cache", () => {
 
     await postPlan(url, BODY);
 
-    expect(runPlanner).toHaveBeenCalledTimes(1);
+    expect(converseCallCount()).toBe(1);
   });
 
   it("regenerates for a genuinely different role", async () => {
@@ -194,7 +206,7 @@ describe("the plan cache", () => {
 
     await postPlan(url, { ...BODY, targetRole: "Frontend Engineer" });
 
-    expect(runPlanner).toHaveBeenCalledTimes(1);
+    expect(converseCallCount()).toBe(1);
   });
 
   // Roles are free text, so these are the same interview and must hit the same
@@ -207,7 +219,7 @@ describe("the plan cache", () => {
 
     await postPlan(url, { ...BODY, targetRole: "  backend   ENGINEER " });
 
-    expect(runPlanner).not.toHaveBeenCalled();
+    expect(converseCallCount()).toBe(0);
   });
 
   // The comparison is against the SESSION's profileVersion, not the profile's
@@ -223,7 +235,7 @@ describe("the plan cache", () => {
 
     await postPlan(url, BODY);
 
-    expect(runPlanner).not.toHaveBeenCalled();
+    expect(converseCallCount()).toBe(0);
   });
 
   // A miss and an outage cost the same thing — one generation — so a broken
@@ -239,7 +251,7 @@ describe("the plan cache", () => {
     const response = await postPlan(url, BODY);
 
     expect(response.status).toBe(200);
-    expect(runPlanner).toHaveBeenCalledTimes(1);
+    expect(converseCallCount()).toBe(1);
   });
 
   // Failure here loses a cache entry, not the plan. The candidate has their
@@ -284,7 +296,7 @@ describe("the plan cache", () => {
     const response = await postPlan(url, BODY);
 
     expect(response.status).toBe(200);
-    expect(runPlanner).toHaveBeenCalledTimes(1);
+    expect(converseCallCount()).toBe(1);
     expect(ddb.commandCalls(GetCommand)).toHaveLength(0);
     expect(ddb.commandCalls(PutCommand)).toHaveLength(0);
   });
@@ -313,9 +325,7 @@ describe("persistence", () => {
   it("does not touch the session when the model fails", async () => {
     sessionFound();
     ddb.on(GetCommand).resolves({});
-    runPlanner.mockImplementationOnce(async () => {
-      throw new BedrockError("all models failed", ["ministral", "llama"]);
-    });
+    setModelFailure(new BedrockError("all models failed", ["ministral", "llama"]));
     const { url } = await start();
 
     await postPlan(url, BODY);
@@ -404,9 +414,7 @@ describe("failure mapping", () => {
   it("502s a Bedrock failure and keeps its detail out of the response", async () => {
     sessionFound();
     ddb.on(GetCommand).resolves({});
-    runPlanner.mockImplementationOnce(async () => {
-      throw new BedrockError("prompt fragment and AWS internals", ["ministral"]);
-    });
+    setModelFailure(new BedrockError("prompt fragment and AWS internals", ["ministral"]));
     const { url } = await start();
 
     const response = await postPlan(url, BODY);
@@ -421,9 +429,7 @@ describe("failure mapping", () => {
   it("502s an unrecognised failure rather than leaking it", async () => {
     sessionFound();
     ddb.on(GetCommand).resolves({});
-    runPlanner.mockImplementationOnce(async () => {
-      throw new Error("something unexpected with internals in it");
-    });
+    setModelFailure(new Error("something unexpected with internals in it"));
     const { url } = await start();
 
     const response = await postPlan(url, BODY);
