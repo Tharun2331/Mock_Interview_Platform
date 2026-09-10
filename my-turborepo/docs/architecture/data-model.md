@@ -94,7 +94,7 @@ status           string   planning | ready | in_progress | evaluating | complete
 createdAt        string   ISO 8601
 role             string   target role the interview is pitched at
 plan             map      Planner output: question mix, difficulty, focus areas
-questionCount    number   total planned questions — the denominator for completion
+questionCount    number   total planned questions — NOT the completion denominator
 resumeKey        string   S3 key
 githubUsername   string
 ```
@@ -168,9 +168,26 @@ the sole speech model in the stack.
 **`SESSION#<sid> / SUMMARY`**
 
 ```
-questionCount    number   copied from META at enqueue time
+questionCount    number   answers actually enqueued — the completion denominator
 averages         map      mean per dimension, written when complete
 ```
+
+**This `questionCount` is the number of answers enqueued, not META's planned
+count.** An earlier version of this document made the planned count the
+denominator, and that is wrong for any interview that did not run to plan —
+which is most of them, because the hard timer exists precisely to stop one
+overrunning. A session planned for ten questions that ended after six would
+wait for four evaluations that were never queued and sit at `evaluating`
+forever, with nothing left in the queue to ever look again. The API knows
+exactly how many messages it sent and writes that number here, before sending
+them.
+
+`averages` is absent until every answer is scored, and its absence is the
+election: the worker that adds it with
+`ConditionExpression: attribute_not_exists(averages)` is the one that completes
+the session. Two workers finishing their final message milliseconds apart will
+both count the same total and both try, and exactly one succeeds. That matters
+most for the Coach, which must fire once.
 
 No `completedCount`. `ADD completedCount 1` is not idempotent and SQS is
 at-least-once, so a redelivered message over-counts and the Coach fires early.

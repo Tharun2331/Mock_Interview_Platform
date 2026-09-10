@@ -250,6 +250,23 @@ Backend and queue are built and tested. Only the `ecs` module is outstanding.
 - [x] `worker.ts` — polls SQS, scores, writes `EVAL#<qId>`
 - [x] Idempotent by `questionId` via `PutItem`, plus a pre-flight duplicate
       check so a redelivery costs one read instead of a generation
+- [x] **Completion detection.** `startEvaluationSummary` opens the rollup at
+      enqueue; `finalizeIfComplete` runs after every score, and the last one
+      writes `averages` and moves the session to `complete`
+
+**`data-model.md` had the completion denominator wrong and has been corrected.**
+It said `questionCount` — "total planned questions" — was the denominator. That
+is wrong for any interview that did not run to plan, which is most of them,
+because the hard timer exists precisely to stop one overrunning. A session
+planned for ten questions that ended after six would wait for four evaluations
+that were never queued and sit at `evaluating` **forever**, with nothing left in
+the queue to ever look again. `SUMMARY.questionCount` now carries the number of
+answers actually enqueued, which the API knows exactly.
+
+The election is `attribute_not_exists(averages)` on the rollup. Two workers
+finishing their final message milliseconds apart both count the same total and
+both try to finalise; exactly one wins. **Phase 6 should hang the Coach trigger
+on that same conditional write** — it is already the once-only signal.
 
 **The phase tracker was wrong about completion and has been corrected.** This
 section used to say `UpdateItem ADD completedCount 1`. There is no
@@ -274,16 +291,18 @@ can outlive the visibility timeout — and a message redelivered mid-flight pays
 for a second generation. `VISIBILITY_TIMEOUT_SECONDS` (120) must stay in sync
 with the `sqs` module's `visibility_timeout_seconds`; nothing enforces it.
 
-### Terraform — written, NOT applied
+### Terraform — applied to dev 2026-09-10
 - [x] `sqs` module — `prepilot-eval-<env>`, DLQ, `maxReceiveCount: 3`,
       SSE, 14-day DLQ retention, redrive-allow-policy naming the one source
 - [x] **Second IAM role for the worker** — `prepilot-evaluator-worker-role-<env>`
 - [x] `sqs:SendMessage` added to the API role, scoped to the queue ARN
 - [x] Wired into `environments/dev`; `terraform validate` passes
-- [ ] `ecs` module — cluster, API service, Spot worker service
-- [ ] **Apply.** Nothing has been applied. `terraform init -backend=false` was
-      used for validation only, so dev still has no queue and `EVAL_QUEUE_URL`
-      is unset — the enqueue will raise `ServiceError` until it is applied.
+- [x] **Applied to dev.** The queue exists. `EVAL_QUEUE_URL` must be set in
+      `apps/servers/.env` from `terraform output eval_queue_url`, or the
+      enqueue raises `ServiceError` at every interview end. (The test preload
+      overrides it deliberately, so the suite is unaffected either way.)
+- [ ] `ecs` module — cluster, API service, Spot worker service. **The only
+      thing left in Phase 5**, and as much Phase 7 deploy work as Phase 5.
 
 **`overview.md` §8 overstates what IAM can do, and the module says so.** It
 describes the worker's grant as "DynamoDB write on `EVAL#*` items only". That
