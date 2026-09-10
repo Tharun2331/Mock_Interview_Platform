@@ -478,11 +478,18 @@ export async function recordAnswer(args: {
   );
 }
 
-// Terminal state for the session. Separate from recordAnswer so a failure to
-// mark completion never costs an answer that was already written.
+// Moves the session out of `in_progress`. Separate from recordAnswer so a
+// failure to mark completion never costs an answer that was already written.
+//
+// `evaluating` is the normal outcome, not `complete`: the answers have been
+// recorded but nothing has scored them yet. Marking a session complete here
+// would tell the results page that feedback is ready when the queue has not
+// been drained, and there would be no later transition to correct it. Only an
+// interview that produced nothing to score finishes complete, because for that
+// session there genuinely is nothing left to wait for.
 export async function finishInterview(args: {
   sessionId: string;
-  status: "complete" | "failed";
+  status: "evaluating" | "complete" | "failed";
 }): Promise<void> {
   await dynamoClient.send(
     new UpdateCommand({

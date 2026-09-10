@@ -61,3 +61,26 @@ export const EvaluatorInputSchema = z.object({
 });
 
 export type EvaluatorInput = z.infer<typeof EvaluatorInputSchema>;
+
+// One SQS message on the eval queue: a pointer, not a payload.
+//
+// Deliberately carries no transcript. Three reasons, in order of weight:
+//
+// 1. The transcript is the candidate speaking about themselves. Copying it into
+//    a second store widens the blast radius of an account erasure — the sweep
+//    can delete DynamoDB items and S3 objects, but it cannot reach into a
+//    queue. A pointer to a deleted item resolves to nothing, which is the
+//    correct outcome. ADR-0007's reasoning applied one layer out.
+// 2. The worker reads the answer at the moment it scores it, so the message can
+//    never carry a stale copy of text that was corrected or removed.
+// 3. It keeps every message far inside SQS's 256 KB limit regardless of how
+//    long an answer ran.
+//
+// The cost is one DynamoDB read per message, which is the same read the
+// worker's duplicate-check needs anyway.
+export const EvalJobSchema = z.object({
+  sessionId: z.string().min(1),
+  questionId: z.string().min(1),
+});
+
+export type EvalJob = z.infer<typeof EvalJobSchema>;

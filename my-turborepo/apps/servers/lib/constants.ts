@@ -167,6 +167,13 @@ export const UPLOAD = {
   MIN_USEFUL_RESUME_CHARS: RESUME_LIMITS.MIN_USEFUL_CHARS,
 } as const;
 
+export const SQS = {
+  // SendMessageBatch's hard cap. Not a tuning value — sending 11 is a
+  // validation error, not a slower request. Same shape as BatchWriteItem's 25
+  // in lib/sessions.ts.
+  SEND_BATCH_SIZE: 10,
+} as const;
+
 export const SECONDS_PER_DAY = 24 * 60 * 60;
 
 // How long a session's items live before DynamoDB removes them.
