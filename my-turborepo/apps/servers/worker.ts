@@ -6,7 +6,11 @@ import {
 import { EvalJobSchema } from "@repo/shared";
 import { runEvaluator } from "./agents/evaluator";
 import { WORKER } from "./lib/constants";
-import { loadEvaluationJob, putEvaluation } from "./lib/evaluations";
+import {
+  finalizeIfComplete,
+  loadEvaluationJob,
+  putEvaluation,
+} from "./lib/evaluations";
 import { requireEvalQueue, sqsClient } from "./lib/sqs";
 
 // The Evaluator worker. A second entrypoint into the same codebase as the API,
@@ -26,7 +30,13 @@ import { requireEvalQueue, sqsClient } from "./lib/sqs";
 // a message redelivered mid-flight pays for a second generation.
 
 export type MessageOutcome =
-  | { kind: "scored"; questionId: string; modelId: string }
+  | {
+      kind: "scored";
+      questionId: string;
+      modelId: string;
+      // What the completion check concluded after this score landed.
+      finalized: "incomplete" | "finalized" | "already-finalized" | "no-summary";
+    }
   | { kind: "already-scored"; questionId: string }
   | { kind: "no-answer"; questionId: string }
   // The body was not a valid job. Retrying cannot fix a malformed message, so
@@ -71,7 +81,23 @@ export async function handleMessage(body: string): Promise<MessageOutcome> {
     modelId: result.modelId,
   });
 
-  return { kind: "scored", questionId, modelId: result.modelId };
+  // Was that the last one? Runs after every score rather than being scheduled,
+  // because there is no other trigger — the queue going empty is not an event
+  // anything observes.
+  //
+  // Deliberately inside the same message. If it threw, the message would be
+  // redelivered and re-scored, which is wasteful but harmless: the duplicate
+  // guard catches the re-score and the check runs again. Swallowing it instead
+  // would leave a finished session parked at `evaluating` with nothing left in
+  // the queue to ever look again.
+  const finalized = await finalizeIfComplete({ sessionId });
+
+  return {
+    kind: "scored",
+    questionId,
+    modelId: result.modelId,
+    finalized: finalized.kind,
+  };
 }
 
 async function processMessage(message: Message, QueueUrl: string): Promise<void> {
@@ -98,7 +124,9 @@ async function processMessage(message: Message, QueueUrl: string): Promise<void>
     // receives later only delays the same conclusion.
     console.error("[worker] dropping unparseable message");
   } else if (outcome.kind === "scored") {
-    console.log(`[worker] scored ${outcome.questionId} with ${outcome.modelId}`);
+    console.log(
+      `[worker] scored ${outcome.questionId} with ${outcome.modelId} (${outcome.finalized})`
+    );
   } else {
     console.log(`[worker] ${outcome.kind} ${outcome.questionId}`);
   }

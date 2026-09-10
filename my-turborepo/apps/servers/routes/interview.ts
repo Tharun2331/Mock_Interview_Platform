@@ -10,6 +10,7 @@ import { verifier } from "../lib/cognitoAuth";
 import { SessionAccessError, SessionStateError } from "../lib/errors";
 import { MESSAGES } from "../lib/messages";
 import { SonicConversation } from "../lib/sonic";
+import { startEvaluationSummary } from "../lib/evaluations";
 import { enqueueEvaluations } from "../lib/sqs";
 import {
   finishInterview,
@@ -219,6 +220,17 @@ async function handleConnection(
         // is the one step that can be retried later without the candidate
         // repeating anything.
         try {
+          // Before the messages, so a worker can never find an evaluation to
+          // record with no rollup to record it against. The count is the
+          // answers actually enqueued, NOT the plan's questionCount — an
+          // interview stopped early by the hard timer produces fewer answers
+          // than it planned, and waiting for the planned number would leave the
+          // session at `evaluating` forever.
+          await startEvaluationSummary({
+            sessionId,
+            questionCount: questionIds.length,
+          });
+
           const queued = await enqueueEvaluations({ sessionId, questionIds });
           if (queued > 0) {
             console.log(`[interview] ${sessionId} queued ${queued} answers for scoring`);

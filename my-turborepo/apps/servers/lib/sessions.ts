@@ -508,6 +508,47 @@ export async function finishInterview(args: {
   );
 }
 
+// The last transition: every answer has been scored, so the session leaves
+// `evaluating`.
+//
+// Conditioned on `evaluating` rather than written blind. Two workers can finish
+// their final message within milliseconds of each other, and both will see the
+// count reach its target — this makes the second one a no-op instead of a
+// second completion. It also means a retried message cannot drag a session
+// that has since moved on back to `complete`.
+//
+// Returns false when the condition failed, which is not an error: it means
+// somebody else got there first, or the session was never in `evaluating` to
+// begin with.
+export async function completeEvaluation(args: {
+  sessionId: string;
+}): Promise<boolean> {
+  try {
+    await dynamoClient.send(
+      new UpdateCommand({
+        TableName: requireTable(),
+        Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.META },
+        UpdateExpression: "SET #status = :complete",
+        ConditionExpression: "#status = :evaluating",
+        ExpressionAttributeNames: { "#status": "status" },
+        ExpressionAttributeValues: {
+          ":complete": "complete",
+          ":evaluating": "evaluating",
+        },
+      })
+    );
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException) return false;
+    throw new ServiceError(
+      `${MESSAGES.SESSION_UPDATE_FAILED} — ${
+        error instanceof Error ? error.message : "unknown"
+      }`
+    );
+  }
+
+  return true;
+}
+
 // Loads a session for the live interview and moves it to `in_progress`.
 //
 // The status change is a conditional update rather than a read-then-write: it

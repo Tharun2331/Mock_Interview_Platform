@@ -1,8 +1,12 @@
 import { afterAll, beforeEach, describe, expect, it } from "bun:test";
+import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
   BatchGetCommand,
   DynamoDBDocumentClient,
+  GetCommand,
   PutCommand,
+  QueryCommand,
+  UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import {
@@ -96,11 +100,31 @@ function body(job: unknown = JOB): string {
   return JSON.stringify(job);
 }
 
+// The completion check runs after every score. Defaults here make it a no-op —
+// no rollup, nothing scored — so tests about scoring itself are not also
+// asserting about finalisation. The completion tests set their own.
+function summaryIs(item: Record<string, unknown> | undefined) {
+  ddb.on(GetCommand).resolves(item === undefined ? {} : { Item: item });
+}
+
+function evaluationsScored(count: number) {
+  ddb.on(QueryCommand).resolves({
+    Items: Array.from({ length: count }, () => ({
+      correctness: 6,
+      clarity: 7,
+      depth: 5,
+    })),
+  });
+}
+
 beforeEach(() => {
   ddb.reset();
   resetBedrockStub();
   setModelReply(JSON.stringify(SCORES));
   ddb.on(PutCommand).resolves({});
+  ddb.on(UpdateCommand).resolves({});
+  summaryIs(undefined);
+  evaluationsScored(0);
 });
 
 afterAll(() => ddb.restore());
@@ -275,6 +299,142 @@ describe("messages with nothing to do", () => {
     await handleMessage("not json");
 
     expect(lastConverseCall()).toBeUndefined();
+  });
+});
+
+// Nothing else triggers this. The queue going empty is not an event anything
+// observes, so the check runs after every score and the last one closes the
+// session out.
+describe("completion detection", () => {
+  const SUMMARY = {
+    PK: sessionPk(SESSION_ID),
+    SK: SORT_KEY.EVAL_SUMMARY,
+    type: ITEM_TYPE.SESSION_EVAL_SUMMARY,
+    questionCount: 3,
+  };
+
+  function finalizeUpdates() {
+    return ddb
+      .commandCalls(UpdateCommand)
+      .filter((call) => call.args[0].input.Key?.SK === SORT_KEY.EVAL_SUMMARY);
+  }
+
+  function statusUpdates() {
+    return ddb
+      .commandCalls(UpdateCommand)
+      .filter((call) => call.args[0].input.Key?.SK === SORT_KEY.META);
+  }
+
+  it("does nothing while answers are still outstanding", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs(SUMMARY);
+    evaluationsScored(2);
+
+    const outcome = await handleMessage(body());
+
+    expect(outcome).toMatchObject({ kind: "scored", finalized: "incomplete" });
+    expect(finalizeUpdates()).toHaveLength(0);
+    expect(statusUpdates()).toHaveLength(0);
+  });
+
+  it("writes the averages and completes the session on the last answer", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs(SUMMARY);
+    evaluationsScored(3);
+
+    const outcome = await handleMessage(body());
+
+    expect(outcome).toMatchObject({ kind: "scored", finalized: "finalized" });
+    expect(finalizeUpdates()[0]?.args[0].input.ExpressionAttributeValues?.[
+      ":averages"
+    ]).toEqual({ correctness: 6, clarity: 7, depth: 5 });
+  });
+
+  it("moves the session out of evaluating only once the rollup is written", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs(SUMMARY);
+    evaluationsScored(3);
+
+    await handleMessage(body());
+
+    const status = statusUpdates()[0]?.args[0].input;
+    expect(status?.ExpressionAttributeValues?.[":complete"]).toBe("complete");
+    // Conditioned, so a retried message cannot drag a session that has since
+    // moved on back to complete.
+    expect(status?.ConditionExpression).toBe("#status = :evaluating");
+  });
+
+  // Two workers can finish their final message milliseconds apart and both
+  // count the same total. The conditional update is what makes exactly one of
+  // them the winner — which matters more for Phase 6's Coach trigger than for
+  // this write.
+  it("elects a single finaliser when two workers race", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs(SUMMARY);
+    evaluationsScored(3);
+    const failure = new ConditionalCheckFailedException({
+      $metadata: {},
+      message: "failed",
+    });
+    ddb.on(UpdateCommand).rejects(failure);
+
+    const outcome = await handleMessage(body());
+
+    expect(outcome).toMatchObject({ finalized: "already-finalized" });
+    // The loser must not also complete the session.
+    expect(statusUpdates()).toHaveLength(0);
+  });
+
+  it("does not finalise twice when the rollup already has averages", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs({ ...SUMMARY, averages: { correctness: 6, clarity: 7, depth: 5 } });
+    evaluationsScored(3);
+
+    const outcome = await handleMessage(body());
+
+    expect(outcome).toMatchObject({ finalized: "already-finalized" });
+    expect(finalizeUpdates()).toHaveLength(0);
+  });
+
+  // The denominator is the answers actually enqueued, not the plan's
+  // questionCount. An interview stopped early by the hard timer produces fewer
+  // answers than it planned, and waiting for the planned number would park the
+  // session at `evaluating` forever.
+  it("completes an interview that ended early, against its own denominator", async () => {
+    // The plan called for 10; the hard timer stopped it after 2.
+    itemsFound([ANSWER, { ...META, questionCount: 10 }]);
+    summaryIs({ ...SUMMARY, questionCount: 2 });
+    evaluationsScored(2);
+
+    const outcome = await handleMessage(body());
+
+    expect(outcome).toMatchObject({ finalized: "finalized" });
+  });
+
+  // The rollup is `SUMMARY`, not `EVAL#SUMMARY`, precisely so it is not
+  // returned by this query and counted as an evaluation.
+  it("counts only EVAL# items, using a strongly consistent read", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs(SUMMARY);
+    evaluationsScored(3);
+
+    await handleMessage(body());
+
+    const query = ddb.commandCalls(QueryCommand)[0]?.args[0].input;
+    expect(query?.ExpressionAttributeValues?.[":prefix"]).toBe("EVAL#");
+    // An eventually consistent read can miss the evaluation this very worker
+    // just wrote, conclude the session is one short, and leave it stuck with
+    // nothing left in the queue to look again.
+    expect(query?.ConsistentRead).toBe(true);
+  });
+
+  it("reports no-summary rather than failing when the rollup is absent", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs(undefined);
+
+    const outcome = await handleMessage(body());
+
+    expect(outcome).toMatchObject({ kind: "scored", finalized: "no-summary" });
   });
 });
 
