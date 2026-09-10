@@ -94,6 +94,11 @@ export const config = {
   // not requireEnv, because only the persistence path needs it and failing boot
   // would take down auth and /plan with it.
   sessionsTable:          env("SESSIONS_TABLE", ""),
+  // From `terraform output eval_queue_url`. Same treatment as the two above:
+  // not requireEnv, because only the post-interview path needs it and failing
+  // boot would take down auth, /plan and the interview loop itself. `lib/sqs.ts`
+  // raises a clear error if an enqueue is attempted while unset.
+  evalQueueUrl:           env("EVAL_QUEUE_URL", ""),
   // Without a timeout a hung upstream holds the request open indefinitely and
   // requests pile up behind it.
   githubTimeoutMs:        Number(env("GITHUB_TIMEOUT_MS", "5000")),

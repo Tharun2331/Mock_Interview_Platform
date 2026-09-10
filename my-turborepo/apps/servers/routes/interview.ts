@@ -10,6 +10,7 @@ import { verifier } from "../lib/cognitoAuth";
 import { SessionAccessError, SessionStateError } from "../lib/errors";
 import { MESSAGES } from "../lib/messages";
 import { SonicConversation } from "../lib/sonic";
+import { enqueueEvaluations } from "../lib/sqs";
 import {
   finishInterview,
   recordAnswer,
@@ -168,6 +169,13 @@ async function handleConnection(
   // Set once the interview is running, so shutdown can flush an exchange that
   // was in progress when the connection dropped.
   let flushOnClose: (() => Promise<void>) | null = null;
+  // The answers that actually reached DynamoDB, in the order they were written.
+  //
+  // Deliberately not `state.history`, which holds every completed exchange
+  // including any whose write failed. Queueing one of those would send the
+  // worker looking for an ANSWER item that does not exist, turning a logged
+  // write failure into a message that can only ever fail and land in the DLQ.
+  let scoredQuestionIds: () => string[] = () => [];
   // Timers that must not outlive the connection. A pending hard-stop on a
   // finished interview would fire against a closed session.
   const clearOnClose: ReturnType<typeof setTimeout>[] = [];
@@ -187,7 +195,41 @@ async function handleConnection(
     if (flushOnClose !== null) {
       try {
         await flushOnClose();
-        await finishInterview({ sessionId, status: "complete" });
+
+        // Read after the flush, so the answer the candidate was mid-way through
+        // when the socket dropped is included rather than left unscored.
+        const questionIds = scoredQuestionIds();
+
+        // `evaluating`, not `complete` — the answers exist but nothing has read
+        // them yet. An interview that produced nothing to score is the one case
+        // that is genuinely finished.
+        await finishInterview({
+          sessionId,
+          status: questionIds.length > 0 ? "evaluating" : "complete",
+        });
+
+        // After the status write, deliberately. A message consumed before the
+        // session left `in_progress` would be scoring an interview the table
+        // still describes as running; the reverse — queued late, or not at all —
+        // leaves a recoverable `evaluating` session rather than an inconsistent
+        // one.
+        //
+        // Its own try/catch because a failure here must not be mistaken for a
+        // flush failure: the transcript is safely written either way, and this
+        // is the one step that can be retried later without the candidate
+        // repeating anything.
+        try {
+          const queued = await enqueueEvaluations({ sessionId, questionIds });
+          if (queued > 0) {
+            console.log(`[interview] ${sessionId} queued ${queued} answers for scoring`);
+          }
+        } catch (error) {
+          console.error(
+            `[interview] ${sessionId} enqueue failed, answers are recorded but unscored — ${
+              error instanceof Error ? error.message : error
+            }`
+          );
+        }
       } catch (error) {
         console.error(
           `[interview] ${sessionId} close flush failed — ${
@@ -222,6 +264,11 @@ async function handleConnection(
       history: [],
     };
 
+    // Question ids whose answer write succeeded. Exposed to shutdown() so the
+    // enqueue covers exactly what was persisted.
+    const recorded: string[] = [];
+    scoredQuestionIds = () => [...recorded];
+
     // Flushes the exchange in progress. Awaited nowhere on the hot path — a
     // DynamoDB round trip must not sit between the candidate finishing and the
     // interviewer replying — but always awaited on the close path so a
@@ -245,6 +292,9 @@ async function handleConnection(
           // everything is recorded as technical until the model reports it.
           questionType: "technical",
         });
+        // Only after the write lands. This list is what gets queued for
+        // scoring, and it must describe what is actually in the table.
+        recorded.push(exchange.questionId);
       } catch (error) {
         // Logged, never surfaced. Losing one answer is bad; ending a live
         // interview because a write failed is worse.

@@ -174,6 +174,103 @@ data "aws_iam_policy_document" "bedrock_invoke" {
     ]
     resources = [var.sessions_table_arn]
   }
+
+  # Enqueue only. The API produces evaluation jobs when an interview ends and
+  # never consumes them — ReceiveMessage and DeleteMessage belong to the worker
+  # role alone, and granting them here would let a compromised API service drain
+  # the queue and silently discard a candidate's feedback.
+  statement {
+    sid       = "EvalQueueSend"
+    effect    = "Allow"
+    actions   = ["sqs:SendMessage"]
+    resources = [var.eval_queue_arn]
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Evaluator worker role
+#
+# Separate from the server role, never shared. The concrete payoff is the
+# permission that is ABSENT: no bedrock:InvokeModelWithBidirectionalStream. The
+# worker scores text and has no reason to open an audio stream, so if it is ever
+# compromised or looped by a bug it cannot open a billable Sonic stream.
+#
+# Also absent: S3 (it never touches a resume), Cognito (it never deletes a
+# user), and Comprehend (redaction runs once at profile save, on the API side).
+# ---------------------------------------------------------------------------
+data "aws_iam_policy_document" "evaluator_worker" {
+  # The text half of the server's Bedrock grant, and only the text half.
+  statement {
+    sid    = "BedrockInvokeText"
+    effect = "Allow"
+    actions = [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream",
+    ]
+    resources = local.text_model_arns
+  }
+
+  # Reads the answer and the session meta, writes the evaluation.
+  #
+  # **This cannot be scoped to EVAL#* items.** `overview.md` §8 describes the
+  # worker's DynamoDB grant as "write on EVAL#* items only", and IAM has no way
+  # to express that: the only item-level condition key is
+  # `dynamodb:LeadingKeys`, which constrains the PARTITION key, and `EVAL#` is a
+  # sort-key prefix. There is no sort-key condition.
+  #
+  # What is enforceable is the action list, and it is deliberately narrower than
+  # the server's: no DeleteItem, no UpdateItem, no BatchWriteItem. The worker
+  # can add an evaluation and read what it needs to produce one. It cannot
+  # remove a transcript, mutate a session's status, or run an erasure sweep.
+  statement {
+    sid    = "SessionsTableEvaluationAccess"
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:BatchGetItem",
+      "dynamodb:PutItem",
+      "dynamodb:Query",
+    ]
+    resources = [var.sessions_table_arn]
+  }
+
+  # Consume only. No SendMessage: a worker that could enqueue could loop itself,
+  # and every message it wrote would cost a Bedrock generation to process.
+  statement {
+    sid    = "EvalQueueConsume"
+    effect = "Allow"
+    actions = [
+      "sqs:ReceiveMessage",
+      "sqs:DeleteMessage",
+      # Needed by ReceiveMessage's long-poll path and by any future visibility
+      # extension for a slow generation.
+      "sqs:GetQueueAttributes",
+      "sqs:ChangeMessageVisibility",
+    ]
+    resources = [var.eval_queue_arn]
+  }
+}
+
+resource "aws_iam_policy" "evaluator_worker" {
+  name        = "prepilot-evaluator-worker-${var.environment}"
+  description = "Allow the PrepPilot Evaluator worker to consume the eval queue, invoke text models, and write evaluations (${var.environment})"
+  policy      = data.aws_iam_policy_document.evaluator_worker.json
+
+  tags = local.common_tags
+}
+
+resource "aws_iam_role" "evaluator_worker" {
+  name = "prepilot-evaluator-worker-role-${var.environment}"
+  # Same trust policy as the server: both are ECS tasks. The separation is in
+  # what each role permits, not in who may assume it.
+  assume_role_policy = data.aws_iam_policy_document.server_assume_role.json
+
+  tags = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "evaluator_worker" {
+  role       = aws_iam_role.evaluator_worker.name
+  policy_arn = aws_iam_policy.evaluator_worker.arn
 }
 
 data "aws_iam_policy_document" "server_assume_role" {

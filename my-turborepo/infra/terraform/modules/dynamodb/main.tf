@@ -15,7 +15,7 @@ locals {
 #   SESSION#<sid>     META            session metadata + plan
 #   SESSION#<sid>     ANSWER#<qId>    question + candidate transcript
 #   SESSION#<sid>     EVAL#<qId>      per-answer scores
-#   SESSION#<sid>     EVAL#SUMMARY    rollup
+#   SESSION#<sid>     SUMMARY         rollup — NOT EVAL#SUMMARY
 #   SESSION#<sid>     COACH           improvement plan
 #   USER#<uid>        SESSION#<sid>   user history lookup
 #

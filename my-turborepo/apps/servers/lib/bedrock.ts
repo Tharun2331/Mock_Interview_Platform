@@ -58,6 +58,17 @@ function readText(blocks: ContentBlock[] | undefined): string {
     .trim();
 }
 
+// Which model actually answered, alongside its reply.
+//
+// `modelId` is not decoration: the Evaluator persists it on every EVAL# item
+// because scores produced by two different models are not strictly comparable,
+// and without the attribute that difference is invisible forever. See
+// docs/architecture/data-model.md §1.
+export type ConverseResult = {
+  text: string;
+  modelId: string;
+};
+
 // Walks `config.bedrockTextModelIds` in order and returns the first usable
 // reply. Shared by every text agent so the fallback chain is defined once.
 //
@@ -65,7 +76,16 @@ function readText(blocks: ContentBlock[] | undefined): string {
 // Mistral, Meta and Qwen, so falling back is a config change rather than three
 // request builders. An empty reply counts as a failure and moves to the next
 // model — a 200 with no content is as useless to the caller as an exception.
-export async function converseText(args: ConverseTextArgs): Promise<string> {
+//
+// The chain's length is config, not code. The API service sets the full
+// three-model list because a candidate is watching a progress bar and a slow
+// answer beats none. The Evaluator worker sets a single id: it runs behind SQS,
+// which already provides retries and a DLQ, so walking a chain there is a
+// second, slower retry mechanism whose latency can outlive the queue's
+// visibility timeout — and a redelivered message pays for a second generation.
+export async function converseText(
+  args: ConverseTextArgs
+): Promise<ConverseResult> {
   const modelIds = config.bedrockTextModelIds;
   const failures: string[] = [];
 
@@ -104,7 +124,7 @@ export async function converseText(args: ConverseTextArgs): Promise<string> {
             `[bedrock] answered by ${modelId} after ${failures.length} failed — ${failures.join(" | ")}`
           );
         }
-        return text;
+        return { text, modelId };
       }
 
       failures.push(`${modelId}: empty response`);

@@ -238,25 +238,71 @@ Candidate material moved from session-scoped to user-scoped. Reasoning in
 
 ---
 
-## Phase 5 — Evaluator + SQS ⬜
+## Phase 5 — Evaluator + SQS 🟡 (~80%)
 
-Nothing started. The transcript it consumes is already being written, so this
-is unblocked today.
+Backend and queue are built and tested. Only the `ecs` module is outstanding.
 
-### Backend
-- [ ] `agents/evaluator.ts` — correctness / clarity / depth (0–10), `ConverseCommand`
-- [ ] `lib/sqs.ts` — `SQSClient` singleton
-- [ ] On interview end: enqueue each Q&A pair to `eval-queue`
-- [ ] `apps/worker/` — Fargate Spot worker, polls SQS, writes `EVAL#<qId>`
-  - Completion counter: `UpdateItem ADD completedCount 1`
-  - Coach fires when the count reaches `questionCount` (already written by `attachPlan`)
-  - Idempotent by `questionId` via `PutItem` — SQS is at-least-once
+### Backend ✅
+- [x] `agents/evaluator.ts` — correctness / clarity / depth (0–10), via `converseText`
+- [x] `lib/sqs.ts` — `SQSClient` singleton, `enqueueEvaluations` batched at 10
+- [x] On interview end: enqueue each recorded answer to the eval queue
+- [x] `lib/evaluations.ts` — owns every `EVAL#` command
+- [x] `worker.ts` — polls SQS, scores, writes `EVAL#<qId>`
+- [x] Idempotent by `questionId` via `PutItem`, plus a pre-flight duplicate
+      check so a redelivery costs one read instead of a generation
 
-### Terraform
-- [ ] `sqs` module — `eval-queue`, DLQ, `maxReceiveCount: 3`
+**The phase tracker was wrong about completion and has been corrected.** This
+section used to say `UpdateItem ADD completedCount 1`. There is no
+`completedCount`: `ADD` is not idempotent, SQS is at-least-once, and a
+redelivered message over-counts and fires the Coach early. Completion is
+derived from `Query ... begins_with("EVAL#")`, which is exact by construction.
+`session.ts` and `data-model.md` §1 both already said so — only this file
+disagreed.
+
+**Divergence from the plan, deliberate:** the worker is a second entrypoint in
+`apps/servers` (`worker.ts`), not an `apps/worker/` workspace. It needs
+`lib/dynamo`, `lib/bedrock`, `lib/config`, `lib/errors` and `lib/messages`, and
+a separate workspace means duplicating all five or extracting another package.
+The isolation that matters is the IAM task role, which attaches per ECS task
+definition rather than per repository — same image, different command,
+different role.
+
+**Fail fast, by configuration not code.** The worker's task definition sets
+`BEDROCK_TEXT_MODEL_IDS` to a single id. SQS redrive already provides retries,
+so walking a three-model chain is a slower second retry mechanism whose latency
+can outlive the visibility timeout — and a message redelivered mid-flight pays
+for a second generation. `VISIBILITY_TIMEOUT_SECONDS` (120) must stay in sync
+with the `sqs` module's `visibility_timeout_seconds`; nothing enforces it.
+
+### Terraform — written, NOT applied
+- [x] `sqs` module — `prepilot-eval-<env>`, DLQ, `maxReceiveCount: 3`,
+      SSE, 14-day DLQ retention, redrive-allow-policy naming the one source
+- [x] **Second IAM role for the worker** — `prepilot-evaluator-worker-role-<env>`
+- [x] `sqs:SendMessage` added to the API role, scoped to the queue ARN
+- [x] Wired into `environments/dev`; `terraform validate` passes
 - [ ] `ecs` module — cluster, API service, Spot worker service
-- [ ] **Second IAM role for the worker** — `bedrock:InvokeModel` + DynamoDB
-      write on `EVAL#*` only. Never shared with the API role
+- [ ] **Apply.** Nothing has been applied. `terraform init -backend=false` was
+      used for validation only, so dev still has no queue and `EVAL_QUEUE_URL`
+      is unset — the enqueue will raise `ServiceError` until it is applied.
+
+**`overview.md` §8 overstates what IAM can do, and the module says so.** It
+describes the worker's grant as "DynamoDB write on `EVAL#*` items only". That
+is not expressible: the only item-level condition key is
+`dynamodb:LeadingKeys`, which constrains the **partition** key, and `EVAL#` is
+a sort-key prefix. What is enforceable is the action list, and the worker's is
+genuinely narrower than the API's — no `DeleteItem`, no `UpdateItem`, no
+`BatchWriteItem`. It can add an evaluation and read what it needs to produce
+one; it cannot remove a transcript, mutate a session's status, or run an
+erasure sweep.
+
+The worker role has **no `bedrock:InvokeModelWithBidirectionalStream`**, no S3,
+no Cognito and no Comprehend. The missing bidirectional grant is the concrete
+payoff of splitting the roles: a compromised or looping worker cannot open a
+billable Sonic stream.
+
+Cost: SQS is effectively free — per-request billing against a 1M/month free
+tier, ~17 requests per interview, no per-hour charge. The `ecs` module is where
+real money starts.
 - ~~Audio bucket prefix~~ — **decided against.** Audio is never persisted; it
       streams through the WebSocket and is discarded, and the transcript is the
       durable record. The `audio/` prefix, its lifecycle rule and the `audioKey`

@@ -48,6 +48,11 @@ variable "bedrock_speech_model_id" {
   default     = "amazon.nova-2-sonic-v1:0"
 }
 
+variable "eval_queue_arn" {
+  type        = string
+  description = "ARN of the evaluation queue, from the sqs module. The API role may only send to it and the worker role may only receive from and delete on it — scoped to this one queue rather than the account's queues, so neither service can reach a queue it was never meant to see."
+}
+
 variable "cognito_user_pool_arn" {
   type        = string
   description = "ARN of the Cognito user pool the server may delete users from. Wired through the module output rather than reconstructed, so a pool replacement cannot leave this policy pointing at one that no longer exists."

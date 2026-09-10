@@ -7,6 +7,18 @@ module "iam" {
   uploads_bucket_arn    = module.s3.uploads_bucket_arn
   sessions_table_arn    = module.dynamodb.table_arn
   cognito_user_pool_arn = module.cognito.cognito_user_pool_arn
+  eval_queue_arn        = module.sqs.eval_queue_arn
+}
+
+# The evaluation queue and its dead-letter queue.
+#
+# Cost: effectively nothing. SQS bills per request against a 1 million/month
+# free tier, and a fifteen-question interview is ~17 requests end to end. There
+# is no per-hour charge, so an idle queue costs zero — unlike the NAT Gateway
+# and ALB called out in infra/terraform/CLAUDE.md.
+module "sqs" {
+  source      = "../../modules/sqs"
+  environment = var.environment
 }
 
 module "ssm" {

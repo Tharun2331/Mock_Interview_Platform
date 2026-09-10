@@ -566,6 +566,22 @@ describe("finishInterview", () => {
       ]
     ).toBe("failed");
   });
+
+  // The normal outcome once answers exist: they are recorded but nothing has
+  // scored them. Marking such a session complete would tell the results page
+  // feedback is ready while the queue is still full, with no later transition
+  // to correct it.
+  it("can park a session at evaluating while its answers are scored", async () => {
+    ddb.on(UpdateCommand).resolves({});
+
+    await finishInterview({ sessionId: SESSION_ID, status: "evaluating" });
+
+    const input = ddb.commandCalls(UpdateCommand)[0]?.args[0].input;
+    expect(input?.ExpressionAttributeValues?.[":status"]).toBe("evaluating");
+    // Still only from in_progress — the guard does not loosen just because
+    // there is a third destination.
+    expect(input?.ConditionExpression).toBe("#status = :inProgress");
+  });
 });
 
 describe("startInterview", () => {

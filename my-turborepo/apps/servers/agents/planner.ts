@@ -8,6 +8,7 @@ import {
 import { converseText } from "../lib/bedrock";
 import { PROMPT } from "../lib/constants";
 import { BedrockError } from "../lib/errors";
+import { extractJsonObject } from "../lib/modelJson";
 
 // Joined with newlines, not spaces. The numbered steps and the JSON shape below
 // only read as structure if they survive as separate lines.
@@ -140,27 +141,13 @@ function buildPrompt(req: PlannerInput): string {
   return sections.join("\n\n");
 }
 
-// Models wrap JSON in prose or fences despite being told not to, and that is not
-// worth a retry. Take the outermost {...} instead of trusting the whole reply.
-function extractJsonObject(raw: string): unknown {
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-
-  if (start === -1 || end === -1 || end <= start) {
-    throw new BedrockError("Planner reply contained no JSON object");
-  }
-
-  try {
-    return JSON.parse(raw.slice(start, end + 1));
-  } catch {
-    throw new BedrockError("Planner reply was not valid JSON");
-  }
-}
-
 // One typed input object in, one typed output object out. That stability is what
 // lets v2 wrap this as a LangGraph node without touching the route.
 export async function runPlanner(req: PlannerInput): Promise<PlanResponse> {
-  const raw = await converseText({
+  // `modelId` is ignored here on purpose: a plan is used once, immediately, and
+  // is not compared against other plans the way scores are compared against
+  // each other. The Evaluator persists it; the Planner has no use for it.
+  const { text: raw } = await converseText({
     system: SYSTEM_PROMPT,
     prompt: buildPrompt(req),
     exampleTurns: [
@@ -170,7 +157,7 @@ export async function runPlanner(req: PlannerInput): Promise<PlanResponse> {
 
   // Validated against the shared response contract directly, so there is no
   // second "model output" schema that can drift from what the client expects.
-  const parsed = PlanResponseSchema.safeParse(extractJsonObject(raw));
+  const parsed = PlanResponseSchema.safeParse(extractJsonObject(raw, "Planner"));
   if (!parsed.success) {
     throw new BedrockError(
       `Planner output failed validation — ${parsed.error.issues

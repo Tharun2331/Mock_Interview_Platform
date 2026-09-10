@@ -34,3 +34,25 @@ output "sessions_table_name" {
   description = "Name of the interview sessions table"
   value       = module.dynamodb.table_name
 }
+# Consumed by the API service as EVAL_QUEUE_URL and by the Evaluator worker's
+# poller. Exposed for the same reason as the two above: local development sets
+# it from `terraform output` rather than copying a URL out of the console.
+output "eval_queue_url" {
+  description = "URL of the evaluation queue"
+  value       = module.sqs.eval_queue_url
+}
+
+# Nothing writes to the DLQ directly — it is a redrive target. Its name is here
+# for the CloudWatch alarm dimension once that module exists: depth above zero
+# means answers are going unscored, which is otherwise invisible.
+output "eval_dlq_name" {
+  description = "Name of the evaluation dead-letter queue"
+  value       = module.sqs.eval_dlq_name
+}
+
+# Attached to the Evaluator worker's ECS task definition, never to the API
+# service's. Sharing one role collapses the point of splitting them.
+output "evaluator_worker_role_arn" {
+  description = "ARN of the Evaluator worker IAM role"
+  value       = module.iam.evaluator_worker_role_arn
+}

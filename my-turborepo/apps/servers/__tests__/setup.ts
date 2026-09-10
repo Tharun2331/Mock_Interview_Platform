@@ -14,6 +14,8 @@ process.env.COGNITO_USER_POOL_ID = "us-east-1_test000000";
 process.env.COGNITO_USER_POOL_CLIENT_ID = "testclientid0000000000000";
 process.env.SESSIONS_TABLE = "prepilot-sessions-test";
 process.env.UPLOADS_BUCKET = "prepilot-uploads-test";
+process.env.EVAL_QUEUE_URL =
+  "https://sqs.us-east-1.amazonaws.com/000000000000/prepilot-eval-test";
 process.env.AWS_REGION = "us-east-1";
 
 // Nonsense credentials, deliberately. The SDK resolves lazily, so an unmocked
