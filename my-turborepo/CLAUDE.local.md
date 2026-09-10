@@ -30,6 +30,7 @@ the Redis drop is finally recorded in
 | 5 — Evaluator + SQS | ⬜ Not started |
 | 6 — Coach + RAG | ⬜ Not started |
 | 7 — Deploy + CI/CD | 🔸 ~30% — CloudFront/S3/SSM/DynamoDB modules exist; no ECS, no CI |
+| Testing (cross-cutting) | 🟡 Pass 1 done — 142 tests on pure logic and shared schemas. Routes and React are pass 2 |
 
 **Next highest-leverage step:** `agents/evaluator.ts`. Everything downstream —
 the Coach, the results page, the whole post-interview half of the product —
@@ -224,8 +225,9 @@ Candidate material moved from session-scoped to user-scoped. Reasoning in
 - [x] `audio/` prefix, its lifecycle rule and `audio_retention_days` removed
 
 ### Not done
-- [ ] No Jest. The onboarding guard and the upload state machine are exactly
-      what the frontend skill says to test
+- [ ] The onboarding guard and the upload state machine are still untested —
+      exactly what the frontend skill asks for. Covered by testing pass 2; the
+      runner itself now exists (see **Testing** below)
 - [ ] `POST /profile/resume` re-scrapes GitHub on every resume upload, even
       when the URL has not changed — a wasted call against an unauthenticated
       60/hr quota shared by every user. (`PUT /profile/github` is fine: the
@@ -279,11 +281,74 @@ is unblocked today.
 - [ ] `environments/prod/` — still five empty files
 
 ### CI/CD
-- [ ] **`.github/workflows/` does not exist.** No deploy pipeline, no PR checks
+- [ ] **`.github/workflows/` does not exist.** No deploy pipeline, no PR checks.
+      Deliberately deferred — the runner and the `test` task it will call exist,
+      so the workflow is now a thin wrapper rather than a design problem
 - [x] `check-types` wired for all four workspaces
+- [x] `test` wired as a turbo task — `bun run test` fans out from the root
 - [x] `build.ts` — production `Bun.build()`, fails on missing `BUN_PUBLIC_*`
 - [ ] Upload `dist/` to S3 on deploy
 - [ ] Presigned URL flow for resume/audio
+
+---
+
+## Testing 🟡
+
+Started 2026-09-09, ahead of Phase 5, so CI has something to run and the
+Evaluator lands on a codebase that can be tested rather than one retrofitted
+afterwards.
+
+**Runner: `bun test`, NOT Jest.** Both apps are ESM TypeScript run by Bun, so
+Jest would need `@swc/jest`, ESM flags and `moduleNameMapper`, and would run
+tests under Node while production runs Bun. `bun:test` implements the Jest API
+(`describe`/`it`/`expect`), so the tests read as Jest tests and stay portable if
+that tradeoff ever changes.
+
+Jest was checked properly rather than dismissed. It is *viable*: `apps/servers`
+uses no Bun APIs at all, and `lib/multipart.ts` is pure web standard
+(`Readable.toWeb`, `new Request`, `formData()` — all Node 18+). The Bun surface
+is `apps/web/src/index.ts` (`serve`) and `build.ts` (`Bun.Glob`/`Bun.build`),
+neither of which is unit-testable. So the decision was fidelity and config cost,
+not capability.
+
+Conventions:
+- `__tests__/` mirroring source at each workspace root
+- `packages/shared/tsconfig.json` carries `include: ["src", "__tests__"]` and
+  `types: ["bun"]` so tests type-check; `apps/servers` includes them by default
+- `test` is a turbo task — CI calls `bun run test` and `bun run check-types`
+
+### Pass 1 ✅ — pure logic and shared schemas (142 tests)
+
+- [x] `packages/shared/__tests__/schemas/` — `preInterview`, `plan`, `profile`,
+      `session`
+- [x] `apps/servers/__tests__/lib/` — `exchangeBuffer`, `errors`
+
+The cases worth knowing are the ones encoding a real defect or near-miss:
+- `extractGithubUsername` rejects `evil.com/<user>`, `github.com@evil.com`,
+  `github.com.evil.com` and percent-encoded traversal — the boundary between
+  user input and an outbound request path
+- `SORT_KEY.EVAL_SUMMARY` sits outside the `begins_with("EVAL#")` range. The
+  near-miss that would have fired the Coach a question early is now a failing
+  test rather than a comment. **Phase 5 depends on this holding**
+- `ExchangeBuffer` merges fragments into one exchange, replaying the real event
+  order — the bug that turned one spoken answer into eight DynamoDB items
+- `PlanRequestSchema` strips client-supplied `repos`/`resumeText` (ADR-0007)
+- The all-zero `questionMix` that passes every field bound and still describes
+  no interview
+- The `.default()`ed `type` attribute, so pre-refactor rows still parse
+
+No production code changed and no defects surfaced — every test asserts current
+behaviour and passed first run.
+
+### Pass 2 ⬜ — routes and React
+
+- [ ] Route handlers with mocked AWS. **Chosen approach: `aws-sdk-client-mock`
+      at the SDK layer.** Open risk: it is not officially tested against Bun —
+      verify before building on it, fall back to `mock.module()` on the `lib/*`
+      client singletons, which needs no production change
+- [ ] `RequireProfile` onboarding guard and the resume upload state machine
+      (needs `happy-dom` + Testing Library; read the frontend skill first)
+- [ ] `useInterview` ten-state union
 
 ---
 
@@ -324,7 +389,8 @@ the cheap outcome.
 | No CI/CD at all; `.github/workflows/` absent | — | High before deploy |
 | Editing `packages/shared` does not invalidate the dev server's cached module | Bun dev server | Medium — restart after any shared edit |
 | Rate limiter is in-memory; per-task budget | `apps/servers/lib/rateLimit.ts` | Medium — options in ADR-0006 |
-| No Jest anywhere; the profile guard and upload state machine are untested | `apps/web/` | Medium — the frontend skill asks for it |
+| No tests under `apps/web` at all; the profile guard and upload state machine are untested | `apps/web/` | Medium — the frontend skill asks for it. Testing pass 2 |
+| No route tests; every handler's auth guard and status mapping is unexercised | `apps/servers/routes/` | Medium — testing pass 2 |
 | `AdminDeleteUser` retry path (`UserNotFoundException`) never exercised for real | `apps/servers/lib/cognitoAdmin.ts` | Low — covered by construction |
 | GitHub scraping uses axios; `@octokit/rest` installed, unused | `apps/servers/lib/github.ts` | Medium |
 | `turbo.json` `build.outputs` is `.next/**` | `turbo.json` | Low |
