@@ -33,7 +33,7 @@ the Redis drop is finally recorded in
 | 5 — Evaluator + SQS | ⬜ Not started |
 | 6 — Coach + RAG | ⬜ Not started |
 | 7 — Deploy + CI/CD | 🔸 ~30% — CloudFront/S3/SSM/DynamoDB modules exist; no ECS, no CI |
-| Testing (cross-cutting) | 🟢 Passes 1 and 2 done — 228 tests across all three workspaces. Mount-time middleware wiring still uncovered |
+| Testing (cross-cutting) | 🟢 Passes 1–3 done — 373 tests; backend 81.7% funcs / 87.9% lines. `lib/sonic.ts` + `routes/interview.ts` deferred past Phase 5 |
 
 **Next highest-leverage step:** `agents/evaluator.ts`. Everything downstream —
 the Coach, the results page, the whole post-interview half of the product —
@@ -398,15 +398,63 @@ Cases worth knowing:
   re-onboard a returning candidate, and the resume re-upload would bump
   `profileVersion` and discard a good cached plan
 
+### Pass 3 ✅ — the modules Phase 5 sits on (373 tests total)
+
+Backend coverage **55.9 → 81.7% funcs, 75.5 → 87.9% lines**.
+
+**A test-isolation bug was found and fixed here, and it is the one to remember.**
+Bun auto-loads `apps/servers/.env`, so the pass-2 setup — which used `??=` —
+inherited the developer's **real dev table, bucket and user pool**. Tests were
+asserting against `prepilot-sessions-dev`, and any command escaping its mock
+would have reached real infrastructure. `__tests__/setup.ts` now assigns
+unconditionally, plus nonsense AWS credentials and
+`AWS_EC2_METADATA_DISABLED`. Never use `??=` there.
+
+- [x] `lib/sessions.test.ts` (52) — was **3.85%** covered
+- [x] `routes/plan.test.ts` (21) — the plan cache
+- [x] `lib/redact.test.ts` (27) — PII, failing closed
+- [x] `lib/multipart.test.ts` (21) — the layered upload limits
+- [x] `agents/planner.test.ts` (24) — JSON extraction and prompt building
+
+Cases worth knowing:
+- **All three items in `createSession` share one `expiresAt`.** Derived
+  per-item, a session written across an hour would have its parts disappear
+  across an hour, leaving a transcript whose META is already gone
+- `loadPlannerInputs` finds items by **sort key, not position** — BatchGetItem
+  returns matches unordered and omits misses
+- `deleteKeyChunk` retries `UnprocessedItems` and gives up after 3, because
+  BatchWriteItem reports throttling as a *successful* response that wrote nothing
+- `attachPlan` and `startInterview` distinguish wrong-owner from wrong-status
+  via `ReturnValuesOnConditionCheckFailure`, and still give a non-owner the
+  same answer as a missing session — no enumeration oracle
+- The plan cache compares the **session's** `profileVersion`, not the profile's
+  current one, and stamps the cache with the version read *before* the Bedrock
+  call — a profile saved mid-generation must not mark the plan fresh
+- A cache read failure degrades to a miss; a cache write failure still returns
+  the plan. Neither fails a request the Planner can serve
+- `redactResumeText` **throws even when the deterministic pass found something**
+  — returning the partial result is the silent failure it exists to prevent
+- `DATE_TIME` survives redaction: employment dates are the seniority signal
+- Overlapping spans merge, and are applied right-to-left so earlier
+  replacements cannot invalidate later offsets
+- `readPdf` validates by **magic bytes**, so a renamed executable claiming
+  `application/pdf` is rejected
+- The stream cap fires on a body that lies about `content-length` or omits it
+
 ### Still untested
 
 - [ ] **Mount-time wiring.** `testApp.ts` mounts routers without the
       `helmet` / `cors` / `AuthMiddleware` / `apiRateLimiter` chain that
       `index.ts` wraps them in. Handler behaviour is covered; the wiring is not
-- [ ] `routes/plan.ts`, `routes/preInterview.ts`, `routes/interview.ts`
-- [ ] `lib/sonic.ts`, `lib/erasure.ts`, `lib/redact.ts`, `lib/multipart.ts`
-- [ ] The resume upload state machine in the UI (`ResumeField`) — the hook and
-      the guard are done, the upload phases are not
+- [ ] `lib/sonic.ts` (735 lines) and `routes/interview.ts` (530) — the largest
+      untested surface, and genuinely hard: long-lived bidirectional streams and
+      renewal past the ~8-minute cap. Deliberately deferred until after Phase 5
+- [ ] `lib/s3.ts` (19%), `lib/resume.ts` (13%), `lib/erasure.ts` (42%),
+      `lib/cognitoAdmin.ts` (33%)
+- [ ] `routes/profile.ts` is at 68% — the resume upload path is the gap
+- [ ] `routes/preInterview.ts`
+- [ ] The resume upload state machine in the UI (`ResumeField`)
+- [ ] `packages/shared/src/schemas/auth.ts`
 
 ---
 
