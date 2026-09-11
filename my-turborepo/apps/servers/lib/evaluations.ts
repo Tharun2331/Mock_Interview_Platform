@@ -12,16 +12,19 @@ import {
   SORT_KEY,
   SessionAnswerSchema,
   SessionEvalSummarySchema,
+  SessionEvaluationSchema,
   SessionMetaSchema,
   answerSk,
   evalSk,
   sessionPk,
+  type EvaluationResponse,
+  type EvaluationView,
   type EvaluatorInput,
   type SessionAnswer,
   type SessionMeta,
 } from "@repo/shared";
 import { dynamoClient, parseItem, requireTable } from "./dynamo";
-import { ServiceError } from "./errors";
+import { ServiceError, SessionAccessError } from "./errors";
 import { MESSAGES } from "./messages";
 import { completeEvaluation, sessionExpiresAt } from "./sessions";
 
@@ -113,6 +116,161 @@ function toEvaluatorInput(
     targetRole: meta.role ?? "the role they applied for",
     startingDifficulty: meta.plan?.startingDifficulty ?? "mid",
   };
+}
+
+// Everything the results page needs for one session, proving ownership on the
+// way.
+//
+// Three keyed reads rather than one Query on the partition. A whole-partition
+// Query would also return INPUTS, which carries the full resume text — roughly
+// 10 KB read on every poll, for a field the client must never see. Reading only
+// what is displayed keeps that impossible rather than merely unused.
+//
+// Partial by design. Scoring is asynchronous, so this returns whatever has
+// landed: a candidate reads the first three scores while the rest are queued,
+// which is the entire point of having made it asynchronous.
+export async function loadSessionEvaluations(args: {
+  sessionId: string;
+  userId: string;
+}): Promise<EvaluationResponse> {
+  const TableName = requireTable();
+  const pk = sessionPk(args.sessionId);
+
+  let headers;
+  try {
+    headers = await dynamoClient.send(
+      new BatchGetCommand({
+        RequestItems: {
+          [TableName]: {
+            Keys: [
+              { PK: pk, SK: SORT_KEY.META },
+              { PK: pk, SK: SORT_KEY.EVAL_SUMMARY },
+            ],
+            // Eventually consistent is fine here, and deliberately so: this is
+            // a display read that the client polls. The strongly consistent
+            // read that matters is the completion check in the worker, which
+            // decides when the Coach fires.
+          },
+        },
+      })
+    );
+  } catch (error) {
+    throw new ServiceError(
+      `${MESSAGES.SESSION_READ_FAILED} — ${
+        error instanceof Error ? error.message : "unknown"
+      }`
+    );
+  }
+
+  const items = headers.Responses?.[TableName] ?? [];
+  const metaItem = items.find((item) => item.SK === SORT_KEY.META);
+  const summaryItem = items.find((item) => item.SK === SORT_KEY.EVAL_SUMMARY);
+
+  // Same error for "no such session" and "not yours", so the response cannot
+  // be used to test whether a session id is real.
+  if (metaItem === undefined || metaItem.userId !== args.userId) {
+    throw new SessionAccessError(MESSAGES.SESSION_NOT_FOUND);
+  }
+
+  const meta = parseItem(SessionMetaSchema, metaItem, "META");
+
+  // An interview that never reached the queue has no rollup. Reported as a
+  // finished round of zero rather than as an error — there is nothing to wait
+  // for, and a spinner that never resolves is worse than an empty state.
+  const summary =
+    summaryItem === undefined
+      ? undefined
+      : parseItem(SessionEvalSummarySchema, summaryItem, "SUMMARY");
+
+  const [answers, evaluations] = await Promise.all([
+    queryByPrefix(TableName, pk, KEY_PREFIX.ANSWER),
+    queryByPrefix(TableName, pk, KEY_PREFIX.EVAL),
+  ]);
+
+  const answerById = new Map(
+    answers.map((item) => [item.questionId, item] as const)
+  );
+
+  const views: EvaluationView[] = [];
+  for (const row of evaluations) {
+    const evaluation = SessionEvaluationSchema.safeParse(row);
+    if (!evaluation.success) continue;
+
+    const answerRow = answerById.get(evaluation.data.questionId);
+    const answer = answerRow && SessionAnswerSchema.safeParse(answerRow);
+
+    // An evaluation whose answer is gone cannot be rendered — the score would
+    // have no question and no transcript beside it. Skipped rather than shown
+    // half-empty, which only happens if the answer was erased mid-flight.
+    if (!answer || !answer.success) continue;
+
+    views.push({
+      questionId: evaluation.data.questionId,
+      questionText: answer.data.questionText,
+      questionType: answer.data.questionType,
+      transcript: answer.data.transcript,
+      interrupted: answer.data.interrupted,
+      durationMs: answer.data.durationMs,
+      correctness: evaluation.data.correctness,
+      clarity: evaluation.data.clarity,
+      depth: evaluation.data.depth,
+      rationale: evaluation.data.rationale,
+      evaluatedAt: evaluation.data.evaluatedAt,
+      // modelId deliberately dropped here. See EvaluationViewSchema.
+    });
+  }
+
+  // ULIDs sort lexicographically by creation time, so key order is already the
+  // order the questions were asked.
+  views.sort((a, b) => a.questionId.localeCompare(b.questionId));
+
+  return {
+    // `planning`, `ready` and `in_progress` cannot reach this route — the
+    // handler rejects them — so the remaining states are the three below.
+    status: meta.status === "complete" ? "complete" : meta.status === "failed" ? "failed" : "evaluating",
+    completed: views.length,
+    // The answers actually enqueued, not the plan's questionCount. Falling back
+    // to the number scored keeps a session with no rollup from reporting
+    // "3 of 0".
+    total: summary?.questionCount ?? views.length,
+    averages: summary?.averages,
+    evaluations: views,
+    role: meta.role,
+  };
+}
+
+async function queryByPrefix(
+  TableName: string,
+  pk: string,
+  prefix: string
+): Promise<Record<string, unknown>[]> {
+  const rows: Record<string, unknown>[] = [];
+  let cursor: Record<string, unknown> | undefined;
+
+  do {
+    let response;
+    try {
+      response = await dynamoClient.send(
+        new QueryCommand({
+          TableName,
+          KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+          ExpressionAttributeValues: { ":pk": pk, ":prefix": prefix },
+          ExclusiveStartKey: cursor,
+        })
+      );
+    } catch (error) {
+      throw new ServiceError(
+        `${MESSAGES.SESSION_READ_FAILED} — ${
+          error instanceof Error ? error.message : "unknown"
+        }`
+      );
+    }
+
+    rows.push(...(response.Items ?? []));
+    cursor = response.LastEvaluatedKey;
+  } while (cursor !== undefined);
+
+  return rows;
 }
 
 // Opens the rollup when the interview ends, carrying the denominator that

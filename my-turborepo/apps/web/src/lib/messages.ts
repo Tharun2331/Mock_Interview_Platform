@@ -263,11 +263,52 @@ export const MESSAGES = {
   // The results screen is reached but not yet fed: scoring lands with the
   // Evaluator. Saying so plainly beats a skeleton that implies data is seconds
   // away, or an empty state that reads as a failure.
+  // Keeps the action's name stable through the flow: the interview ends, and
+  // the thing on offer is the feedback it produced.
+  INTERVIEW_SEE_FEEDBACK: "See your feedback",
+
   RESULT_TITLE: "Feedback",
   RESULT_PENDING_TITLE: "Your feedback is not ready yet",
   RESULT_PENDING_BODY:
     "Scoring runs after an interview finishes. When it is ready you will find each answer here with what would have made it stronger.",
   RESULT_BACK: "Start another interview",
+
+  // Scoring is asynchronous, so the first thing a candidate sees is usually a
+  // round in progress. Naming the count makes the wait legible — "2 of 6" is a
+  // system that is working, an unlabelled spinner is one that might be stuck.
+  RESULT_SCORING_TITLE: "Scoring your answers",
+  RESULT_SCORING_BODY:
+    "Each answer is read and scored on its own, so they arrive one at a time. You can stay on this page or come back later.",
+  RESULT_PROGRESS: (done: number, total: number): string =>
+    `${done} of ${total} scored`,
+
+  // The three dimensions, with what each one actually measures. A bare
+  // "7/10 depth" teaches nothing; the subtitle is what makes it actionable.
+  RESULT_DIMENSION_CORRECTNESS: "Correctness",
+  RESULT_DIMENSION_CORRECTNESS_HINT: "Was it true, and did it answer the question asked?",
+  RESULT_DIMENSION_CLARITY: "Clarity",
+  RESULT_DIMENSION_CLARITY_HINT: "Could a listener follow it?",
+  RESULT_DIMENSION_DEPTH: "Depth",
+  RESULT_DIMENSION_DEPTH_HINT: "Did it go past the textbook answer?",
+
+  RESULT_OVERALL: "Across the whole interview",
+  RESULT_YOUR_ANSWER: "What you said",
+  RESULT_WHAT_WOULD_HELP: "What would have made it stronger",
+  // A score on a half-heard question needs its context, or it reads as an
+  // unexplained penalty.
+  RESULT_INTERRUPTED: "You answered before the question finished — scored on what you heard",
+
+  RESULT_EMPTY_TITLE: "This interview has nothing to score",
+  RESULT_EMPTY_BODY:
+    "No answers were recorded, so there is nothing to give feedback on. Starting a fresh interview is the way forward.",
+
+  RESULT_FAILED_TITLE: "This interview did not finish",
+  RESULT_FAILED_BODY:
+    "Something went wrong before it could be scored. Your next interview will not be affected.",
+
+  RESULT_LOAD_FAILED: "We could not load your feedback.",
+  RESULT_MISSING_SESSION:
+    "We could not tell which interview to show. Pick one from your history, or start a new one.",
 
   // --- Profile ---
   // Captured once and reused by every interview. The first-run framing sells

@@ -74,6 +74,13 @@ export function App() {
         <Route element={<RequireProfile />}>
           <Route path="/start" element={<StartInterview />} />
           <Route path="/interview" element={<Interview />} />
+          {/* Feedback is worth returning to, so the session lives in the path
+              rather than in router state — a reload or a bookmark still
+              resolves to the right interview. */}
+          <Route path="/results/:sessionId" element={<Result />} />
+          {/* Reached with no session named. Renders its own explanation rather
+              than falling through to the catch-all, which would bounce someone
+              to signup for what is really a missing parameter. */}
           <Route path="/results" element={<Result />} />
         </Route>
       </Route>

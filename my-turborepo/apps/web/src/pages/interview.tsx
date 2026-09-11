@@ -301,10 +301,20 @@ export function Interview() {
           title={MESSAGES.INTERVIEW_ENDED}
           body={state.reason}
         >
+          {/* The primary action after an interview is reading the feedback,
+              not starting another one. Scoring is already running by the time
+              this renders — the results page shows it arriving rather than
+              making the candidate guess whether anything happened. */}
+          <Button
+            className="cursor-pointer"
+            onClick={() => void navigate(`/results/${sessionId}`)}
+          >
+            {MESSAGES.INTERVIEW_SEE_FEEDBACK}
+          </Button>
           <Button
             variant="outline"
             className="cursor-pointer"
-            onClick={() => void navigate("/form")}
+            onClick={() => void navigate("/start")}
           >
             {MESSAGES.INTERVIEW_BACK}
           </Button>

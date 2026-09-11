@@ -24,6 +24,7 @@ export const MESSAGES = {
   EVAL_WRITE_FAILED:    "Could not store the evaluation.",
   EVAL_SUMMARY_WRITE_FAILED: "Could not open the evaluation rollup.",
   EVAL_SUMMARY_READ_FAILED:  "Could not read the evaluation rollup.",
+  INVALID_SESSION_ID:        "That interview session could not be found.",
   // Both log-facing. A stored item that no longer matches its schema is a
   // deploy-skew bug, not something a candidate can act on — the client sees the
   // route's generic failure copy instead.

@@ -15,11 +15,16 @@ now scored asynchronously**. Verified against real AWS on 2026-09-10: an
 interview queued 3 answers, the worker scored them, and completion detection
 closed the session out.
 
-**What still cannot be seen:** `result.tsx` is the 36-line Phase 4 placeholder
-and fetches nothing. There is no `GET` route for evaluations or coaching, so
-scores exist in DynamoDB and nowhere a candidate can read them. That is the
-Phase 6 boundary, and it is the single biggest gap between "working" and
-"usable".
+**The loop is now visible end to end.** `GET /api/v1/sessions/:sessionId/evaluation`
+returns partial results as they land, and `result.tsx` polls it — per-answer
+scores with the candidate's own words and what would have made each stronger,
+plus whole-interview averages once the round finishes. The interview's end
+screen leads there rather than back to setup, and the session lives in the URL
+so feedback survives a reload.
+
+**What is still missing:** the Coach (Phase 6), and any history view. A
+candidate can read one interview's feedback only by finishing it or keeping the
+link.
 
 **Phase 4.5 — candidate material is user-scoped (2026-09-09).** Resume and
 GitHub moved off the session and onto `USER#<uid>/PROFILE`, captured once
@@ -35,18 +40,21 @@ the Redis drop is finally recorded in
 | 1 — Foundation + Planner | ✅ Complete |
 | 2 — Resume + Auth + Database | ✅ Complete |
 | 3 — WebSocket + Speech | ✅ Complete (Redis dropped — see below) |
-| 4 — Sonic end-to-end | 🟡 ~85% — the loop runs; `result.tsx` now waits on Phase 6, not 5 |
+| 4 — Sonic end-to-end | ✅ Complete — `result.tsx` is real and reachable |
 | 4.5 — Profile, PII redaction, erasure | ✅ Complete |
 | 5 — Evaluator + SQS | 🟢 ~90% — agent, queue, worker, completion detection all live in dev. Only the `ecs` module is missing |
-| 6 — Coach + RAG | ⬜ Not started — **and it now blocks the visible product** |
+| 6 — Coach + RAG | ⬜ Not started — the last piece of product value |
 | 7 — Deploy + CI/CD | 🔸 ~45% — CI runs on every PR; CloudFront/S3/SSM/DynamoDB/SQS/IAM modules exist; no ECS |
-| Testing (cross-cutting) | 🟢 441 tests; backend 81.7% funcs / 87.9% lines. `lib/sonic.ts` + `routes/interview.ts` still deferred |
+| Testing (cross-cutting) | 🟢 468 tests; backend 81.7% funcs / 87.9% lines. `lib/sonic.ts` + `routes/interview.ts` still deferred |
 
-**Next highest-leverage step:** a read path for evaluations. The scores exist
-and nothing can display them, so every remaining piece of value — the results
-page, the Coach, the history dashboard — sits behind one `GET` route and a
-real `result.tsx`. The `ecs` module is the only thing left in Phase 5 and is
-deploy work, not product work.
+**Next highest-leverage step:** Phase 6, the Coach. It is the last piece of
+product value left — everything before it now works and is visible. Hang its
+trigger on the existing `attribute_not_exists(averages)` election in
+`finalizeIfComplete` rather than inventing a second signal; that write is
+already once-only, which is the whole reason `completedCount` was rejected.
+
+The `ecs` module is the only thing left in Phase 5, and it is deploy work
+rather than product work — it belongs with Phase 7.
 
 ---
 
