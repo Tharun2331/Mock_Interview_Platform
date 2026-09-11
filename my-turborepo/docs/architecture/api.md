@@ -25,9 +25,34 @@ POST   /api/v1/pre-interview        no body; mints a session from the profile
                                     -> { sessionId }
 POST   /api/v1/plan                 { sessionId, targetRole } -> PlanResponse
 
+GET    /api/v1/sessions/:sessionId/evaluation
+                                    -> { status, completed, total, averages?,
+                                         evaluations[], role? }
+
 WS     /            access token in the WebSocket subprotocol, verified during
                     the HTTP upgrade
 ```
+
+`GET /sessions/:sessionId/evaluation` is the first route built on the
+`/api/v1/sessions` shape §3 has always specified, rather than the flat shape
+the earlier routes use. `/coach` joins it in Phase 6.
+
+It is a **poll target**. Scoring is asynchronous, so it returns whatever has
+landed rather than waiting — a candidate reads the first three scores while the
+rest are queued. Two things a client must get right:
+
+- **Stop on `averages`, not on `completed === total`.** The counts are a
+  progress indicator; `averages` is written by the same conditional update that
+  completes the session, so it is the only signal that cannot say "done" early.
+- **`total` is the answers actually enqueued**, not the plan's `questionCount`.
+  An interview stopped early by the hard timer has fewer answers than it
+  planned, and using the planned number leaves a finished round reading as
+  permanently incomplete.
+
+`modelId` is on every stored `EVAL#` item and is deliberately **not** in the
+response. Which model scored an answer is operational, the UI never names a
+service, and exposing it would invite comparing scores across models — the
+exact comparison the attribute exists to warn engineers about.
 
 `GET /profile` answers `{ profile: null }` rather than 404 for a candidate who
 has never saved one — that is the expected first-sign-in state and what the

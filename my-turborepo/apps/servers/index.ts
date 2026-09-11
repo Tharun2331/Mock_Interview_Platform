@@ -5,6 +5,7 @@ import { config } from "./lib/config";
 import { planRouter } from "./routes/plan";
 import { preInterviewRouter } from "./routes/preInterview";
 import { profileRouter } from "./routes/profile";
+import { sessionsRouter } from "./routes/sessions";
 import { attachInterviewSocket } from "./routes/interview";
 import { AuthMiddleware } from "./lib/cognitoAuth";
 import { apiRateLimiter } from "./lib/rateLimit";
@@ -30,6 +31,10 @@ app.use(express.json({ limit: config.jsonBodyLimit }));
 app.use("/api/v1/profile", AuthMiddleware, apiRateLimiter, profileRouter);
 app.use("/api/v1/pre-interview", AuthMiddleware, apiRateLimiter, preInterviewRouter);
 app.use("/api/v1/plan", AuthMiddleware, apiRateLimiter, planRouter);
+// Read paths for a finished interview. Rate limited like the rest, though this
+// one is polled while the worker drains — the limit is per authenticated user
+// and generous enough that a few-second poll interval never reaches it.
+app.use("/api/v1/sessions", AuthMiddleware, apiRateLimiter, sessionsRouter);
 
 // The HTTP server is captured rather than discarded: the interview WebSocket
 // attaches to its `upgrade` event, which is the only place a handshake can be

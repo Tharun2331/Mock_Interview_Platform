@@ -84,3 +84,65 @@ export const EvalJobSchema = z.object({
 });
 
 export type EvalJob = z.infer<typeof EvalJobSchema>;
+
+// One scored answer, as a candidate reads it.
+//
+// Deliberately NOT the stored item. `modelId` is on every EVAL# row and must
+// not appear here: which model scored an answer is an operational detail, and
+// the frontend contract is that a candidate is talking to "the interviewer",
+// never to a named service. Exposing it would also invite comparing scores
+// across models, which is exactly the comparison the attribute exists to warn
+// engineers about.
+export const EvaluationViewSchema = z.object({
+  questionId: z.string().min(1),
+  questionText: z.string(),
+  questionType: QuestionTypeSchema,
+  // Their own words, returned so the score has something to sit against. A
+  // rating with no visible answer is unreadable as feedback.
+  transcript: z.string(),
+  // Shown in the detail view: a score on a half-heard question needs its
+  // context, or it reads as an unexplained penalty.
+  interrupted: z.boolean(),
+  durationMs: z.number().int().min(0),
+  correctness: z.number().min(0).max(EVALUATION_LIMITS.MAX_SCORE),
+  clarity: z.number().min(0).max(EVALUATION_LIMITS.MAX_SCORE),
+  depth: z.number().min(0).max(EVALUATION_LIMITS.MAX_SCORE),
+  rationale: z.string().min(1),
+  evaluatedAt: z.iso.datetime(),
+});
+
+export type EvaluationView = z.infer<typeof EvaluationViewSchema>;
+
+// GET /api/v1/sessions/:sessionId/evaluation
+//
+// A poll target, not a one-shot read. Scoring is asynchronous, so this returns
+// whatever has landed rather than waiting for all of it — a candidate can read
+// the first three scores while the rest are still queued, which is the whole
+// point of having done the work asynchronously.
+export const EvaluationResponseSchema = z.object({
+  // `evaluating` while the queue drains, `complete` once every answer is
+  // scored. The client polls on the former and stops on the latter.
+  status: z.enum(["evaluating", "complete", "failed"]),
+  // Scored so far, and the number expected. `total` is the answers actually
+  // enqueued — an interview stopped early by the hard timer has fewer answers
+  // than its plan called for, and showing the planned number would leave a
+  // finished session reading as permanently incomplete.
+  completed: z.number().int().min(0),
+  total: z.number().int().min(0),
+  // Absent until every answer is scored. Its presence is what tells the client
+  // the round is genuinely finished, and it is written by the same conditional
+  // update that completes the session.
+  averages: z
+    .object({
+      correctness: z.number().min(0).max(EVALUATION_LIMITS.MAX_SCORE),
+      clarity: z.number().min(0).max(EVALUATION_LIMITS.MAX_SCORE),
+      depth: z.number().min(0).max(EVALUATION_LIMITS.MAX_SCORE),
+    })
+    .optional(),
+  // Ordered as they were asked. ULIDs sort lexicographically by creation time,
+  // so the natural key order is already the interview's order.
+  evaluations: z.array(EvaluationViewSchema),
+  role: z.string().optional(),
+});
+
+export type EvaluationResponse = z.infer<typeof EvaluationResponseSchema>;
