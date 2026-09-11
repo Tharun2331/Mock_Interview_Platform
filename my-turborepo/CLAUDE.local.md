@@ -523,6 +523,40 @@ Cases worth knowing:
   `application/pdf` is rejected
 - The stream cap fires on a body that lies about `content-length` or omits it
 
+### Running a short interview locally (test mode)
+
+A real plan is 15–40 minutes by schema, so exercising the wrap-up nudges and
+the hard stop costs a 40-minute sitting per attempt. Two env vars in
+`apps/servers/.env` shorten the *running session* without touching the plan:
+
+```
+INTERVIEW_TEST_MODE=true
+INTERVIEW_TEST_TARGET_MINUTES=6
+```
+
+At 6 minutes the schedule is wrap-up @5m15s (87.5%), final call @5m42s (95%),
+hard stop @7m00s. `[interview] <sid> clock — …` logs the whole timetable at
+session start, so a nudge that fired at the wrong second is distinguishable
+from one that never fired.
+
+**`PLAN_LIMITS` is deliberately untouched.** Those bounds are the product's
+contract — what the Planner's prompt states, what its output is validated
+against, and what every stored plan is re-validated against **on read**. A
+six-minute plan in DynamoDB would fail `PlanResponseSchema` on the way out and
+the interview would refuse to start. So the plan keeps a schema-valid length
+and only the session is shortened, resolved once in `routes/interview.ts` and
+passed to the state clock, the `ready` event, the prompt's TIME header and the
+three timers.
+
+**The nudge offsets scale only in test mode.** Production uses fixed offsets (3
+min / 1 min) because a closing question takes about as long in a 15-minute
+interview as in a 40-minute one. Converting production to percentages would
+move the 15-minute case from a 3-minute warning to 1.9 — a behaviour change
+nobody asked for, and there is a test pinning it.
+
+Gated twice: the flag is only read outside production, and ignored there even
+if set. `bun run start` sets `NODE_ENV=production`.
+
 ### The mock.module rule (learned the hard way, 2026-09-10)
 
 **Never `mock.module` an internal module that another test file is the subject

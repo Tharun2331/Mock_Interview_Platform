@@ -74,8 +74,36 @@ const DEFAULT_TEXT_MODELS = [
   "qwen.qwen3-coder-30b-a3b-v1:0",
 ].join(",");
 
+// Shortens an interview to a length that can actually be sat through while
+// developing. A real plan is 15-40 minutes by schema, which makes testing the
+// wrap-up nudges and the hard stop a 40-minute exercise per attempt.
+//
+// Gated on NODE_ENV twice over: the flag is only read outside production, and
+// the value is ignored there even if something sets it. `npm start` sets
+// NODE_ENV=production, so the deployed service cannot enter this mode by
+// environment alone — someone would have to change this file.
+//
+// Deliberately NOT a change to PLAN_LIMITS. Those bounds are the product's
+// contract: they are what the Planner's prompt states, what its output is
+// validated against, and what every stored plan is re-validated against on
+// read. Loosening them to make testing convenient would mean a six-minute plan
+// could reach production and, worse, that the validation guarding real plans no
+// longer describes real plans.
+const isProduction = (): boolean => process.env.NODE_ENV === "production";
+
+const testTargetMinutes = (): number => {
+  const raw = Number(env("INTERVIEW_TEST_TARGET_MINUTES", "6"));
+  // A non-numeric or non-positive value would produce timers that fire
+  // immediately or never. Falling back beats starting an interview whose clock
+  // is nonsense.
+  return Number.isFinite(raw) && raw > 0 ? raw : 6;
+};
+
 export const config = {
   port:                   Number(env("PORT", "8000")),
+  // True only outside production AND only when explicitly asked for.
+  interviewTestMode:      !isProduction() && env("INTERVIEW_TEST_MODE", "") === "true",
+  interviewTestTargetMinutes: testTargetMinutes(),
   corsOrigins:            csvList("CORS_ORIGIN", env("CORS_ORIGIN", "http://localhost:3000")),
   // Caps the JSON parser. Every current route takes a small object; resume
   // uploads are multipart and will carry their own limit.

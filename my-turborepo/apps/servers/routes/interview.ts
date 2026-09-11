@@ -9,6 +9,8 @@ import { INTERVIEW, INTERVIEW_TOOL_NAMES, SONIC } from "../lib/constants";
 import { verifier } from "../lib/cognitoAuth";
 import { SessionAccessError, SessionStateError } from "../lib/errors";
 import { MESSAGES } from "../lib/messages";
+import { config } from "../lib/config";
+import { effectiveTargetMinutes, nudgeSchedule } from "../lib/interviewClock";
 import { SonicConversation } from "../lib/sonic";
 import { startEvaluationSummary } from "../lib/evaluations";
 import { enqueueEvaluations } from "../lib/sqs";
@@ -267,9 +269,17 @@ async function handleConnection(
       return;
     }
 
+    // Resolved once, here, and used by everything downstream: the state clock
+    // the tools report, the `ready` event the browser counts down from, the
+    // system prompt's TIME header, and the three timers. Reading
+    // plan.targetMinutes anywhere below this line would put one consumer on a
+    // different clock from the rest — which is the same class of bug as the
+    // stale prompt header, and just as hard to see.
+    const targetMinutes = effectiveTargetMinutes(plan.targetMinutes);
+
     const state: InterviewState = {
       startedAt: Date.now(),
-      targetMinutes: plan.targetMinutes,
+      targetMinutes,
       exchanges: 0,
       endRequested: false,
       buffer: new ExchangeBuffer(),
@@ -333,7 +343,10 @@ async function handleConnection(
         const clock = clockOf(state);
         return buildInterviewSystemPrompt(
           plan,
-          clock.elapsedMinutes === 0 ? undefined : clock
+          clock.elapsedMinutes === 0 ? undefined : clock,
+          // The effective length, so a renewed stream's TIME header states the
+          // budget the timers are actually enforcing.
+          targetMinutes
         );
       },
       tools: INTERVIEW_TOOLS,
@@ -454,7 +467,9 @@ async function handleConnection(
       type: "ready",
       sessionId,
       targetRole: meta.role ?? null,
-      targetMinutes: plan.targetMinutes,
+      // The effective length, so the browser's countdown and the server's hard
+      // stop describe the same interview.
+      targetMinutes,
     });
 
     // Prompts the interviewer to open. Without this Sonic waits for speech and
@@ -473,25 +488,41 @@ async function handleConnection(
     // model ignored it" — and those have opposite fixes. The first overrun
     // investigated here cost a round trip precisely because the log could not
     // tell them apart.
+    // Seconds, not minutes: at test scale the nudges land inside the first
+    // minute of each other and a minute-resolution log cannot tell them apart.
     const nudge = (stage: string, note: string) => () => {
-      console.log(`[interview] ${sessionId} ${stage} — ${Math.round((Date.now() - state.startedAt) / 60_000)}m elapsed`);
+      const elapsedSeconds = Math.round((Date.now() - state.startedAt) / 1000);
+      console.log(`[interview] ${sessionId} ${stage} — ${elapsedSeconds}s elapsed`);
       sonic?.kickoff(note);
     };
 
-    const targetMs = plan.targetMinutes * 60_000;
+    const schedule = nudgeSchedule(targetMinutes);
+
+    // Logged up front so a session's whole timetable is in the log before any
+    // of it fires. Without this, a nudge that never arrives is indistinguishable
+    // from one scheduled for the wrong moment — and that is exactly the question
+    // a short test session is being run to answer.
+    console.log(
+      `[interview] ${sessionId} clock — target ${targetMinutes}m` +
+        `${config.interviewTestMode ? " (TEST MODE)" : ""}, ` +
+        `wrap-up @${Math.round(schedule.wrapUpAtMs / 1000)}s, ` +
+        `final call @${Math.round(schedule.finalCallAtMs / 1000)}s, ` +
+        `hard stop @${Math.round(schedule.hardStopAtMs / 1000)}s`
+    );
+
     const wrapUpTimer = setTimeout(
       nudge("wrap-up nudge", MESSAGES.INTERVIEW_WRAP_UP),
-      Math.max(0, targetMs - INTERVIEW.WRAP_UP_BEFORE_MS)
+      schedule.wrapUpAtMs
     );
     // Skipped if the model already ended: a "time is up" turn arriving after a
     // warm close would reopen a finished interview.
     const finalCallTimer = setTimeout(() => {
       if (state.endRequested) return;
       nudge("final call", MESSAGES.INTERVIEW_FINAL_CALL)();
-    }, Math.max(0, targetMs - INTERVIEW.FINAL_CALL_BEFORE_MS));
+    }, schedule.finalCallAtMs);
     const hardStopTimer = setTimeout(
       () => void shutdown("time limit reached"),
-      targetMs + INTERVIEW.HARD_STOP_GRACE_MS
+      schedule.hardStopAtMs
     );
     clearOnClose.push(wrapUpTimer, finalCallTimer, hardStopTimer);
 
