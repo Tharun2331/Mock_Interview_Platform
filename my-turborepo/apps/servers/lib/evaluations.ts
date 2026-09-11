@@ -210,7 +210,21 @@ async function readEvaluationScores(
             // completing the session one answer early.
             ":prefix": KEY_PREFIX.EVAL,
           },
-          ProjectionExpression: "correctness, clarity, depth",
+          // All three aliased. `depth` is a DynamoDB reserved word and fails
+          // the request outright — "Invalid ProjectionExpression: Attribute
+          // name is a reserved keyword" — rather than returning nothing. The
+          // other two are not reserved, but naming one and not the others is
+          // how the next person assumes an unaliased attribute is safe.
+          //
+          // Worth knowing: aws-sdk-client-mock does not validate expressions
+          // against the reserved-word list, so no unit test catches this. It
+          // surfaced on the first real run.
+          ProjectionExpression: "#correctness, #clarity, #depth",
+          ExpressionAttributeNames: {
+            "#correctness": "correctness",
+            "#clarity": "clarity",
+            "#depth": "depth",
+          },
           ConsistentRead: true,
           ExclusiveStartKey: cursor,
         })
