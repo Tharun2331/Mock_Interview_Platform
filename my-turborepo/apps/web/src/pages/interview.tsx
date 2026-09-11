@@ -393,17 +393,21 @@ export function Interview() {
                     )}
                     aria-hidden
                   >
-                    {remainingMs <= FIVE_MINUTES_MS
-                      ? MESSAGES.INTERVIEW_TIME_ENDING_LABEL
-                      : MESSAGES.INTERVIEW_TIME_LABEL}
+                    {remainingMs === 0
+                      ? MESSAGES.INTERVIEW_TIME_UP_LABEL
+                      : remainingMs <= FIVE_MINUTES_MS
+                        ? MESSAGES.INTERVIEW_TIME_ENDING_LABEL
+                        : MESSAGES.INTERVIEW_TIME_LABEL}
                   </span>
                   {/* The split numerals read as "three four five eight" to a
                       screen reader, so the whole sentence is carried here
                       instead. */}
                   <span className="sr-only">
-                    {remainingMs <= FIVE_MINUTES_MS
-                      ? MESSAGES.INTERVIEW_TIME_ENDING(formatRemaining(remainingMs))
-                      : MESSAGES.INTERVIEW_TIME_LEFT(formatRemaining(remainingMs))}
+                    {remainingMs === 0
+                      ? MESSAGES.INTERVIEW_TIME_UP
+                      : remainingMs <= FIVE_MINUTES_MS
+                        ? MESSAGES.INTERVIEW_TIME_ENDING(formatRemaining(remainingMs))
+                        : MESSAGES.INTERVIEW_TIME_LEFT(formatRemaining(remainingMs))}
                   </span>
                 </>
               ) : null}
