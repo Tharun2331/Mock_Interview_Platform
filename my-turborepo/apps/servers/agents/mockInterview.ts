@@ -45,8 +45,20 @@ function renderClock(plan: PlanResponse, clock: InterviewClock): string[] {
   const closing = clock.remainingMinutes <= INTERVIEW.WRAP_UP_AT_REMAINING_MIN;
   return [
     "TIME — THIS OVERRIDES EVERYTHING BELOW",
-    `${clock.elapsedMinutes} of the ${plan.targetMinutes} planned minutes are already gone.`,
-    `About ${clock.remainingMinutes} minutes remain. This is the real clock, not an estimate.`,
+    `${clock.elapsedMinutes} of the ${plan.targetMinutes} planned minutes were gone`,
+    `when this stream opened, leaving about ${clock.remainingMinutes} minutes.`,
+    // These two lines are the fix for a measured failure. The block used to end
+    // "This is the real clock, not an estimate", which is true at the instant a
+    // stream opens and a lie several minutes later — a stream runs for roughly
+    // six and a half. Told it was holding the real clock, the model answered
+    // "about two and a half minutes remaining" from this stale number while the
+    // candidate's own countdown showed zero, and kept opening new threads.
+    //
+    // The number above is a starting point, not a clock. The only current time
+    // is the one a tool result just returned.
+    "THAT NUMBER IS ALREADY OUT OF DATE. Minutes have passed since this stream",
+    `opened. Every ${INTERVIEW_TOOL_NAMES.LOG_EXCHANGE} result returns the live clock — that number`,
+    "replaces this one the moment you see it, and it is the only time you may act on.",
     ...(closing
       ? [
           "YOU ARE IN THE CLOSING WINDOW. You have no time left for new ground.",
@@ -64,6 +76,12 @@ function renderClock(plan: PlanResponse, clock: InterviewClock): string[] {
         ]),
     "Never say the elapsed or remaining minutes aloud unless the candidate asks",
     "how much time is left. They can see a countdown; narrating it is noise.",
+    // The candidate is looking at a live countdown. If the interviewer answers
+    // from the stale figure above, the two disagree out loud — which happened,
+    // and reads as the app being broken rather than the model being wrong.
+    `When they do ask, call ${INTERVIEW_TOOL_NAMES.GET_SESSION_STATE} first and say the number it`,
+    "returns. Never answer from memory and never estimate: you cannot feel time",
+    "passing, and the candidate can see the true figure while you are speaking.",
     "",
   ];
 }

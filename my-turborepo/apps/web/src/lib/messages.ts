@@ -217,6 +217,12 @@ export const MESSAGES = {
   // split from its label reads as bare digits with no unit.
   INTERVIEW_TIME_LABEL: "remaining",
   INTERVIEW_TIME_ENDING_LABEL: "wrapping up",
+  // The clock reaches zero a short grace before the server closes the session —
+  // cutting someone off mid-sentence at the exact second is worse than running
+  // a few seconds long. Without this the countdown sits frozen at 0:00 and
+  // reads as a stuck app rather than a deliberate pause for the sign-off.
+  INTERVIEW_TIME_UP_LABEL: "time is up",
+  INTERVIEW_TIME_UP: "Time is up. The interviewer is finishing now.",
   INTERVIEW_TIME_LEFT: (remaining: string): string => `${remaining} remaining`,
   // Distinct copy for the final stretch, so the change is carried by words as
   // well as colour.
