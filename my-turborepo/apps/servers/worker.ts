@@ -29,16 +29,20 @@ import { requireEvalQueue, sqsClient } from "./lib/sqs";
 // retry mechanism whose latency can outlive the queue's visibility timeout, and
 // a message redelivered mid-flight pays for a second generation.
 
+// What the completion check concluded. Present on every outcome that reached
+// DynamoDB, because every one of them is a chance to notice the session is
+// done — including the ones that did no scoring.
+type FinalizedKind = "incomplete" | "finalized" | "already-finalized" | "no-summary";
+
 export type MessageOutcome =
   | {
       kind: "scored";
       questionId: string;
       modelId: string;
-      // What the completion check concluded after this score landed.
-      finalized: "incomplete" | "finalized" | "already-finalized" | "no-summary";
+      finalized: FinalizedKind;
     }
-  | { kind: "already-scored"; questionId: string }
-  | { kind: "no-answer"; questionId: string }
+  | { kind: "already-scored"; questionId: string; finalized: FinalizedKind }
+  | { kind: "no-answer"; questionId: string; finalized: FinalizedKind }
   // The body was not a valid job. Retrying cannot fix a malformed message, so
   // it is deleted rather than left to cycle to the DLQ three receives later.
   | { kind: "unparseable" };
@@ -66,8 +70,26 @@ export async function handleMessage(body: string): Promise<MessageOutcome> {
   // The duplicate guard. A redelivered message costs one strongly consistent
   // read instead of a full generation — the real version of the protection a
   // FIFO queue only appears to offer.
-  if (state.kind === "already-scored") return { kind: "already-scored", questionId };
-  if (state.kind === "no-answer") return { kind: "no-answer", questionId };
+  //
+  // It skips the MODEL call, never the completion check. Returning early here
+  // is what left a session stuck at `evaluating` on the first real run: all
+  // three evaluations were written, the check threw on a reserved-word bug, the
+  // messages were redelivered, and every redelivery short-circuited here — so
+  // nothing ever asked whether the last answer had landed. A redelivery is
+  // exactly when that question needs asking again.
+  if (state.kind === "already-scored") {
+    const finalized = await finalizeIfComplete({ sessionId });
+    return { kind: "already-scored", questionId, finalized: finalized.kind };
+  }
+
+  // Nothing to score and nothing that will ever score it, so this answer can
+  // never count toward completion. Still worth checking: if the rest of the
+  // session finished while this message was in flight, this is the last chance
+  // to notice.
+  if (state.kind === "no-answer") {
+    const finalized = await finalizeIfComplete({ sessionId });
+    return { kind: "no-answer", questionId, finalized: finalized.kind };
+  }
 
   const result = await runEvaluator(state.input);
 
@@ -128,7 +150,9 @@ async function processMessage(message: Message, QueueUrl: string): Promise<void>
       `[worker] scored ${outcome.questionId} with ${outcome.modelId} (${outcome.finalized})`
     );
   } else {
-    console.log(`[worker] ${outcome.kind} ${outcome.questionId}`);
+    console.log(
+      `[worker] ${outcome.kind} ${outcome.questionId} (${outcome.finalized})`
+    );
   }
 
   // Every outcome that reaches here is finished with, including the ones that

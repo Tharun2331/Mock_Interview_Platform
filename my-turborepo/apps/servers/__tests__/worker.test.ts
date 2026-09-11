@@ -428,6 +428,67 @@ describe("completion detection", () => {
     expect(query?.ConsistentRead).toBe(true);
   });
 
+  // `depth` is a DynamoDB reserved word. Unaliased it fails the request
+  // outright rather than returning nothing, and aws-sdk-client-mock does not
+  // validate expressions against the reserved-word list — so this asserts the
+  // aliasing directly. It cost a stuck session on the first real run.
+  it("aliases every projected attribute, since `depth` is reserved", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs(SUMMARY);
+    evaluationsScored(3);
+
+    await handleMessage(body());
+
+    const query = ddb.commandCalls(QueryCommand)[0]?.args[0].input;
+    // Lookbehind for the alias marker: `#depth` is fine, a bare `depth` is the
+    // bug. Without it, \b matches straight after the `#` and the assertion
+    // passes on the broken and the fixed expression alike.
+    expect(query?.ProjectionExpression).not.toMatch(/(?<!#)\bdepth\b/);
+    expect(query?.ExpressionAttributeNames?.["#depth"]).toBe("depth");
+  });
+
+  // The duplicate guard skips the MODEL call, never the completion check.
+  // Returning early here is what left a session stuck at `evaluating`: the
+  // evaluations were all written, the check threw, the messages were
+  // redelivered, and every redelivery short-circuited before asking again.
+  it("still checks completion when the answer was already scored", async () => {
+    itemsFound([ANSWER, META, EXISTING_EVAL]);
+    summaryIs(SUMMARY);
+    evaluationsScored(3);
+
+    const outcome = await handleMessage(body());
+
+    expect(outcome).toMatchObject({
+      kind: "already-scored",
+      finalized: "finalized",
+    });
+    expect(finalizeUpdates()).toHaveLength(1);
+  });
+
+  it("recovers a session whose earlier completion check failed", async () => {
+    // Every answer scored, but the rollup never got its averages because the
+    // check threw last time round. A redelivery must finish the job.
+    itemsFound([ANSWER, META, EXISTING_EVAL]);
+    summaryIs(SUMMARY);
+    evaluationsScored(3);
+
+    await handleMessage(body());
+
+    expect(statusUpdates()[0]?.args[0].input.ExpressionAttributeValues?.[
+      ":complete"
+    ]).toBe("complete");
+  });
+
+  it("still checks completion when there is no answer to score", async () => {
+    itemsFound([META]);
+    summaryIs(SUMMARY);
+    evaluationsScored(3);
+
+    const outcome = await handleMessage(body());
+
+    expect(outcome).toMatchObject({ kind: "no-answer", finalized: "finalized" });
+  });
+
   it("reports no-summary rather than failing when the rollup is absent", async () => {
     itemsFound([ANSWER, META]);
     summaryIs(undefined);
