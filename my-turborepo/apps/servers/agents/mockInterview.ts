@@ -1,6 +1,7 @@
 import z from "zod";
 import type { PlanResponse } from "@repo/shared";
 import { INTERVIEW, INTERVIEW_TOOL_NAMES } from "../lib/constants";
+import { wrapUpAtRemainingMinutes } from "../lib/interviewClock";
 
 // The Mock Interview agent is the one agent that is not a `ConverseCommand`
 // round trip. It is Nova 2 Sonic itself, holding a bidirectional stream for the
@@ -41,11 +42,15 @@ export type InterviewClock = {
 // opened a new line of questioning. Instructions buried after two hundred lines
 // of interviewing technique do not survive contact with a model generating
 // under speech latency. The clock now leads.
-function renderClock(plan: PlanResponse, clock: InterviewClock): string[] {
-  const closing = clock.remainingMinutes <= INTERVIEW.WRAP_UP_AT_REMAINING_MIN;
+function renderClock(targetMinutes: number, clock: InterviewClock): string[] {
+  // Derived from the session's own length rather than the fixed production
+  // constant. At test scale a three-minute closing window would open before the
+  // interview had asked anything.
+  const wrapUpAt = wrapUpAtRemainingMinutes(targetMinutes);
+  const closing = clock.remainingMinutes <= wrapUpAt;
   return [
     "TIME — THIS OVERRIDES EVERYTHING BELOW",
-    `${clock.elapsedMinutes} of the ${plan.targetMinutes} planned minutes were gone`,
+    `${clock.elapsedMinutes} of the ${targetMinutes} planned minutes were gone`,
     `when this stream opened, leaving about ${clock.remainingMinutes} minutes.`,
     // These two lines are the fix for a measured failure. The block used to end
     // "This is the real clock, not an estimate", which is true at the instant a
@@ -70,7 +75,7 @@ function renderClock(plan: PlanResponse, clock: InterviewClock): string[] {
           "and the session IS cut off when the clock runs out.",
         ]
       : [
-          `When ${INTERVIEW.WRAP_UP_AT_REMAINING_MIN} minutes or fewer remain you stop opening new ground:`,
+          `When ${wrapUpAt} minutes or fewer remain you stop opening new ground:`,
           "one final question, then a warm close and",
           `${INTERVIEW_TOOL_NAMES.END_INTERVIEW}. Pace the rest of the session to land there.`,
         ]),
@@ -132,10 +137,18 @@ function renderResumption(): string[] {
 // without anyone having to interrupt the conversation to say so.
 export function buildInterviewSystemPrompt(
   plan: PlanResponse,
-  clock?: InterviewClock
+  clock?: InterviewClock,
+  // The length the session is actually running to, which is the plan's own
+  // figure except under the test override. Passed in rather than read from the
+  // plan so the prompt cannot state one budget while the server's timers
+  // enforce another — the interviewer would then be pacing against a clock
+  // nobody else is using.
+  targetMinutesOverride?: number
 ): string {
+  const targetMinutes = targetMinutesOverride ?? plan.targetMinutes;
+
   return [
-    ...(clock === undefined ? [] : renderClock(plan, clock)),
+    ...(clock === undefined ? [] : renderClock(targetMinutes, clock)),
     "You are conducting a live spoken technical interview. The candidate can hear",
     "you and you can hear them. Talk the way a good technical interviewer talks —",
     "not the way you would write.",
@@ -146,7 +159,7 @@ export function buildInterviewSystemPrompt(
     renderFocusAreas(plan),
     "",
     `Question budget: roughly ${plan.questionMix.behavioural} behavioural, ${plan.questionMix.technical} technical, ${plan.questionMix.roleSpecific} role-specific.`,
-    `Target length: about ${plan.targetMinutes} minutes. This is a hard budget,`,
+    `Target length: about ${targetMinutes} minutes. This is a hard budget,`,
     "not a suggestion — the session is closed when it runs out, whether or not",
     "you have finished.",
     `Opening calibration: ${plan.startingDifficulty}. This is a hypothesis from`,
