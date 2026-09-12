@@ -9,6 +9,12 @@ import {
 import {
   ITEM_TYPE,
   KEY_PREFIX,
+  UserSessionSummarySchema,
+  extremeDimensions,
+  overallScore,
+  userPk,
+  userSummarySk,
+  type SessionHistoryItem,
   SORT_KEY,
   SessionAnswerSchema,
   SessionEvalSummarySchema,
@@ -26,7 +32,12 @@ import {
 import { dynamoClient, parseItem, requireTable } from "./dynamo";
 import { ServiceError, SessionAccessError } from "./errors";
 import { MESSAGES } from "./messages";
-import { completeEvaluation, sessionExpiresAt } from "./sessions";
+import {
+  DELETE_BATCH_SIZE,
+  completeEvaluation,
+  deleteKeyChunk,
+  sessionExpiresAt,
+} from "./sessions";
 
 // Every DynamoDB command for EVAL# items, matching how lib/sessions.ts owns the
 // session lifecycle and lib/profile.ts owns the user-scoped items. The worker
@@ -237,6 +248,189 @@ export async function loadSessionEvaluations(args: {
     evaluations: views,
     role: meta.role,
   };
+}
+
+// One row per finished interview, in the candidate's own partition.
+//
+// Reads META rather than taking the values as arguments, because three things
+// it needs live there and nowhere else: the userId this row is keyed by, the
+// role the card displays, and the session's `expiresAt`. That last one is
+// copied rather than recomputed so the card expires with the session it points
+// at — recomputing would give it a slightly later expiry and leave a history
+// entry whose every underlying item is gone.
+async function putSessionSummary(args: {
+  sessionId: string;
+  averages: EvaluationAverages;
+  questionCount: number;
+}): Promise<void> {
+  const TableName = requireTable();
+
+  let metaResponse;
+  try {
+    metaResponse = await dynamoClient.send(
+      new GetCommand({
+        TableName,
+        Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.META },
+      })
+    );
+  } catch (error) {
+    throw new ServiceError(
+      `${MESSAGES.SESSION_READ_FAILED} — ${
+        error instanceof Error ? error.message : "unknown"
+      }`
+    );
+  }
+
+  // Nothing to key the row by. Only reachable if the session was erased while
+  // its last evaluation was in flight.
+  if (metaResponse.Item === undefined) return;
+
+  const meta = parseItem(SessionMetaSchema, metaResponse.Item, "META");
+  const completedAt = new Date().toISOString();
+
+  try {
+    await dynamoClient.send(
+      new PutCommand({
+        TableName,
+        Item: {
+          PK: userPk(meta.userId),
+          SK: userSummarySk(completedAt),
+          type: ITEM_TYPE.USER_SESSION_SUMMARY,
+          expiresAt: meta.expiresAt,
+          sessionId: args.sessionId,
+          completedAt,
+          role: meta.role,
+          overallScore: overallScore(args.averages),
+          ...extremeDimensions(args.averages),
+          questionCount: args.questionCount,
+        },
+      })
+    );
+  } catch (error) {
+    throw new ServiceError(
+      `${MESSAGES.EVAL_SUMMARY_WRITE_FAILED} — ${
+        error instanceof Error ? error.message : "unknown"
+      }`
+    );
+  }
+}
+
+// Every finished interview a candidate has, newest first.
+//
+// One Query on their own partition, which is the entire reason the timestamp is
+// in the sort key. The alternative — listing session refs then reading each
+// session's META and evaluations — is N+1 reads that grow with a candidate's
+// history and pull transcripts the list never shows.
+export async function listSessionHistory(args: {
+  userId: string;
+}): Promise<SessionHistoryItem[]> {
+  const TableName = requireTable();
+  const items: SessionHistoryItem[] = [];
+  let cursor: Record<string, unknown> | undefined;
+
+  do {
+    let response;
+    try {
+      response = await dynamoClient.send(
+        new QueryCommand({
+          TableName,
+          KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+          ExpressionAttributeValues: {
+            ":pk": userPk(args.userId),
+            // Not the whole partition: PROFILE, PLAN and every SESSION# ref
+            // live here too, and an unfiltered Query would return all of them
+            // and fail to parse as summaries.
+            ":prefix": KEY_PREFIX.USER_SUMMARY,
+          },
+          // Newest first. ISO timestamps sort chronologically, so reversing the
+          // scan is the whole of the ordering logic — no sort attribute, no
+          // index, nothing for the client to reorder.
+          ScanIndexForward: false,
+          ExclusiveStartKey: cursor,
+        })
+      );
+    } catch (error) {
+      throw new ServiceError(
+        `${MESSAGES.SESSION_READ_FAILED} — ${
+          error instanceof Error ? error.message : "unknown"
+        }`
+      );
+    }
+
+    for (const row of response.Items ?? []) {
+      const parsed = UserSessionSummarySchema.safeParse(row);
+      // A row that no longer matches its schema is skipped rather than failing
+      // the whole page. One unreadable card costs a candidate one row of
+      // history; an exception costs them all of it.
+      if (!parsed.success) continue;
+
+      items.push({
+        sessionId: parsed.data.sessionId,
+        completedAt: parsed.data.completedAt,
+        role: parsed.data.role,
+        overallScore: parsed.data.overallScore,
+        topStrength: parsed.data.topStrength,
+        topWeakness: parsed.data.topWeakness,
+        questionCount: parsed.data.questionCount,
+      });
+    }
+
+    cursor = response.LastEvaluatedKey;
+  } while (cursor !== undefined);
+
+  return items;
+}
+
+// Removes a candidate's history cards.
+//
+// Its own function, and called by the erasure sweep, for exactly the reason
+// deleteUserSessionRefs exists: these rows live in the USER partition, so
+// deleteSessionData never sees them. Left behind they are rows keyed to a
+// deleted user — the thing erasure exists to prevent.
+export async function deleteSessionSummaries(args: {
+  userId: string;
+}): Promise<number> {
+  const TableName = requireTable();
+  const keys: Record<string, unknown>[] = [];
+  let cursor: Record<string, unknown> | undefined;
+
+  do {
+    let response;
+    try {
+      response = await dynamoClient.send(
+        new QueryCommand({
+          TableName,
+          KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+          ExpressionAttributeValues: {
+            ":pk": userPk(args.userId),
+            ":prefix": KEY_PREFIX.USER_SUMMARY,
+          },
+          ProjectionExpression: "PK, SK",
+          ExclusiveStartKey: cursor,
+        })
+      );
+    } catch (error) {
+      throw new ServiceError(
+        `${MESSAGES.SESSION_READ_FAILED} — ${
+          error instanceof Error ? error.message : "unknown"
+        }`
+      );
+    }
+
+    for (const item of response.Items ?? []) {
+      if (typeof item.PK === "string" && typeof item.SK === "string") {
+        keys.push({ PK: item.PK, SK: item.SK });
+      }
+    }
+
+    cursor = response.LastEvaluatedKey;
+  } while (cursor !== undefined);
+
+  for (let start = 0; start < keys.length; start += DELETE_BATCH_SIZE) {
+    await deleteKeyChunk(TableName, keys.slice(start, start + DELETE_BATCH_SIZE));
+  }
+
+  return keys.length;
 }
 
 async function queryByPrefix(
@@ -491,6 +685,28 @@ export async function finalizeIfComplete(args: {
     throw new ServiceError(
       `${MESSAGES.EVAL_SUMMARY_WRITE_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
+      }`
+    );
+  }
+
+  // The history card, written only by the worker that won the election above.
+  // Doing it here rather than per-answer is what makes it a single row per
+  // session rather than one per evaluation.
+  //
+  // Its own try/catch: a missing history card is a session absent from a list,
+  // while a session left at `evaluating` is one whose feedback never appears at
+  // all. The second is worse, so a failure here must not stop the transition
+  // below.
+  try {
+    await putSessionSummary({
+      sessionId: args.sessionId,
+      averages,
+      questionCount: scores.length,
+    });
+  } catch (error) {
+    console.error(
+      `[evaluations] ${args.sessionId} history summary failed — ${
+        error instanceof Error ? error.message : error
       }`
     );
   }

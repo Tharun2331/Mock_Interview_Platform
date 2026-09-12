@@ -312,6 +312,46 @@ export const MESSAGES = {
   RESULT_FAILED_BODY:
     "Something went wrong before it could be scored. Your next interview will not be affected.",
 
+  // --- History ---
+  HISTORY_NAV: "History",
+  HISTORY_TITLE: "Your interviews",
+  HISTORY_SUBTITLE: (count: number): string =>
+    count === 1 ? "1 interview so far" : `${count} interviews so far`,
+  HISTORY_TREND_TITLE: "Overall score over time",
+  // A trend needs two points. Saying so beats drawing a lonely dot.
+  HISTORY_TREND_NEEDS_MORE:
+    "Your score trend appears once you have finished a second interview.",
+  HISTORY_TREND_CAPTION: "Hover a point to see that interview",
+  HISTORY_TREND_POINT: (date: string, score: number, role?: string): string =>
+    `${date} · ${score}/10${role === undefined ? "" : ` · ${role}`}`,
+  // A screen reader cannot read a path, so the whole series goes in one
+  // sentence. Every individual value is also on a card below.
+  HISTORY_TREND_ALT: (count: number, first: number, last: number): string =>
+    `Overall score across ${count} interviews, from ${first} out of 10 to ${last} out of 10.`,
+
+  HISTORY_STRENGTH: "Strongest",
+  HISTORY_WEAKNESS: "Weakest",
+  HISTORY_QUESTIONS: (count: number): string =>
+    count === 1 ? "1 answer scored" : `${count} answers scored`,
+  HISTORY_VIEW: "View feedback",
+
+  HISTORY_EMPTY_TITLE: "No interviews yet",
+  HISTORY_EMPTY_BODY:
+    "Once you finish an interview it appears here with its score, so you can see how you are tracking over time.",
+  HISTORY_EMPTY_ACTION: "Start your first interview",
+  HISTORY_LOAD_FAILED: "We could not load your interviews.",
+
+  // On the results page, pointing at the history. Named for what it shows
+  // rather than as a generic "back".
+  RESULT_VIEW_HISTORY: "View all past interviews",
+
+  // The three dimensions, as a card shows them.
+  DIMENSION_LABEL: {
+    correctness: "Correctness",
+    clarity: "Clarity",
+    depth: "Depth",
+  } as const,
+
   RESULT_LOAD_FAILED: "We could not load your feedback.",
   RESULT_MISSING_SESSION:
     "We could not tell which interview to show. Pick one from your history, or start a new one.",

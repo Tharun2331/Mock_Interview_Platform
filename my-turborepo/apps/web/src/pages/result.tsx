@@ -345,7 +345,17 @@ export function Result() {
         ))}
       </section>
 
-      <div className="flex justify-center">
+      <div className="flex flex-wrap justify-center gap-3">
+        {/* Offered here because this is the moment a candidate has a second
+            data point worth comparing against — the trend only means anything
+            once there is more than one interview behind it. */}
+        <Button
+          variant="outline"
+          className="cursor-pointer"
+          onClick={() => void navigate("/history")}
+        >
+          {MESSAGES.RESULT_VIEW_HISTORY}
+        </Button>
         <Button
           variant="outline"
           className="cursor-pointer"

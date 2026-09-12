@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { ServiceError, SessionAccessError, SessionStateError } from "../lib/errors";
-import { loadSessionEvaluations } from "../lib/evaluations";
+import { listSessionHistory, loadSessionEvaluations } from "../lib/evaluations";
 import { MESSAGES } from "../lib/messages";
 
 // Read paths for a finished interview.
@@ -47,6 +47,35 @@ function handleFailure(res: import("express").Response, error: unknown): void {
   console.error(`[sessions] ${error instanceof Error ? error.message : error}`);
   res.status(500).json({ message: MESSAGES.UNEXPECTED_FAILED });
 }
+
+// Every finished interview, newest first.
+//
+// Registered BEFORE `/:sessionId/evaluation`. Express matches in order, and
+// while these two cannot actually collide — one is a single segment, the other
+// two — declaring the literal first is the habit that stops a future
+// `/:sessionId` route swallowing it.
+//
+// One Query, by design. The card list and the trend chart are both fed from
+// this single call: the alternative is reading each session's META and
+// evaluations to build a list, which is N+1 reads that grow with a candidate's
+// history and pull transcripts the list never shows.
+sessionsRouter.get("/history", async (req, res) => {
+  const userId = req.user?.id;
+  if (userId === undefined) {
+    res.status(401).json({ error: MESSAGES.UNAUTHORIZED_INVALID_TOKEN });
+    return;
+  }
+
+  try {
+    // Scoped to the token's subject, never to anything in the path or query.
+    // There is no session id here to tamper with — this route cannot be pointed
+    // at another candidate's history.
+    const sessions = await listSessionHistory({ userId });
+    res.json({ sessions });
+  } catch (error) {
+    handleFailure(res, error);
+  }
+});
 
 // Partial results as they land. A candidate reads the first three scores while
 // the rest are still queued, which is the point of scoring asynchronously.

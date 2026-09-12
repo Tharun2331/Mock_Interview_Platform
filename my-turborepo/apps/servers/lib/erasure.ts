@@ -1,4 +1,5 @@
 import { deleteCognitoUser } from "./cognitoAdmin";
+import { deleteSessionSummaries } from "./evaluations";
 import { deleteProfileItems, markProfileDeleting } from "./profile";
 import { deleteResume } from "./s3";
 import {
@@ -57,6 +58,15 @@ export async function eraseUserAccount(args: {
     userId: args.userId,
     sessionIds,
   });
+
+  // The history cards, for exactly the same reason and with exactly the same
+  // trap: they live in the user's partition under SUMMARY#, so neither the loop
+  // above nor deleteUserSessionRefs touches them.
+  //
+  // Deleted by querying the prefix rather than by session id, because a card is
+  // keyed by when the interview finished and not by which session it was — so
+  // there is no id to compute a key from.
+  itemsDeleted += await deleteSessionSummaries({ userId: args.userId });
 
   // 3. The S3 archive. One object, because the resume moved to a stable
   //    per-user key — this is the whole of a candidate's object storage.

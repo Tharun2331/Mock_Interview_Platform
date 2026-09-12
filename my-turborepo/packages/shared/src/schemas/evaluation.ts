@@ -1,6 +1,10 @@
 import z from "zod";
 import { InterviewDifficultySchema } from "./plan";
-import { QuestionTypeSchema, SessionEvaluationSchema } from "./session";
+import {
+  ITEM_TYPE,
+  QuestionTypeSchema,
+  SessionEvaluationSchema,
+} from "./session";
 
 // What the Evaluator agent consumes and what it emits. Separate from the stored
 // item in session.ts for the same reason PlannerInput is separate from
@@ -146,3 +150,109 @@ export const EvaluationResponseSchema = z.object({
 });
 
 export type EvaluationResponse = z.infer<typeof EvaluationResponseSchema>;
+
+// Which of the three dimensions a session was strongest and weakest at.
+export const ScoreDimensionSchema = z.enum(["correctness", "clarity", "depth"]);
+
+export type ScoreDimension = z.infer<typeof ScoreDimensionSchema>;
+
+// USER#<uid> / SUMMARY#<completedAt> — one row per finished interview.
+//
+// Deliberately small. The history page lists every interview a candidate has
+// ever done, and the alternative — reading each session's META plus its
+// evaluations to build that list — is N queries that grow with a candidate's
+// history and pull transcripts nobody is looking at. This is one Query
+// returning one small row per session.
+//
+// What is NOT here, and must not be added: transcripts, per-question scores,
+// rationales, coach tips. Those live on the session's own items and are fetched
+// by the detail view when a card is actually clicked. Copying them here would
+// make every history page load pay for data that is read once in twenty.
+export const UserSessionSummarySchema = z.object({
+  type: z
+    .literal(ITEM_TYPE.USER_SESSION_SUMMARY)
+    .default(ITEM_TYPE.USER_SESSION_SUMMARY),
+  // Carried for the same reason UserSessionRef carries one: this row points at
+  // a session whose items expire, and without it the history page would list an
+  // interview whose every item is gone. Copied from the session's META rather
+  // than recomputed, so the card and the session it describes expire together.
+  expiresAt: z.number().int().positive().optional(),
+  sessionId: z.string().min(1),
+  // Also the sort key's suffix. Stored as an attribute too so a reader does not
+  // have to parse it back out of the key.
+  completedAt: z.iso.datetime(),
+  role: z.string().min(1).optional(),
+  // The mean of the three dimension averages. One number for the trend chart,
+  // which is the only thing on the history page that needs a single score.
+  overallScore: z.number().min(0).max(EVALUATION_LIMITS.MAX_SCORE),
+  topStrength: ScoreDimensionSchema,
+  topWeakness: ScoreDimensionSchema,
+  questionCount: z.number().int().min(0),
+});
+
+export type UserSessionSummary = z.infer<typeof UserSessionSummarySchema>;
+
+// GET /api/v1/sessions/history
+export const SessionHistoryItemSchema = UserSessionSummarySchema.pick({
+  sessionId: true,
+  completedAt: true,
+  role: true,
+  overallScore: true,
+  topStrength: true,
+  topWeakness: true,
+  questionCount: true,
+});
+
+export type SessionHistoryItem = z.infer<typeof SessionHistoryItemSchema>;
+
+export const SessionHistoryResponseSchema = z.object({
+  // Newest first, which is what the card list wants. The trend chart reverses
+  // it — a line running right-to-left in time would read as improvement when it
+  // is decline.
+  sessions: z.array(SessionHistoryItemSchema),
+});
+
+export type SessionHistoryResponse = z.infer<typeof SessionHistoryResponseSchema>;
+
+// Which dimension was strongest and weakest across a session.
+//
+// Ties resolve by a fixed order rather than arbitrarily, and the order matters
+// for one specific case: a perfectly flat profile. Picking max and min
+// independently would then name the SAME dimension as both strength and
+// weakness, which reads as a bug. Sorting once and taking the ends cannot.
+const DIMENSION_ORDER: readonly ScoreDimension[] = [
+  "correctness",
+  "clarity",
+  "depth",
+];
+
+export function extremeDimensions(averages: {
+  correctness: number;
+  clarity: number;
+  depth: number;
+}): { topStrength: ScoreDimension; topWeakness: ScoreDimension } {
+  const ranked = [...DIMENSION_ORDER].sort(
+    (a, b) => averages[b] - averages[a]
+  );
+
+  // `ranked` always has three entries, but the compiler cannot know that from
+  // an array type — and a non-null assertion is not allowed here.
+  const [best] = ranked;
+  const worst = ranked[ranked.length - 1];
+
+  return {
+    topStrength: best ?? "correctness",
+    topWeakness: worst ?? "depth",
+  };
+}
+
+export function overallScore(averages: {
+  correctness: number;
+  clarity: number;
+  depth: number;
+}): number {
+  const mean =
+    (averages.correctness + averages.clarity + averages.depth) / 3;
+  // One decimal, matching how the per-dimension averages are already rounded.
+  return Math.round(mean * 10) / 10;
+}
