@@ -46,7 +46,7 @@ const REPLANNABLE_STATUSES: SessionStatus[] = ["planning", "ready"];
 
 // BatchWriteItem's hard cap. Not a tuning value — sending 26 is a validation
 // error, not a slower request.
-const DELETE_BATCH_SIZE = 25;
+export const DELETE_BATCH_SIZE = 25;
 
 // Retries for items DynamoDB hands back as unprocessed. Three is enough to ride
 // out throttling on a table this size; past that the sweep should stop and leave
@@ -317,7 +317,7 @@ export async function deleteUserSessionRefs(args: {
 // BatchWriteItem reports per-item throttling as UnprocessedItems rather than as
 // an error, so a batch can "succeed" having written nothing. Left unretried,
 // that is how a deletion silently leaves data behind.
-async function deleteKeyChunk(
+export async function deleteKeyChunk(
   TableName: string,
   keys: Record<string, unknown>[]
 ): Promise<void> {

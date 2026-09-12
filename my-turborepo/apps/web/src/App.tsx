@@ -6,6 +6,7 @@ import { Profile } from "./pages/profile";
 import { StartInterview } from "./pages/startInterview";
 import { BrowserRouter, Routes, Route, Navigate  } from "react-router";
 import { Result } from "./pages/result";
+import { SessionHistory } from "./pages/history";
 import { Interview } from "./pages/interview";
 import {Signup} from "./pages/signup";
 import { SignIn } from "./pages/signin";
@@ -82,6 +83,10 @@ export function App() {
               than falling through to the catch-all, which would bounce someone
               to signup for what is really a missing parameter. */}
           <Route path="/results" element={<Result />} />
+          {/* Every finished interview. Sits inside RequireProfile with the
+              rest of the interview flow — there is nothing to list until a
+              candidate has onboarded. */}
+          <Route path="/history" element={<SessionHistory />} />
         </Route>
       </Route>
     </Route>

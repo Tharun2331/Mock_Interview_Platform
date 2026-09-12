@@ -19,6 +19,18 @@ export const KEY_PREFIX = {
   USER: "USER#",
   ANSWER: "ANSWER#",
   EVAL: "EVAL#",
+  // One row per finished interview in the USER partition, keyed by when it
+  // finished so a Query returns a candidate's history in chronological order
+  // with no sort attribute and no client-side work.
+  //
+  // Sorts after SESSION#, so `begins_with(SK, "SESSION#")` — how the erasure
+  // sweep finds a candidate's sessions — cannot pick these up, and this query
+  // cannot pick up a session ref. The two histories stay separate by key.
+  //
+  // NOT to be confused with SORT_KEY.EVAL_SUMMARY, which is the per-session
+  // rollup living at SESSION#<sid>/SUMMARY. Different partition, different
+  // purpose: that one is the scoring denominator, this one is a history card.
+  USER_SUMMARY: "SUMMARY#",
 } as const;
 
 // Fixed sort keys, as opposed to the prefixed ones above.
@@ -74,6 +86,7 @@ export const ITEM_TYPE = {
   SESSION_EVAL_SUMMARY: "session_eval_summary",
   SESSION_COACH: "session_coach",
   USER_SESSION_REF: "user_session_ref",
+  USER_SESSION_SUMMARY: "user_session_summary",
   USER_PROFILE: "user_profile",
   CACHED_PLAN: "cached_plan",
 } as const;
@@ -91,6 +104,13 @@ export const evalSk = (questionId: string): string =>
 
 export const sessionSk = (sessionId: string): string =>
   `${KEY_PREFIX.SESSION}${sessionId}`;
+
+// ISO 8601 sorts lexicographically in the same order it sorts chronologically,
+// which is the whole reason the timestamp is in the key rather than an
+// attribute: history comes back ordered by DynamoDB with no sort attribute, no
+// index, and nothing for the client to reorder.
+export const userSummarySk = (completedAt: string): string =>
+  `${KEY_PREFIX.USER_SUMMARY}${completedAt}`;
 
 // Unix-epoch seconds for DynamoDB TTL, carried by every session-scoped item.
 //

@@ -8,6 +8,7 @@ import { mockClient } from "aws-sdk-client-mock";
 import {
   EvaluationResponseSchema,
   ITEM_TYPE,
+  SessionHistoryResponseSchema,
   SORT_KEY,
   answerSk,
   evalSk,
@@ -284,6 +285,96 @@ describe("GET /api/v1/sessions/:sessionId/evaluation", () => {
 
     expect(body.completed).toBe(0);
     expect(body.total).toBe(0);
+  });
+});
+
+// One Query feeds both the card list and the trend chart. The alternative —
+// reading each session's META and evaluations — is N+1 reads that grow with a
+// candidate's history and pull transcripts the list never shows.
+describe("GET /api/v1/sessions/history", () => {
+  function historyRows(count: number) {
+    return Array.from({ length: count }, (_unused, index) => ({
+      PK: `USER#${USER.id}`,
+      SK: `SUMMARY#2026-09-${String(10 + index).padStart(2, "0")}T10:00:00.000Z`,
+      type: ITEM_TYPE.USER_SESSION_SUMMARY,
+      sessionId: `session-${index}`,
+      completedAt: `2026-09-${String(10 + index).padStart(2, "0")}T10:00:00.000Z`,
+      role: "Backend Engineer",
+      overallScore: 6 + index,
+      topStrength: "depth",
+      topWeakness: "clarity",
+      questionCount: 6,
+    }));
+  }
+
+  async function getHistory(url: string) {
+    return fetch(`${url}/api/v1/sessions/history`);
+  }
+
+  it("returns every finished interview in one query", async () => {
+    ddb.on(QueryCommand).resolves({ Items: historyRows(3) });
+    const { url } = await start();
+
+    const response = await getHistory(url);
+    const body = SessionHistoryResponseSchema.parse(await response.json());
+
+    expect(response.status).toBe(200);
+    expect(body.sessions).toHaveLength(3);
+    expect(ddb.commandCalls(QueryCommand)).toHaveLength(1);
+  });
+
+  it("scopes the query to the token's subject", async () => {
+    ddb.on(QueryCommand).resolves({ Items: [] });
+    const { url } = await start();
+
+    await getHistory(url);
+
+    const input = ddb.commandCalls(QueryCommand)[0]?.args[0].input;
+    expect(input?.ExpressionAttributeValues?.[":pk"]).toBe(`USER#${USER.id}`);
+    expect(input?.ScanIndexForward).toBe(false);
+  });
+
+  // The list must stay cheap. Anything heavy belongs on the detail view, which
+  // is fetched only when a card is clicked.
+  it("carries no transcripts or per-question scores", async () => {
+    ddb.on(QueryCommand).resolves({ Items: historyRows(2) });
+    const { url } = await start();
+
+    const raw = await (await getHistory(url)).text();
+
+    expect(raw).not.toContain("transcript");
+    expect(raw).not.toContain("rationale");
+    expect(raw).not.toContain("evaluations");
+  });
+
+  it("returns an empty list rather than 404 for a first-time candidate", async () => {
+    ddb.on(QueryCommand).resolves({ Items: [] });
+    const { url } = await start();
+
+    const response = await getHistory(url);
+
+    expect(response.status).toBe(200);
+    expect(SessionHistoryResponseSchema.parse(await response.json()).sessions)
+      .toEqual([]);
+  });
+
+  it("401s a request carrying no user", async () => {
+    const { url } = await start(null);
+
+    expect((await getHistory(url)).status).toBe(401);
+  });
+
+  // "history" is a literal segment and could otherwise be read as a session id
+  // by a future `/:sessionId` route.
+  it("is not swallowed by the :sessionId route", async () => {
+    ddb.on(QueryCommand).resolves({ Items: [] });
+    const { url } = await start();
+
+    const response = await getHistory(url);
+
+    expect(response.status).toBe(200);
+    // The evaluation route reads headers with BatchGet; history never does.
+    expect(ddb.commandCalls(BatchGetCommand)).toHaveLength(0);
   });
 });
 
