@@ -53,6 +53,17 @@ export const MESSAGES = {
   // question: by this point the first nudge has already been ignored once, and
   // repeating it in the same words invites the same outcome.
   INTERVIEW_FINAL_CALL: "[Time is up. Do not ask anything else. Thank the candidate in one sentence, then call endInterview on this turn.]",
+  // The third and last attempt, sent the moment the clock reaches zero.
+  //
+  // There used to be nothing here, and the gap was visible: the candidate's
+  // countdown read 0:00 while the interviewer opened a new question, because
+  // the previous nudge had fired a minute earlier and the hard stop was a
+  // minute away. A whole minute of the session had no signal in it at all.
+  //
+  // Worded differently again, for the reason FINAL_CALL is worded differently
+  // from WRAP_UP: two nudges have already been ignored by this point, and
+  // repeating them in the same words invites the same outcome.
+  INTERVIEW_TIME_EXPIRED: "[The clock has reached zero and the candidate can see it. Stop talking about the current topic. Say one short closing sentence and call endInterview on this turn — the session is cut off in moments either way.]",
   // Client-facing. Covers both "no such session" and "not yours" — see
   // SessionAccessError for why those are not distinguished.
   SESSION_NOT_FOUND:    "That interview session could not be found.",

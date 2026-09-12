@@ -30,6 +30,11 @@ export type NudgeSchedule = {
   // Milliseconds from the start of the interview.
   wrapUpAtMs: number;
   finalCallAtMs: number;
+  // The moment the candidate's countdown reads 0:00. Not scaled and not
+  // offset — it IS the target, and it exists because the minute between the
+  // countdown hitting zero and the hard stop previously carried no signal at
+  // all. A candidate watched the interviewer open a new question at 0:00.
+  timeUpAtMs: number;
   hardStopAtMs: number;
 };
 
@@ -87,6 +92,7 @@ export function nudgeSchedule(
     // the interviewer to wrap up before it has spoken.
     wrapUpAtMs: Math.max(0, targetMs - wrapUpBeforeMs),
     finalCallAtMs: Math.max(0, targetMs - finalCallBeforeMs),
+    timeUpAtMs: targetMs,
     // The grace is deliberately NOT scaled. It exists so the interviewer can
     // finish a sentence rather than be cut off mid-word, and a sentence takes
     // the same few seconds however long the interview was.
