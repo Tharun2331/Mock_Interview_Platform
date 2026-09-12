@@ -45,6 +45,7 @@ export function Header() {
             RequireProfile: shown earlier it would be a link that bounces
             straight back to onboarding, which reads as the app refusing rather
             than as a guard doing its job. */}
+        <ThemeToggle />
         {showHistory ? (
           <NavLink
             to="/history"
@@ -65,7 +66,7 @@ export function Header() {
           </NavLink>
         ) : null}
 
-        <ThemeToggle />
+        
 
         {/* The profile is no longer part of starting an interview, so this is
             the only way back to it once onboarding is done. NavLink rather

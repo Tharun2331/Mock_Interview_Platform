@@ -77,7 +77,38 @@ const CLARIFICATION_PATTERNS: ReadonlyArray<RegExp> = [
   /\b(one more time|once more) please\b/,
 ];
 
-export type SkipReason = "courtesy" | "clarification";
+// An utterance made entirely of discourse markers — the sound of starting to
+// answer, with no answer in it.
+//
+// Observed as "sure so", captured when the interviewer closed the interview
+// while the candidate was drawing breath. It scored 0/0/0 with coaching that
+// they should have named JWT or OAuth, which blames a candidate for being cut
+// off mid-syllable.
+//
+// Distinct from a short but real attempt: "the day one" and "redux" are
+// answers, poor ones, and they are scored. The test is whether anything
+// content-bearing was said at all, not how much.
+const OPENER_MAX_WORDS = 4;
+const OPENER_WORDS = new Set([
+  "so",
+  "sure",
+  "yeah",
+  "yes",
+  "ok",
+  "okay",
+  "alright",
+  "right",
+  "well",
+  "um",
+  "uh",
+  "erm",
+  "hmm",
+  "like",
+  "and",
+  "i",
+]);
+
+export type SkipReason = "courtesy" | "clarification" | "opener";
 
 export type ScoreableVerdict =
   | { scoreable: true }
@@ -100,6 +131,15 @@ export function classifyAnswer(transcript: string): ScoreableVerdict {
     CLARIFICATION_PATTERNS.some((pattern) => pattern.test(text))
   ) {
     return { scoreable: false, reason: "clarification" };
+  }
+
+  // Capped at four words so this can only ever catch an abandoned opening. A
+  // longer utterance has said something even if it said it badly.
+  if (
+    words <= OPENER_MAX_WORDS &&
+    text.split(" ").every((word) => OPENER_WORDS.has(word))
+  ) {
+    return { scoreable: false, reason: "opener" };
   }
 
   return { scoreable: true };

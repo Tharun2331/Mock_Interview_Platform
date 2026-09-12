@@ -124,6 +124,40 @@ describe("real answers", () => {
   });
 });
 
+// The sound of starting to answer, with no answer in it. Observed as "sure so",
+// captured when the interviewer closed the interview while the candidate was
+// drawing breath — then scored 0/0/0 with coaching that they should have named
+// JWT or OAuth.
+describe("abandoned openings", () => {
+  it.each([
+    "sure so",
+    "so",
+    "yeah so",
+    "okay so",
+    "um",
+    "uh so",
+    "well i",
+    "right so",
+  ])("does not score %p", (transcript) => {
+    expect(classifyAnswer(transcript)).toEqual({
+      scoreable: false,
+      reason: "opener",
+    });
+  });
+
+  // The test is whether anything content-bearing was said, not how much. These
+  // are poor answers, and a poor answer is scoreable.
+  it.each([
+    "the day one",
+    "redux",
+    "sure so redux",
+    "yeah we used jwt",
+    "um probably lambda",
+  ])("still scores %p", (transcript) => {
+    expect(isScoreableAnswer(transcript)).toBe(true);
+  });
+});
+
 describe("normalisation", () => {
   it("is unaffected by punctuation and capitalisation", () => {
     expect(isScoreableAnswer("Thank you!")).toBe(false);

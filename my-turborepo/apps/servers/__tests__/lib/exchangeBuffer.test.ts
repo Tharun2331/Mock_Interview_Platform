@@ -184,6 +184,123 @@ describe("ExchangeBuffer", () => {
     });
   });
 
+  // Replays the failure from a measured session. Sonic takes its turn after
+  // roughly two seconds of silence, which is inside a normal thinking pause.
+  describe("the interviewer speaking during a pause", () => {
+    it("keeps a continued answer with the question it was answering", () => {
+      const buffer = new ExchangeBuffer();
+
+      buffer.appendQuestion("Introduce yourself and walk me through your background.");
+      buffer.appendAnswer("I am a full stack developer at GQ Consultancy.");
+
+      // The candidate pauses. The interviewer starts the next question.
+      buffer.appendQuestion("Let's dig into the Brainly platform you built.");
+      // Before it finishes, the candidate carries on with their introduction.
+      buffer.appendAnswer("Prior to that I worked at Ernst and Young.");
+
+      // The interviewer's turn ends, so the exchange closes now.
+      const exchange = buffer.take();
+
+      expect(exchange?.questionText).toBe(
+        "Introduce yourself and walk me through your background."
+      );
+      // Both halves of the introduction, together, under the question that
+      // asked for it.
+      expect(exchange?.transcript).toBe(
+        "I am a full stack developer at GQ Consultancy. Prior to that I worked at Ernst and Young."
+      );
+    });
+
+    it("carries the interrupted question forward as the next one", () => {
+      const buffer = new ExchangeBuffer();
+
+      buffer.appendQuestion("First question.");
+      buffer.appendAnswer("First answer.");
+      buffer.appendQuestion("Second question.");
+      buffer.take();
+
+      buffer.appendAnswer("Second answer.");
+      const second = buffer.take();
+
+      expect(second?.questionText).toBe("Second question.");
+      expect(second?.transcript).toBe("Second answer.");
+    });
+
+    // Both halves required. A pending question with no answer is the
+    // interviewer still setting up; an answer with no pending question means
+    // nobody has asked the next one yet.
+    it("is not complete until a question is pending AND an answer exists", () => {
+      const buffer = new ExchangeBuffer();
+      expect(buffer.isComplete).toBe(false);
+
+      buffer.appendQuestion("First question.");
+      expect(buffer.isComplete).toBe(false);
+
+      buffer.appendAnswer("An answer.");
+      // Nobody has started the next question yet.
+      expect(buffer.isComplete).toBe(false);
+
+      buffer.appendQuestion("Second question.");
+      expect(buffer.isComplete).toBe(true);
+    });
+
+    // The interviewer may speak several sentences before the candidate says
+    // anything, and those are all one question.
+    it("treats several opening sentences as one question", () => {
+      const buffer = new ExchangeBuffer();
+
+      buffer.appendQuestion("Hello and welcome.");
+      buffer.appendQuestion("This will take about six minutes.");
+      buffer.appendQuestion("Introduce yourself.");
+      expect(buffer.isComplete).toBe(false);
+
+      buffer.appendAnswer("Sure.");
+
+      expect(buffer.take()?.questionText).toBe(
+        "Hello and welcome. This will take about six minutes. Introduce yourself."
+      );
+    });
+  });
+
+  // The interviewer re-asks after being talked over, so keeping the fragment
+  // would prefix the re-asked question with the half-sentence before it — and
+  // that text is what the Evaluator is told the candidate was answering.
+  describe("dropPendingQuestion", () => {
+    it("discards a question the candidate talked over", () => {
+      const buffer = new ExchangeBuffer();
+
+      buffer.appendQuestion("First question.");
+      buffer.appendAnswer("Still answering the first one.");
+      buffer.appendQuestion("Let me ask about some");
+      buffer.dropPendingQuestion();
+
+      expect(buffer.isComplete).toBe(false);
+
+      buffer.appendQuestion("Let me ask about something else entirely.");
+      const exchange = buffer.take();
+
+      expect(exchange?.questionText).toBe("First question.");
+
+      buffer.appendAnswer("An answer to the second.");
+      expect(buffer.take()?.questionText).toBe(
+        "Let me ask about something else entirely."
+      );
+    });
+
+    it("leaves the current question and answer untouched", () => {
+      const buffer = new ExchangeBuffer();
+
+      buffer.appendQuestion("First question.");
+      buffer.appendAnswer("First answer.");
+      buffer.appendQuestion("A fragment");
+      buffer.dropPendingQuestion();
+
+      const exchange = buffer.take();
+      expect(exchange?.questionText).toBe("First question.");
+      expect(exchange?.transcript).toBe("First answer.");
+    });
+  });
+
   describe("barge-in", () => {
     // An answer given over a half-delivered question is not comparable to one
     // given after the whole question, and the Evaluator needs to know which.
