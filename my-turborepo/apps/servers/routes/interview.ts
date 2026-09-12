@@ -11,6 +11,7 @@ import { SessionAccessError, SessionStateError } from "../lib/errors";
 import { MESSAGES } from "../lib/messages";
 import { config } from "../lib/config";
 import { effectiveTargetMinutes, nudgeSchedule } from "../lib/interviewClock";
+import { classifyAnswer } from "../lib/scoreableAnswer";
 import { SonicConversation } from "../lib/sonic";
 import { startEvaluationSummary } from "../lib/evaluations";
 import { enqueueEvaluations } from "../lib/sqs";
@@ -314,9 +315,24 @@ async function handleConnection(
           // everything is recorded as technical until the model reports it.
           questionType: "technical",
         });
-        // Only after the write lands. This list is what gets queued for
-        // scoring, and it must describe what is actually in the table.
-        recorded.push(exchange.questionId);
+        // Recorded either way — the transcript is the durable record of the
+        // conversation and the Coach reads all of it. Only genuine attempts at
+        // a question are queued for scoring.
+        //
+        // A sign-off or a request to hear the question again is not a failed
+        // answer, and scoring one produces a 0/0/0 with coaching that makes no
+        // sense: "thank you" was marked down for lacking a memorable closing
+        // line, and "could you please repeat it" for missing the question
+        // entirely. Five such zeros landed in one thirty-one exchange session
+        // and pulled every average down with them.
+        const verdict = classifyAnswer(exchange.transcript);
+        if (verdict.scoreable) {
+          recorded.push(exchange.questionId);
+        } else {
+          console.log(
+            `[interview] ${sessionId} not scoring ${exchange.questionId} (${verdict.reason})`
+          );
+        }
       } catch (error) {
         // Logged, never surfaced. Losing one answer is bad; ending a live
         // interview because a write failed is worse.
