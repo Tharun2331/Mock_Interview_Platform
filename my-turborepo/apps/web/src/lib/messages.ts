@@ -313,6 +313,7 @@ export const MESSAGES = {
     "Something went wrong before it could be scored. Your next interview will not be affected.",
 
   // --- History ---
+  HISTORY_NAV: "History",
   HISTORY_TITLE: "Your interviews",
   HISTORY_SUBTITLE: (count: number): string =>
     count === 1 ? "1 interview so far" : `${count} interviews so far`,
