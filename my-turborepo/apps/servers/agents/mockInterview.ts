@@ -135,17 +135,36 @@ function renderResumption(): string[] {
 // half minutes, so this is also the mechanism that keeps the interviewer's sense
 // of time from drifting — it is refreshed with the truth several times an hour
 // without anyone having to interrupt the conversation to say so.
-export function buildInterviewSystemPrompt(
-  plan: PlanResponse,
-  clock?: InterviewClock,
+export type InterviewPromptOptions = {
+  // Where the session stands when this stream opens. Rendered on EVERY stream,
+  // including the first.
+  //
+  // It used to be omitted when elapsed was zero, which quietly coupled two
+  // unrelated things: "no time information" and "this is the opening stream".
+  // The cost was invisible until a six-minute session — renewal happens at
+  // 6m30s, so that interview never renewed, the clock was never rendered, and
+  // the interviewer ran the whole session with no TIME block at all. Its only
+  // time source was a tool result it may or may not have called for. Production
+  // had the same hole for its first six and a half minutes.
+  clock?: InterviewClock;
   // The length the session is actually running to, which is the plan's own
   // figure except under the test override. Passed in rather than read from the
   // plan so the prompt cannot state one budget while the server's timers
   // enforce another — the interviewer would then be pacing against a clock
   // nobody else is using.
-  targetMinutesOverride?: number
+  targetMinutes?: number;
+  // Whether this stream replaces one mid-interview. Now independent of the
+  // clock, because the first stream needs the time AND the opening
+  // instructions, which the old single flag made mutually exclusive.
+  resuming?: boolean;
+};
+
+export function buildInterviewSystemPrompt(
+  plan: PlanResponse,
+  options: InterviewPromptOptions = {}
 ): string {
-  const targetMinutes = targetMinutesOverride ?? plan.targetMinutes;
+  const targetMinutes = options.targetMinutes ?? plan.targetMinutes;
+  const { clock, resuming = false } = options;
 
   return [
     ...(clock === undefined ? [] : renderClock(targetMinutes, clock)),
@@ -169,7 +188,7 @@ export function buildInterviewSystemPrompt(
     "and junior on the next, and a good interview finds that edge rather than",
     "averaging over it.",
     "",
-    ...(clock === undefined ? renderOpening() : renderResumption()),
+    ...(resuming ? renderResumption() : renderOpening()),
     "HOW TO RUN THE INTERVIEW",
     "- Never ask from a script. Generate every question in the moment, grounded",
     "  either in the session brief or in something the candidate just said.",

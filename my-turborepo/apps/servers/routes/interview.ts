@@ -287,6 +287,10 @@ async function handleConnection(
       history: [],
     };
 
+    // Which stream is being opened. The first gets the opening instructions;
+    // every later one is told the interview is already under way.
+    let streamsOpened = 0;
+
     // Question ids whose answer write succeeded. Exposed to shutdown() so the
     // enqueue covers exactly what was persisted.
     const recorded: string[] = [];
@@ -356,14 +360,23 @@ async function handleConnection(
       // time into the replacement stream — which is what keeps a 35-minute
       // interview from running on a briefing written 30 minutes ago.
       systemPrompt: () => {
-        const clock = clockOf(state);
-        return buildInterviewSystemPrompt(
-          plan,
-          clock.elapsedMinutes === 0 ? undefined : clock,
-          // The effective length, so a renewed stream's TIME header states the
-          // budget the timers are actually enforcing.
-          targetMinutes
-        );
+        // Counted rather than inferred from the clock. A six-minute session
+        // never renews — renewal is at 6m30s — so "elapsed is zero" was
+        // standing in for "first stream" and silently suppressed the TIME block
+        // for the entire interview.
+        const isFirstStream = streamsOpened === 0;
+        streamsOpened += 1;
+
+        return buildInterviewSystemPrompt(plan, {
+          // Every stream, including the first. The opening one reports zero
+          // elapsed, which is both true and the anchor the model needs before
+          // its first tool result arrives.
+          clock: clockOf(state),
+          // The effective length, so the TIME header states the budget the
+          // server's timers are actually enforcing.
+          targetMinutes,
+          resuming: !isFirstStream,
+        });
       },
       tools: INTERVIEW_TOOLS,
       // Bedrock closes a stream after ~8 minutes, so a 40-minute interview
@@ -523,6 +536,7 @@ async function handleConnection(
         `${config.interviewTestMode ? " (TEST MODE)" : ""}, ` +
         `wrap-up @${Math.round(schedule.wrapUpAtMs / 1000)}s, ` +
         `final call @${Math.round(schedule.finalCallAtMs / 1000)}s, ` +
+        `time up @${Math.round(schedule.timeUpAtMs / 1000)}s, ` +
         `hard stop @${Math.round(schedule.hardStopAtMs / 1000)}s`
     );
 
@@ -536,11 +550,18 @@ async function handleConnection(
       if (state.endRequested) return;
       nudge("final call", MESSAGES.INTERVIEW_FINAL_CALL)();
     }, schedule.finalCallAtMs);
+    // The last word before the cut. Fires exactly when the candidate's
+    // countdown reads 0:00, which is the moment they can see that the
+    // interviewer is overrunning.
+    const timeUpTimer = setTimeout(() => {
+      if (state.endRequested) return;
+      nudge("time expired", MESSAGES.INTERVIEW_TIME_EXPIRED)();
+    }, schedule.timeUpAtMs);
     const hardStopTimer = setTimeout(
       () => void shutdown("time limit reached"),
       schedule.hardStopAtMs
     );
-    clearOnClose.push(wrapUpTimer, finalCallTimer, hardStopTimer);
+    clearOnClose.push(wrapUpTimer, finalCallTimer, timeUpTimer, hardStopTimer);
 
     socket.on("message", (data: Buffer, isBinary: boolean) => {
       if (isBinary) {

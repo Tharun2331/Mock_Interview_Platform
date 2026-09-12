@@ -62,8 +62,22 @@ describe("the schedule at the 6-minute test scale", () => {
 
   it("keeps the nudges in order and inside the session", () => {
     expect(schedule.wrapUpAtMs).toBeLessThan(schedule.finalCallAtMs);
-    expect(schedule.finalCallAtMs).toBeLessThan(schedule.hardStopAtMs);
+    expect(schedule.finalCallAtMs).toBeLessThan(schedule.timeUpAtMs);
+    expect(schedule.timeUpAtMs).toBeLessThan(schedule.hardStopAtMs);
     expect(schedule.finalCallAtMs).toBeLessThan(6 * 60_000);
+  });
+
+  // The minute between the countdown reading 0:00 and the hard stop used to
+  // carry no signal at all, and a candidate watched the interviewer open a new
+  // question in it.
+  it("nudges at 6m00s, when the candidate's countdown reads zero", () => {
+    expect(SECONDS(schedule.timeUpAtMs)).toBe(360);
+  });
+
+  it("leaves no silent gap between the last nudge and the cut", () => {
+    // Every second from the first nudge to the hard stop is covered by a
+    // signal the interviewer has already been sent.
+    expect(schedule.hardStopAtMs - schedule.timeUpAtMs).toBe(60_000);
   });
 
   // Fixed offsets would put the wrap-up at 3:00 — half way through — and tell
@@ -83,6 +97,9 @@ describe("production timings are unchanged", () => {
 
     expect(schedule.wrapUpAtMs).toBe(targetMs - INTERVIEW.WRAP_UP_BEFORE_MS);
     expect(schedule.finalCallAtMs).toBe(targetMs - INTERVIEW.FINAL_CALL_BEFORE_MS);
+    // Unscaled in both modes: it is the target itself, which is when the
+    // candidate's countdown reaches zero.
+    expect(schedule.timeUpAtMs).toBe(targetMs);
     expect(schedule.hardStopAtMs).toBe(targetMs + INTERVIEW.HARD_STOP_GRACE_MS);
   });
 
