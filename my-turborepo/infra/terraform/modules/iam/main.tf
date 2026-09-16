@@ -185,6 +185,45 @@ data "aws_iam_policy_document" "bedrock_invoke" {
     actions   = ["sqs:SendMessage"]
     resources = [var.eval_queue_arn]
   }
+
+  # The Tavily key for the Company Intel agent, and nothing else under
+  # /prepilot/<env>/. Scoped to the one parameter ARN rather than the path
+  # prefix: the same prefix holds the Google OAuth client secret, which the
+  # server has no reason to read at runtime.
+  #
+  # The worker role deliberately has no equivalent. It scores recorded answers
+  # and never searches the web, so it cannot reach a paid third-party API even
+  # if it is compromised or looped by a bug — the same reasoning that keeps
+  # bidirectional streaming off it.
+  statement {
+    sid       = "SsmReadSearchApiKey"
+    effect    = "Allow"
+    actions   = ["ssm:GetParameter"]
+    resources = [var.tavily_api_key_parameter_arn]
+  }
+
+  # A SecureString is useless without the key that encrypted it. Scoped to the
+  # account's default SSM key rather than "*", and narrowed again by ViaService
+  # so this grant cannot be used to decrypt anything that did not come through
+  # Parameter Store.
+  statement {
+    sid       = "KmsDecryptSsmParameters"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt"]
+    resources = [data.aws_kms_alias.ssm.target_key_arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["ssm.${var.aws_region}.amazonaws.com"]
+    }
+  }
+}
+
+# The AWS-managed key Parameter Store uses by default. Looked up rather than
+# hardcoded — its ARN is account- and region-specific.
+data "aws_kms_alias" "ssm" {
+  name = "alias/aws/ssm"
 }
 
 # ---------------------------------------------------------------------------

@@ -12,6 +12,7 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import {
+  CompanyIntelSchema,
   GapAnalysisSchema,
   ITEM_TYPE,
   KEY_PREFIX,
@@ -23,6 +24,7 @@ import {
   sessionPk,
   sessionSk,
   userPk,
+  type CompanyIntel,
   type GapAnalysis,
   type PlannerInput,
   type PlanResponse,
@@ -763,4 +765,73 @@ export async function attachPlan(args: {
       }`
     );
   }
+}
+
+// What the interview learned about the company, for a session.
+//
+// Stored for the same reason the gap analysis is: the Mock Interview agent
+// reads it on every stream, renewals happen roughly every six minutes, and
+// re-running a web search plus a classification each time would multiply a
+// per-session cost by the length of the interview.
+export async function putCompanyIntel(args: {
+  intel: CompanyIntel;
+}): Promise<void> {
+  try {
+    await dynamoClient.send(
+      new PutCommand({
+        TableName: requireTable(),
+        Item: {
+          PK: sessionPk(args.intel.sessionId),
+          SK: SORT_KEY.INTEL,
+          ...args.intel,
+          expiresAt: sessionExpiresAt(),
+        },
+      })
+    );
+  } catch (error) {
+    throw new ServiceError(
+      `${MESSAGES.INTEL_WRITE_FAILED} — ${
+        error instanceof Error ? error.message : "unknown"
+      }`
+    );
+  }
+}
+
+// Null when the session has none, which is the normal case — a company name is
+// optional and most sessions never supply one.
+//
+// Degrades to null on every failure, exactly like loadGapAnalysis: this is the
+// most optional thing in the entire interview, and nothing about it is worth
+// ending a live session over.
+export async function loadCompanyIntel(args: {
+  sessionId: string;
+}): Promise<CompanyIntel | null> {
+  let response;
+  try {
+    response = await dynamoClient.send(
+      new GetCommand({
+        TableName: requireTable(),
+        Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.INTEL },
+      })
+    );
+  } catch (error) {
+    console.warn(
+      `[sessions] ${args.sessionId} intel read failed, continuing without it — ${
+        error instanceof Error ? error.message : "unknown"
+      }`
+    );
+    return null;
+  }
+
+  if (response.Item === undefined) return null;
+
+  const parsed = CompanyIntelSchema.safeParse(response.Item);
+  if (!parsed.success) {
+    console.warn(
+      `[sessions] ${args.sessionId} company intel did not parse, continuing without it`
+    );
+    return null;
+  }
+
+  return parsed.data;
 }

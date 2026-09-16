@@ -1,4 +1,12 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "bun:test";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
   BatchGetCommand,
@@ -42,6 +50,15 @@ import {
   setStructuredReplies,
   structuredCallCount,
 } from "../helpers/bedrockStub";
+import { resetSsmStub } from "../helpers/ssmStub";
+import {
+  installSearchStub,
+  resetSearchStub,
+  restoreSearchStub,
+  searchQueries,
+  setSearchEmpty,
+  setSearchThrows,
+} from "../helpers/searchStub";
 
 const { planRouter } = await import("../../routes/plan");
 const { MESSAGES } = await import("../../lib/messages");
@@ -133,7 +150,17 @@ afterEach(async () => {
   }
 });
 
-afterAll(() => ddb.restore());
+// Installed for the whole file rather than one describe: the intel trigger is
+// fire-and-forget, so a search started by one test can still be in flight when
+// the next begins, and an uninstalled stub would let that one out to the real
+// internet. The stub delegates everything not aimed at Tavily to the real
+// fetch, so this file's own requests to its Express server are untouched.
+beforeAll(installSearchStub);
+
+afterAll(() => {
+  restoreSearchStub();
+  ddb.restore();
+});
 
 describe("validation", () => {
   it("400s a body with no session id", async () => {
@@ -407,6 +434,105 @@ describe("the gap trigger", () => {
     const response = await postPlan(url, { ...BODY, jobDescription: "   " });
 
     expect(response.status).toBe(400);
+  });
+});
+
+// Gated behind the job description as well as the company name, which is the
+// spec's rule and not an accident: no posting means no Gap agent AND no
+// Company Intel, so a session cannot end up shaped by a company's reputation
+// with nothing to aim it at.
+describe("the company intel trigger", () => {
+  // The queries actually sent are a far better observable than a model call
+  // count — the classification is skipped entirely when search finds nothing,
+  // so counting Bedrock calls would report "did not run" for a run that did.
+  beforeEach(() => {
+    resetSearchStub();
+    resetSsmStub();
+    setSearchEmpty();
+  });
+
+  function readyToPlan() {
+    sessionFound();
+    ddb.on(GetCommand).resolves({});
+    ddb.on(PutCommand).resolves({});
+    ddb.on(UpdateCommand).resolves({});
+  }
+
+  it("researches the company when both a posting and a name are present", async () => {
+    readyToPlan();
+    const { url } = await start();
+
+    const response = await postPlan(url, {
+      ...BODY,
+      jobDescription: "We need Kubernetes experience.",
+      companyName: "Acme Systems",
+    });
+
+    expect(response.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(searchQueries()).toHaveLength(2);
+  });
+
+  // The amendment's rule, and the one most worth pinning: a company name with
+  // no posting must not reach the search at all.
+  it("does not research when a company name arrives without a posting", async () => {
+    readyToPlan();
+    const { url } = await start();
+
+    const response = await postPlan(url, { ...BODY, companyName: "Acme Systems" });
+
+    expect(response.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(searchQueries()).toHaveLength(0);
+  });
+
+  it("does not research when a posting arrives without a company name", async () => {
+    readyToPlan();
+    setStructuredReplies([{ requirements: [] }]);
+    const { url } = await start();
+
+    await postPlan(url, {
+      ...BODY,
+      jobDescription: "We need Kubernetes experience.",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(searchQueries()).toHaveLength(0);
+  });
+
+  // Same treatment as the gap trigger: the plan is what the candidate is
+  // waiting for, and this is the most optional thing in the product.
+  it("returns the plan even when the research fails outright", async () => {
+    readyToPlan();
+    setSearchThrows(new Error("ECONNREFUSED"));
+    const { url } = await start();
+
+    const response = await postPlan(url, {
+      ...BODY,
+      jobDescription: "We need Kubernetes experience.",
+      companyName: "Acme Systems",
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(PLAN);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  });
+
+  it("does not delay the response on it", async () => {
+    readyToPlan();
+    const { url } = await start();
+
+    const started = Date.now();
+    await postPlan(url, {
+      ...BODY,
+      jobDescription: "We need Kubernetes experience.",
+      companyName: "Acme Systems",
+    });
+
+    // Fire-and-forget: the response must not wait on a web search plus a
+    // classification, which together are the slowest thing in this route.
+    expect(Date.now() - started).toBeLessThan(1_000);
+    await new Promise((resolve) => setTimeout(resolve, 60));
   });
 });
 

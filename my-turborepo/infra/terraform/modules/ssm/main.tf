@@ -37,3 +37,16 @@ resource "aws_ssm_parameter" "google_client_secret" {
     Environment = var.environment
   }
 }
+
+
+resource "aws_ssm_parameter" "tavily_api_key" {
+  name        = "/prepilot/${var.environment}/tavily/apikey"
+  description = "Tavily API Key"
+  type        = "SecureString"
+  value       = var.tavily_api_key
+
+  tags = {
+    Project     = "prepilot"
+    Environment = var.environment
+  }
+}

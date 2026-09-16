@@ -101,3 +101,14 @@ export class BedrockError extends Error {
     this.modelsTried = modelsTried;
   }
 }
+
+// The web search behind Company Intel. Its own class rather than a
+// ServiceError because it is the only failure in the codebase that is
+// genuinely expected to happen and genuinely fine: search is a garnish, and
+// every caller is required to carry on without it.
+export class SearchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SearchError";
+  }
+}

@@ -25,6 +25,14 @@ export const MESSAGES = {
   GAP_WRITE_FAILED:     "Could not store the gap analysis.",
   GAP_UNAVAILABLE:      "We could not analyse that job description right now. This is on our side — try again shortly.",
   INVALID_GAP_BODY:     "Provide a session id and a job description.",
+  INTEL_WRITE_FAILED:   "Could not store what we found out about the company.",
+  INVALID_INTEL_BODY:   "Provide a session id and a company name.",
+  // Operator-facing, not candidate-facing: these two only ever reach a log.
+  // A missing secret is a deployment that was never finished, and the two
+  // cases are separated because they send someone to different places — one
+  // to Terraform, one to the Parameter Store console.
+  SSM_PARAMETER_MISSING: "Could not read a required parameter from SSM.",
+  SSM_PARAMETER_EMPTY:   "An SSM parameter exists but holds no value.",
   EVAL_SUMMARY_WRITE_FAILED: "Could not open the evaluation rollup.",
   EVAL_SUMMARY_READ_FAILED:  "Could not read the evaluation rollup.",
   INVALID_SESSION_ID:        "That interview session could not be found.",

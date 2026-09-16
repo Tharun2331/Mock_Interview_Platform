@@ -8,6 +8,10 @@ module "iam" {
   sessions_table_arn    = module.dynamodb.table_arn
   cognito_user_pool_arn = module.cognito.cognito_user_pool_arn
   eval_queue_arn        = module.sqs.eval_queue_arn
+
+  # The ARN only. The server role needs to read the key at runtime; Terraform
+  # never reads its value.
+  tavily_api_key_parameter_arn = module.ssm.tavily_api_key_parameter_arn
 }
 
 # The evaluation queue and its dead-letter queue.
@@ -27,6 +31,7 @@ module "ssm" {
   google_client_id     = var.google_client_id
   google_client_secret = var.google_client_secret
   dynamodb_table_name  = module.dynamodb.table_name
+  tavily_api_key       = var.tavily_api_key
 }
 
 module "dynamodb" {

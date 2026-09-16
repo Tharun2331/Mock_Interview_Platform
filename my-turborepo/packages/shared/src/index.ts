@@ -2,6 +2,7 @@ export * from "./schemas/plan";
 export * from "./schemas/session";
 export * from "./schemas/evaluation";
 export * from "./schemas/gap";
+export * from "./schemas/companyIntel";
 export * from "./schemas/profile";
 export * from "./schemas/preInterview";
 export * from "./schemas/auth";

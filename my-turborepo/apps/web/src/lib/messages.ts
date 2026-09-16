@@ -451,6 +451,16 @@ export const MESSAGES = {
   // is a warning rather than a running tally of something nobody is counting.
   START_JD_TOO_LONG:
     "That posting is longer than we can read. Trim it to the responsibilities and requirements.",
+  // Shown only alongside a posting, because the agent only runs alongside one.
+  START_COMPANY_LABEL: "Company",
+  START_COMPANY_PLACEHOLDER: "e.g. Stripe",
+  START_COMPANY_HINT:
+    "We look up how they tend to interview and shape the tone to match.",
+  START_COMPANY_NOTES_LABEL: "What you already know",
+  START_COMPANY_NOTES_PLACEHOLDER:
+    "Anything a recruiter or a friend told you about their process.",
+  START_COMPANY_NOTES_HINT:
+    "This outranks anything we find online — you are closer to the source.",
   START_SUBMIT: "Build my interview",
   START_SUBMIT_PENDING: "Building…",
   START_PHASE_CREATING: "Preparing your session",

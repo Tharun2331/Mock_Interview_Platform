@@ -242,6 +242,114 @@ describe("a posting longer than the model will read", () => {
   });
 });
 
+// Gated on the posting, exactly as the server is: without one the Company
+// Intel agent never runs, so offering the input any earlier would be offering
+// a field that silently does nothing.
+describe("the company fields", () => {
+  function fillRole() {
+    fireEvent.change(screen.getByLabelText(MESSAGES.FORM_ROLE_LABEL), {
+      target: { value: "Backend Engineer" },
+    });
+  }
+
+  function pasteJd(value = "We need Kubernetes and Kafka experience.") {
+    fireEvent.change(jobDescriptionField(), { target: { value } });
+  }
+
+  it("are hidden until a posting is pasted", () => {
+    renderPage();
+
+    expect(screen.queryByLabelText(MESSAGES.START_COMPANY_LABEL)).toBeNull();
+  });
+
+  it("appear once a posting is pasted", () => {
+    renderPage();
+    pasteJd();
+
+    expect(screen.getByLabelText(MESSAGES.START_COMPANY_LABEL)).toBeDefined();
+  });
+
+  it("disappear again if the posting is cleared", () => {
+    renderPage();
+    pasteJd();
+    pasteJd("");
+
+    expect(screen.queryByLabelText(MESSAGES.START_COMPANY_LABEL)).toBeNull();
+  });
+
+  // Notes about nobody are notes the interview cannot attach to anything.
+  it("ask for notes only once a company is named", () => {
+    renderPage();
+    pasteJd();
+
+    expect(
+      screen.queryByLabelText(MESSAGES.START_COMPANY_NOTES_LABEL)
+    ).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(MESSAGES.START_COMPANY_LABEL), {
+      target: { value: "Stripe" },
+    });
+
+    expect(
+      screen.getByLabelText(MESSAGES.START_COMPANY_NOTES_LABEL)
+    ).toBeDefined();
+  });
+
+  it("say the candidate's own notes outrank what is found online", () => {
+    renderPage();
+    pasteJd();
+    fireEvent.change(screen.getByLabelText(MESSAGES.START_COMPANY_LABEL), {
+      target: { value: "Stripe" },
+    });
+
+    expect(screen.getByText(MESSAGES.START_COMPANY_NOTES_HINT)).toBeDefined();
+  });
+
+  it("sends the company and the notes when both were filled in", async () => {
+    renderPage();
+    fillRole();
+    pasteJd();
+    fireEvent.change(screen.getByLabelText(MESSAGES.START_COMPANY_LABEL), {
+      target: { value: "  Stripe  " },
+    });
+    fireEvent.change(screen.getByLabelText(MESSAGES.START_COMPANY_NOTES_LABEL), {
+      target: { value: "Recruiter said two rounds." },
+    });
+    submit();
+
+    const body = await planBody();
+    expect(body.companyName).toBe("Stripe");
+    expect(body.companyNotes).toBe("Recruiter said two rounds.");
+  });
+
+  it("omits both keys when no company was named", async () => {
+    renderPage();
+    fillRole();
+    pasteJd();
+    submit();
+
+    const body = await planBody();
+    expect("companyName" in body).toBe(false);
+    expect("companyNotes" in body).toBe(false);
+  });
+
+  // The field is unreachable without a posting, but the guard is asserted on
+  // the body as well: a state left behind by clearing the posting must not
+  // send a company the server would then refuse to research.
+  it("omits the company when the posting was cleared after typing one", async () => {
+    renderPage();
+    fillRole();
+    pasteJd();
+    fireEvent.change(screen.getByLabelText(MESSAGES.START_COMPANY_LABEL), {
+      target: { value: "Stripe" },
+    });
+    pasteJd("");
+    submit();
+
+    expect("companyName" in (await planBody())).toBe(false);
+  });
+});
+
 // The role is the only required field, and the posting must not have changed
 // that — an interview with no posting is the path this product had all along.
 describe("the role field it sits beside", () => {

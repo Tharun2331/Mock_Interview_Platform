@@ -7,6 +7,7 @@ import {
 } from "@repo/shared";
 import { runPlanner } from "../agents/planner";
 import { analyseGap, summariseRepos } from "./gap";
+import { researchCompany } from "./companyIntel";
 import { getCachedPlan, putCachedPlan } from "../lib/profile";
 import {
   BedrockError,
@@ -159,6 +160,19 @@ planRouter.post("/", async (req, res) => {
         resumeText: inputs.resumeText ?? "",
         githubSummary: summariseRepos(inputs.repos),
       });
+
+      // Company Intel, same fire-and-forget treatment and gated behind the
+      // posting as well as the company name. Nested rather than checked
+      // alongside, because that gating is the spec's and not an accident: no
+      // posting means no Gap agent AND no Company Intel, so a session cannot
+      // end up shaped by a company's reputation with nothing to aim it at.
+      if (parsed.data.companyName !== undefined) {
+        void researchCompany({
+          sessionId: parsed.data.sessionId,
+          company: parsed.data.companyName,
+          notes: parsed.data.companyNotes,
+        });
+      }
     }
 
     stage("done");
