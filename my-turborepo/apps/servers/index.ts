@@ -4,6 +4,7 @@ import helmet from "helmet";
 import { config } from "./lib/config";
 import { planRouter } from "./routes/plan";
 import { preInterviewRouter } from "./routes/preInterview";
+import { gapRouter } from "./routes/gap";
 import { profileRouter } from "./routes/profile";
 import { sessionsRouter } from "./routes/sessions";
 import { attachInterviewSocket } from "./routes/interview";
@@ -35,6 +36,9 @@ app.use("/api/v1/plan", AuthMiddleware, apiRateLimiter, planRouter);
 // one is polled while the worker drains — the limit is per authenticated user
 // and generous enough that a few-second poll interval never reaches it.
 app.use("/api/v1/sessions", AuthMiddleware, apiRateLimiter, sessionsRouter);
+// Cognito-protected and rate limited like the rest: it runs a Bedrock call, so
+// it is among the more expensive things an authenticated caller can trigger.
+app.use("/api/v1/gap", AuthMiddleware, apiRateLimiter, gapRouter);
 
 // The HTTP server is captured rather than discarded: the interview WebSocket
 // attaches to its `upgrade` event, which is the only place a handshake can be

@@ -44,8 +44,88 @@ export const converseText = mock(
   }
 );
 
+// The structured (tool-use) half of the same module.
+//
+// It lives here rather than in a second stub because `mock.module` replaces the
+// WHOLE module: a file registering `{ converseStructured }` on its own would
+// delete `converseText` for every test loaded afterwards, and vice versa. That
+// is not hypothetical — it broke two files the first time the Gap agent's tests
+// registered their own mock, with "Export named 'converseStructured' not found".
+//
+// Every export of lib/bedrock that any test needs belongs in this one object.
+export type ConverseStructuredResult = {
+  value: unknown;
+  modelId: string;
+  via: "toolUse" | "text";
+};
+
+type StructuredBehaviour =
+  | { kind: "value"; result: ConverseStructuredResult }
+  | { kind: "error"; error: Error };
+
+// A queue rather than a single value, because the agents that use this retry:
+// a test for "fails once, succeeds on the retry" needs two different answers to
+// the same call.
+let structuredQueue: StructuredBehaviour[] = [];
+let lastStructuredArgs: unknown;
+
+export const converseStructured = mock(
+  async (args: unknown): Promise<ConverseStructuredResult> => {
+    lastStructuredArgs = args;
+
+    // The last entry repeats once the queue is exhausted, so a test that wants
+    // the same answer every time configures one.
+    const next =
+      structuredQueue.length > 1
+        ? structuredQueue.shift()
+        : structuredQueue[0];
+
+    if (next === undefined) {
+      throw new Error("converseStructured called with no behaviour configured");
+    }
+    if (next.kind === "error") throw next.error;
+    return next.result;
+  }
+);
+
 // Relative to THIS file, so it resolves to apps/servers/lib/bedrock.
-mock.module("../../lib/bedrock", () => ({ converseText }));
+mock.module("../../lib/bedrock", () => ({ converseText, converseStructured }));
+
+const DEFAULT_STRUCTURED_MODEL = "mistral.ministral-3-8b-instruct";
+
+/** The object a tool-use reply should carry. */
+export function setStructuredReplies(values: unknown[]): void {
+  structuredQueue = values.map((value) => ({
+    kind: "value",
+    result: { value, modelId: DEFAULT_STRUCTURED_MODEL, via: "toolUse" },
+  }));
+}
+
+/** A model that ignored toolChoice and answered in prose instead. */
+export function setStructuredTextReplies(texts: string[]): void {
+  structuredQueue = texts.map((value) => ({
+    kind: "value",
+    result: { value, modelId: DEFAULT_STRUCTURED_MODEL, via: "text" },
+  }));
+}
+
+export function setStructuredFailure(error: Error): void {
+  structuredQueue = [{ kind: "error", error }];
+}
+
+export function lastStructuredCall(): unknown {
+  return lastStructuredArgs;
+}
+
+export function structuredCallCount(): number {
+  return converseStructured.mock.calls.length;
+}
+
+export function resetStructuredStub(): void {
+  structuredQueue = [];
+  lastStructuredArgs = undefined;
+  converseStructured.mockClear();
+}
 
 /** What the model should return on the next call, and every call after it. */
 export function setModelReply(text: string): void {

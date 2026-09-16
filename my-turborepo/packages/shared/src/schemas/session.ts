@@ -54,6 +54,9 @@ export const SORT_KEY = {
   META: "META",
   INPUTS: "INPUTS",
   COACH: "COACH",
+  // The job-description gap analysis. A fixed key, not a prefix: there is one
+  // per session, written once and read on every stream renewal.
+  GAP: "GAP",
   EVAL_SUMMARY: "SUMMARY",
   PROFILE: "PROFILE",
   PLAN: "PLAN",
@@ -85,6 +88,7 @@ export const ITEM_TYPE = {
   SESSION_EVALUATION: "session_evaluation",
   SESSION_EVAL_SUMMARY: "session_eval_summary",
   SESSION_COACH: "session_coach",
+  SESSION_GAP: "session_gap",
   USER_SESSION_REF: "user_session_ref",
   USER_SESSION_SUMMARY: "user_session_summary",
   USER_PROFILE: "user_profile",

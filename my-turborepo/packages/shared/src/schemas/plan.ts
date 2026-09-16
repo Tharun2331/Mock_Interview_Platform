@@ -68,6 +68,11 @@ export const PlanRequestSchema = z.object({
   // and the interview cannot be resumed on another device.
   sessionId: z.string().min(1),
   targetRole: z.string().min(1).max(200),
+  // Optional throughout. Absent means the candidate pasted no posting, and the
+  // Gap agent is skipped entirely rather than called with an empty string — an
+  // analysis of nothing is a Bedrock call that can only produce noise, and the
+  // interview falls back to resume and GitHub alone.
+  jobDescription: z.string().trim().min(1).max(8_000).optional(),
 });
 
 export type PlanRequest = z.infer<typeof PlanRequestSchema>;
