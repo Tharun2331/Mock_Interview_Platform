@@ -438,6 +438,19 @@ export const MESSAGES = {
   START_MATERIAL_TITLE: "Planned from",
   START_MATERIAL_RESUME: "Your resume",
   START_MATERIAL_EDIT: "Edit",
+  // Optional, and said so plainly rather than marked with an asterisk nobody
+  // reads. Without a posting the interview still runs — it just draws on the
+  // resume and repositories alone, which is what it did before this existed.
+  START_JD_LABEL: "Job description",
+  START_JD_OPTIONAL: "Optional",
+  START_JD_PLACEHOLDER:
+    "Paste the posting here — responsibilities and requirements are the parts that matter.",
+  START_JD_HINT:
+    "Paste one and questions lean toward what the role asks for and your resume does not already show.",
+  // Shown only once the field is long enough for the cap to be in reach, so it
+  // is a warning rather than a running tally of something nobody is counting.
+  START_JD_TOO_LONG:
+    "That posting is longer than we can read. Trim it to the responsibilities and requirements.",
   START_SUBMIT: "Build my interview",
   START_SUBMIT_PENDING: "Building…",
   START_PHASE_CREATING: "Preparing your session",

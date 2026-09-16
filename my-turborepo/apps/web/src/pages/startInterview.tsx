@@ -7,11 +7,12 @@ import {
   FileTextIcon,
   FolderGit2Icon,
 } from "lucide-react";
-import { PlanResponseSchema, type PlanResponse } from "@repo/shared";
+import { GAP_LIMITS, PlanResponseSchema, type PlanResponse } from "@repo/shared";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import {
   Card,
@@ -75,9 +76,15 @@ export function StartInterview() {
 
   const [targetRole, setTargetRole] = useState("");
   const [roleError, setRoleError] = useState<string | null>(null);
+  const [jobDescription, setJobDescription] = useState("");
   const [setup, setSetup] = useState<Setup>({ status: "idle" });
 
   const isBusy = setup.status === "creating" || setup.status === "planning";
+
+  // Trimmed once, and the same value is both validated and sent — a posting
+  // that is only whitespace is no posting at all, and the route rejects one.
+  const trimmedJd = jobDescription.trim();
+  const jdTooLong = trimmedJd.length > GAP_LIMITS.MAX_JOB_DESCRIPTION_CHARS;
 
   // Split from session creation deliberately. The session already exists by the
   // time this runs, so a failure here is retryable on its own.
@@ -88,6 +95,10 @@ export function StartInterview() {
       const response = await api.post("/api/v1/plan", {
         sessionId,
         targetRole: targetRole.trim(),
+        // Omitted entirely rather than sent empty. The route treats an absent
+        // posting as "skip the Gap agent", and `""` would fail its `.min(1)`
+        // and 400 the whole plan over a field nobody filled in.
+        ...(trimmedJd.length > 0 ? { jobDescription: trimmedJd } : {}),
       });
 
       const parsed = PlanResponseSchema.safeParse(response.data);
@@ -121,6 +132,10 @@ export function StartInterview() {
       setRoleError(MESSAGES.FORM_ROLE_REQUIRED);
       return;
     }
+
+    // Caught here rather than by the server, so an over-long posting costs a
+    // corrected paste instead of a minted session and a 400.
+    if (jdTooLong) return;
 
     setRoleError(null);
     setSetup({ status: "creating" });
@@ -338,6 +353,40 @@ export function StartInterview() {
               {roleError ?? MESSAGES.FORM_ROLE_HINT}
             </p>
           </div>
+
+          {/* Genuinely optional, and the interview is whole without it. Left
+              open rather than behind a disclosure: a collapsed field is a
+              field nobody finds, and this is the one input that changes what
+              the interviewer chooses to ask about. */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-baseline justify-between">
+              <Label htmlFor="job-description">{MESSAGES.START_JD_LABEL}</Label>
+              <span className="font-mono text-[0.7rem] uppercase tracking-[0.12em] text-ink-faint">
+                {MESSAGES.START_JD_OPTIONAL}
+              </span>
+            </div>
+            <Textarea
+              id="job-description"
+              value={jobDescription}
+              disabled={isBusy}
+              rows={5}
+              placeholder={MESSAGES.START_JD_PLACEHOLDER}
+              aria-describedby="job-description-hint"
+              aria-invalid={jdTooLong}
+              className="max-h-64 resize-y"
+              onChange={(e) => setJobDescription(e.target.value)}
+            />
+            <p
+              id="job-description-hint"
+              className={
+                jdTooLong
+                  ? "text-xs text-destructive"
+                  : "text-xs text-ink-subtle"
+              }
+            >
+              {jdTooLong ? MESSAGES.START_JD_TOO_LONG : MESSAGES.START_JD_HINT}
+            </p>
+          </div>
         </CardContent>
 
         <CardFooter className="mt-6 flex-col gap-3">
@@ -362,7 +411,7 @@ export function StartInterview() {
             size="lg"
             className="w-full cursor-pointer"
             onClick={handleSubmit}
-            disabled={isBusy}
+            disabled={isBusy || jdTooLong}
           >
             {isBusy ? MESSAGES.START_SUBMIT_PENDING : MESSAGES.START_SUBMIT}
           </Button>
