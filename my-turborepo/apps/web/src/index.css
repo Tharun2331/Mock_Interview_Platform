@@ -1,19 +1,33 @@
 @import "../styles/globals.css";
 
 @layer base {
-  html {
-    /* The interview screen owns its own scrolling region. Locking the document
-       stops the page itself bouncing underneath a live transcript on touch. */
-    @apply h-full;
+  /* The document does not scroll. Every screen behind the login is an app
+     shell — fixed header, fixed footer, one scrolling region in between — and
+     the scrolling region is `main`, never the page.
+
+     `h-full` alone used to carry this comment and did not do it: a height is
+     not a lock, and anything overflowing still grew the document. The footer
+     then scrolled away with the content and the page kept going into empty
+     background past it, which is what a reader actually saw. */
+  html,
+  body {
+    @apply h-full overflow-hidden;
   }
 
   body {
     /* Not grid place-items-center. Screens lay themselves out — the plan card
        centres, the interview fills the frame — and a centring rule on body
        fights the ones that need the height. */
-    @apply m-0 min-h-full min-w-[320px];
+    @apply m-0 min-w-[320px];
     /* No background here: globals.css already gives body `bg-background`, and
        the built CSS confirms it. The colour that needed fixing was on <html>,
        which is painted inline in index.html before the bundle runs. */
+  }
+
+  /* The link between <body> and the shell. Without a height here the chain
+     breaks at the mount point, every `h-full` below it resolves against
+     `auto`, and the shell falls back to sizing itself from its content. */
+  #root {
+    @apply h-full;
   }
 }

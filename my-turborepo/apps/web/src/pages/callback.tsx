@@ -41,7 +41,7 @@ export function Callback() {
   }, [navigate]);
 
   return (
-    <div className="flex min-h-screen w-full flex-col items-center justify-center gap-6 bg-background p-4">
+    <div className="flex h-full w-full flex-col items-center justify-center gap-6 bg-background p-4">
       {/* The same bloom the rest of the product uses, here as the only thing on
           screen. A redirect landing is a moment of doubt about whether anything
           is happening, so it gets the brand mark rather than bare text. */}

@@ -19,7 +19,11 @@ type AuthLayoutProps = { children: ReactNode };
 
 export function AuthLayout({ children }: AuthLayoutProps) {
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-background">
+    // `h-full`, not `min-h-screen`: the document itself no longer scrolls, so
+    // a screen that outgrows the viewport has to own a scrolling region or its
+    // overflow is simply unreachable. `overflow-hidden` stays on the outer
+    // frame to clip the bloom; the scroll sits on the content grid inside it.
+    <div className="relative h-full w-full overflow-hidden bg-background">
       {/* The bloom at rest, sized generously and sitting far behind the
           content. One hue, held still — a drifting field of colours would be a
           second signature competing with the first. */}
@@ -34,7 +38,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
           first to find the switch. */}
       <ThemeToggle className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6" />
 
-      <div className="relative mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 gap-16 px-6 py-10 lg:grid-cols-2 lg:items-center lg:gap-20 lg:px-10">
+      <div className="relative mx-auto grid h-full w-full max-w-6xl grid-cols-1 gap-16 overflow-y-auto px-6 py-10 lg:grid-cols-2 lg:items-center lg:gap-20 lg:px-10">
         <section className="flex flex-col justify-center">
           <BrandMark size="lg" className="lg:mb-14" />
 
