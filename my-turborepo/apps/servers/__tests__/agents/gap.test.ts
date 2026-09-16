@@ -64,8 +64,14 @@ describe("bucketing", () => {
       expect(item.evidence.length).toBeGreaterThan(0);
     }
     // "no evidence found" is the most useful note of the three — it is what the
-    // interview is going to probe.
-    const missing = analysis.requirements.find((i) => i.bucket === "none");
+    // interview is going to probe. Found by name rather than by "the first
+    // none": Terraform's note says "no Terraform named", which the repair pass
+    // reads as an absence and demotes, so there are two `none`s by the time
+    // this runs and their order is not the assertion.
+    const missing = analysis.requirements.find(
+      (i) => i.requirement === "Kubernetes"
+    );
+    expect(missing?.bucket).toBe("none");
     expect(missing?.evidence).toBe("not mentioned anywhere");
   });
 
@@ -85,6 +91,27 @@ describe("bucketing", () => {
     expect(analysis.sessionId).toBe(INPUT.sessionId);
     expect(analysis.createdAt).not.toBe("1999-01-01T00:00:00.000Z");
     expect(GapAnalysisSchema.safeParse(analysis).success).toBe(true);
+  });
+
+  // The repair pass has its own file; this is the wire between them, so a
+  // refactor that drops the call is a failure here rather than a silently
+  // worse interview.
+  it("repairs what the model got wrong before returning it", async () => {
+    setStructuredReplies([
+      {
+        requirements: [
+          {
+            requirement: "Familiarity with build tools such as Webpack or Vite.",
+            bucket: "strong",
+            evidence: "Vite not explicitly mentioned, but Docker and CI/CD experience.",
+          },
+        ],
+      },
+    ]);
+
+    const analysis = await runGapAgent(INPUT);
+
+    expect(analysis.requirements[0]?.bucket).toBe("none");
   });
 
   it("produces an item that satisfies the stored schema", async () => {
