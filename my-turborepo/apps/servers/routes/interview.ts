@@ -81,6 +81,32 @@ function isFinalStage(generationStage: string | null): boolean {
   return generationStage !== null && generationStage.includes("FINAL");
 }
 
+// Sonic signals a barge-in by emitting `{"interrupted":true}` as an assistant
+// textOutput, on the same channel as speech.
+//
+// Parsed rather than string-matched on the exact spacing Sonic happens to use
+// today, and guarded by a length cap so a genuine sentence is never handed to
+// JSON.parse. An observed session showed this rendered to the candidate as
+// something the interviewer said, appended into the question text the Evaluator
+// scored against, and triggering an exchange boundary.
+export function isInterruptionSentinel(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("{") || trimmed.length > 64) return false;
+
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "interrupted" in parsed &&
+      (parsed as { interrupted: unknown }).interrupted === true
+    );
+  } catch {
+    // A sentence that merely opens with a brace is speech, not a signal.
+    return false;
+  }
+}
+
 type ToolCall = { toolName: string; toolUseId: string; content: string };
 
 // Where the session stands against its planned length. The single place minutes
@@ -409,6 +435,15 @@ async function handleConnection(
             break;
 
           case "textOutput":
+            // Sonic reports a barge-in by emitting `{"interrupted":true}` as an
+            // assistant textOutput. It is a control signal wearing a
+            // transcript's clothes, and treating it as speech did three things
+            // at once in a measured session: it was shown to the candidate as
+            // something the interviewer said, it was appended into the question
+            // text the Evaluator later scored against, and it triggered an
+            // exchange boundary. Dropped before any of that.
+            if (isInterruptionSentinel(event.content)) break;
+
             // Role is carried on the preceding contentStart, not here, so the
             // last seen role is tracked above.
             sendEvent(socket, {
@@ -419,16 +454,14 @@ async function handleConnection(
             });
 
             if (lastRole === "ASSISTANT" && !lastFinal) {
-              // The interviewer starting a new turn while an answer is pending
-              // is what marks the previous exchange complete. This is the flush
-              // trigger rather than the candidate's FINAL transcript, because
-              // Sonic emits those per sentence — flushing on each would write
-              // one item per sentence, splitting a single answer across several
-              // records and multiplying writes by the length of the answer.
+              // Accumulated only. The exchange closes when the interviewer's
+              // turn ENDS, handled under contentEnd below — not here.
               //
-              // Synchronous up to its first await, so the state reset inside it
-              // happens before the append below.
-              if (state.buffer.hasAnswer) void flushExchange();
+              // Flushing on the first token of a new question was wrong for the
+              // case that actually happens: Sonic takes its turn after roughly
+              // two seconds of silence, which is inside a normal thinking
+              // pause, so the candidate carries on and their continuation was
+              // filed under the question that had just started.
               state.buffer.appendQuestion(event.content);
             } else if (lastRole === "USER" && lastFinal) {
               // Accumulated only. Sonic emits a FINAL USER transcript per
@@ -471,8 +504,22 @@ async function handleConnection(
               // question is not comparable to one given after the whole
               // question, and the Evaluator needs to know which it is scoring.
               state.buffer.markInterrupted();
+              // The question was never finished being asked, so it cannot claim
+              // the words that follow — those continue whatever the candidate
+              // was already saying. Deliberately not merged into the re-asked
+              // question either: the interviewer repeats itself after a
+              // barge-in, and keeping the fragment would prefix the re-asked
+              // question with the half-sentence that preceded it.
+              state.buffer.dropPendingQuestion();
               sendEvent(socket, { type: "interrupted" });
             } else if (event.stopReason === "END_TURN") {
+              // The real exchange boundary: the interviewer has finished asking
+              // the next question, so whatever the candidate said before it is
+              // a complete answer to the previous one.
+              //
+              // Synchronous up to its first await, so the buffer rolls forward
+              // before any further event can append to it.
+              if (state.buffer.isComplete) void flushExchange();
               sendEvent(socket, { type: "turnEnded" });
             }
             break;

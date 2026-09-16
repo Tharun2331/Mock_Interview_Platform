@@ -24,11 +24,29 @@
     <style>
       html {
         background: #fafaf9;
+        color-scheme: light;
       }
       @media (prefers-color-scheme: dark) {
         html {
           background: #08090b;
+          color-scheme: dark;
         }
+      }
+      /* The media query alone was wrong the moment someone chose against their
+         OS. next-themes is configured with attribute="class", so it marks the
+         resolved theme on <html> — and until these existed, a dark-OS user who
+         picked light kept a #08090b page behind a light app. Any pixel the
+         shell did not cover showed as a dark band under the footer.
+
+         Listed after the media query so an explicit choice always wins over the
+         system default, whichever way round they are. */
+      html.light {
+        background: #fafaf9;
+        color-scheme: light;
+      }
+      html.dark {
+        background: #08090b;
+        color-scheme: dark;
       }
     </style>
   </head>

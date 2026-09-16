@@ -6,15 +6,27 @@ import { ulid } from "ulid";
 // against a recorded event sequence — which is how the fragmentation bug below
 // was proven fixed rather than assumed.
 //
-// The bug worth understanding before editing this: Sonic emits a FINAL USER
-// transcript per *sentence fragment*, not per answer. An earlier version
-// flushed on each one, which turned a single spoken answer into eight DynamoDB
-// items — the first with a question attached and the rest with none, each
-// holding a few words. Roughly 40x the writes, and a transcript the Evaluator
-// cannot score.
+// The first bug worth understanding: Sonic emits a FINAL USER transcript per
+// *sentence fragment*, not per answer. An earlier version flushed on each one,
+// which turned a single spoken answer into eight DynamoDB items — the first
+// with a question attached and the rest with none, each holding a few words.
+// Roughly 40x the writes, and a transcript the Evaluator cannot score.
 //
-// The real boundary is the interviewer starting to speak again. That is the
-// only signal in the stream that means "the candidate is done".
+// The second, found in a real session: the boundary is the interviewer
+// FINISHING a question, not starting one. Sonic takes its turn after about two
+// seconds of silence, which is well inside a candidate's thinking pause — so it
+// would start a new question, the candidate would carry on with the answer they
+// were already giving, and that continuation was filed under the question that
+// had just started. The measured result was the tail of an introduction stored
+// against "tell me about the Brainly platform", scored 2/10 for correctness,
+// and coaching that told the candidate they had derailed. They had not; the
+// buffer had.
+//
+// So a question spoken while an answer is already pending accumulates as the
+// NEXT question, and the exchange only closes when the interviewer's turn
+// actually ends. A turn the candidate talks over never closes one — the
+// question was not finished being asked, and the words that follow belong to
+// what the candidate was already saying.
 export type CompletedExchange = {
   questionId: string;
   questionText: string;
@@ -27,6 +39,10 @@ export type CompletedExchange = {
 export class ExchangeBuffer {
   private questionId = ulid();
   private questionParts: string[] = [];
+  // The question currently being spoken, when an answer to the previous one is
+  // already in hand. Held apart until the interviewer's turn ends, so a
+  // question the candidate talks over cannot claim their continuing speech.
+  private pendingQuestionParts: string[] = [];
   private answerParts: string[] = [];
   private askedAt = Date.now();
   private interrupted = false;
@@ -34,7 +50,14 @@ export class ExchangeBuffer {
   // Sonic emits a question as several sentence-level blocks, so they are joined
   // rather than replaced.
   appendQuestion(text: string): void {
-    this.questionParts.push(text.trim());
+    const trimmed = text.trim();
+    // Once the candidate has answered, anything the interviewer says is the
+    // next question rather than more of the current one.
+    if (this.hasAnswer) {
+      this.pendingQuestionParts.push(trimmed);
+      return;
+    }
+    this.questionParts.push(trimmed);
   }
 
   appendAnswer(text: string): void {
@@ -52,9 +75,29 @@ export class ExchangeBuffer {
     return this.answerParts.some((part) => part.length > 0);
   }
 
-  // Returns the completed exchange and resets for the next one, or null if
-  // there is no answer yet — which is the case for the interviewer's opening
-  // turn, before the candidate has said anything.
+  // Whether the interviewer finishing its turn closes an exchange.
+  //
+  // Both halves are required. A pending question with no answer is the
+  // interviewer still setting up — several turns before the candidate has said
+  // anything — and an answer with no pending question means nobody has asked
+  // the next one yet.
+  get isComplete(): boolean {
+    return this.pendingQuestionParts.length > 0 && this.hasAnswer;
+  }
+
+  // Discards a question the candidate talked over.
+  //
+  // Deliberately NOT merged into the next one. The interviewer re-asks after
+  // being interrupted, so keeping the fragment would prefix every re-asked
+  // question with the half-sentence that preceded it — and that text is what
+  // the Evaluator is told the candidate was answering.
+  dropPendingQuestion(): void {
+    this.pendingQuestionParts = [];
+  }
+
+  // Returns the completed exchange and rolls forward, or null if there is no
+  // answer yet — the case for the interviewer's opening turn, before the
+  // candidate has said anything.
   take(now: number = Date.now()): CompletedExchange | null {
     if (!this.hasAnswer) return null;
 
@@ -68,7 +111,10 @@ export class ExchangeBuffer {
     };
 
     this.questionId = ulid();
-    this.questionParts = [];
+    // The question that was being asked becomes the current one, rather than
+    // being thrown away — it is what the next answer responds to.
+    this.questionParts = this.pendingQuestionParts;
+    this.pendingQuestionParts = [];
     this.answerParts = [];
     this.askedAt = now;
     this.interrupted = false;
