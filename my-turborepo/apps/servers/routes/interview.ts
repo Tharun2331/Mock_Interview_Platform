@@ -17,6 +17,7 @@ import { startEvaluationSummary } from "../lib/evaluations";
 import { enqueueEvaluations } from "../lib/sqs";
 import {
   finishInterview,
+  loadGapAnalysis,
   recordAnswer,
   startInterview,
 } from "../lib/sessions";
@@ -313,6 +314,13 @@ async function handleConnection(
       history: [],
     };
 
+    // Read once and reused by every stream. Null when the candidate pasted no
+    // job description, which is the common case — the prompt then omits the
+    // budget section entirely. A read failure also lands here as null rather
+    // than throwing: this is targeting for an interview about to start, and
+    // losing it costs focus rather than the session.
+    const gapAnalysis = await loadGapAnalysis({ sessionId });
+
     // Which stream is being opened. The first gets the opening instructions;
     // every later one is told the interview is already under way.
     let streamsOpened = 0;
@@ -402,6 +410,7 @@ async function handleConnection(
           // server's timers are actually enforcing.
           targetMinutes,
           resuming: !isFirstStream,
+          gapAnalysis,
         });
       },
       tools: INTERVIEW_TOOLS,

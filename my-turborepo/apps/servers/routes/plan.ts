@@ -6,6 +6,7 @@ import {
   type PlanResponse,
 } from "@repo/shared";
 import { runPlanner } from "../agents/planner";
+import { analyseGap, summariseRepos } from "./gap";
 import { getCachedPlan, putCachedPlan } from "../lib/profile";
 import {
   BedrockError,
@@ -140,6 +141,25 @@ planRouter.post("/", async (req, res) => {
       targetRole: parsed.data.targetRole,
       plan: result,
     });
+
+    // The Gap agent, triggered by planning and deliberately not read by it.
+    //
+    // Fired after the plan is persisted and never awaited on the response path:
+    // the plan is what the candidate is waiting for, and the analysis only has
+    // to be in place before the interview starts. A failure costs the interview
+    // its targeting, not its plan — so it is logged and swallowed.
+    //
+    // Skipped entirely without a job description. Calling the model with an
+    // empty posting would spend tokens to produce buckets for requirements that
+    // do not exist.
+    if (parsed.data.jobDescription !== undefined) {
+      void analyseGap({
+        sessionId: parsed.data.sessionId,
+        jobDescription: parsed.data.jobDescription,
+        resumeText: inputs.resumeText ?? "",
+        githubSummary: summariseRepos(inputs.repos),
+      });
+    }
 
     stage("done");
     res.json(result);

@@ -35,8 +35,12 @@ import {
   converseCallCount,
   lastConverseCall,
   resetBedrockStub,
+  resetStructuredStub,
   setModelFailure,
   setModelReply,
+  setStructuredFailure,
+  setStructuredReplies,
+  structuredCallCount,
 } from "../helpers/bedrockStub";
 
 const { planRouter } = await import("../../routes/plan");
@@ -114,6 +118,10 @@ const BODY = { sessionId: SESSION_ID, targetRole: "Backend Engineer" };
 beforeEach(() => {
   ddb.reset();
   resetBedrockStub();
+  // The structured half too. Both live on the same stubbed module, and its call
+  // counts are cumulative for the whole process — without this, the gap-trigger
+  // assertions here count every call agents/gap.test.ts made before them.
+  resetStructuredStub();
   // A well-formed generation by default; failure cases override it.
   setModelReply(JSON.stringify(PLAN));
 });
@@ -299,6 +307,106 @@ describe("the plan cache", () => {
     expect(converseCallCount()).toBe(1);
     expect(ddb.commandCalls(GetCommand)).toHaveLength(0);
     expect(ddb.commandCalls(PutCommand)).toHaveLength(0);
+  });
+});
+
+// The Planner triggers the Gap agent and deliberately never reads its output.
+// A job description is optional throughout, and its absence means the agent is
+// skipped entirely rather than called with an empty string.
+describe("the gap trigger", () => {
+  // A second structured call is the only observable difference, since the
+  // trigger is fire-and-forget and the plan response is identical either way.
+  function gapCalls(): number {
+    return structuredCallCount();
+  }
+
+  it("does not run the Gap agent when no job description was sent", async () => {
+    sessionFound();
+    ddb.on(GetCommand).resolves({});
+    ddb.on(PutCommand).resolves({});
+    ddb.on(UpdateCommand).resolves({});
+    const { url } = await start();
+
+    const response = await postPlan(url, BODY);
+
+    expect(response.status).toBe(200);
+    expect(gapCalls()).toBe(0);
+  });
+
+  it("still returns a valid plan without one", async () => {
+    sessionFound();
+    ddb.on(GetCommand).resolves({});
+    ddb.on(PutCommand).resolves({});
+    ddb.on(UpdateCommand).resolves({});
+    const { url } = await start();
+
+    const response = await postPlan(url, BODY);
+
+    expect(await response.json()).toEqual(PLAN);
+    expect(gapCalls()).toBe(0);
+  });
+
+  it("runs the Gap agent when a job description is present", async () => {
+    sessionFound();
+    ddb.on(GetCommand).resolves({});
+    ddb.on(PutCommand).resolves({});
+    ddb.on(UpdateCommand).resolves({});
+    setStructuredReplies([
+      {
+        requirements: [
+          { requirement: "Kubernetes", bucket: "none", evidence: "not mentioned" },
+        ],
+      },
+    ]);
+    const { url } = await start();
+
+    const response = await postPlan(url, {
+      ...BODY,
+      jobDescription: "We need Kubernetes and Terraform experience.",
+    });
+
+    expect(response.status).toBe(200);
+    // Fire-and-forget, so the write lands after the response. Awaited here only
+    // to let the microtask queue drain.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(gapCalls()).toBe(1);
+  });
+
+  // The plan is what the candidate is waiting for. A failed analysis costs the
+  // interview its targeting, not its plan.
+  it("returns the plan even when the analysis fails", async () => {
+    sessionFound();
+    ddb.on(GetCommand).resolves({});
+    ddb.on(PutCommand).resolves({});
+    ddb.on(UpdateCommand).resolves({});
+    setStructuredFailure(new Error("model unavailable"));
+    const { url } = await start();
+
+    const response = await postPlan(url, {
+      ...BODY,
+      jobDescription: "We need Kubernetes and Terraform experience.",
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(PLAN);
+    // Drained before the test ends. runGapAgent retries once on failure, so the
+    // trigger outlives the response by two model calls — and a call landing
+    // after the next test's reset would be counted against that test instead.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  });
+
+  // Whitespace is not a job description. Trimmed to nothing by the schema, so
+  // it is rejected before the handler body runs at all.
+  //
+  // Asserted on the status alone: a 400 means nothing downstream executed,
+  // which is a stronger statement than a call count — and one that cannot be
+  // perturbed by a previous test's in-flight trigger.
+  it("rejects a whitespace-only job description rather than analysing it", async () => {
+    const { url } = await start();
+
+    const response = await postPlan(url, { ...BODY, jobDescription: "   " });
+
+    expect(response.status).toBe(400);
   });
 });
 

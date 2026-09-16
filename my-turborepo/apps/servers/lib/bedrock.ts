@@ -140,3 +140,137 @@ export async function converseText(
     modelIds
   );
 }
+
+// A JSON Schema describing the object the model must produce.
+//
+// Structurally a JSON document, which is what the SDK's `DocumentType` wants —
+// spelled out here rather than imported so the tool schema cannot quietly grow
+// a value the wire format does not carry (a Date, a function, undefined).
+//
+// It is not a guarantee about the model's output. That comes from the caller's
+// Zod parse; this only constrains what is asked for.
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+export type ToolInputSchema = { [key: string]: JsonValue };
+
+export type ConverseStructuredArgs = {
+  system: string;
+  prompt: string;
+  // The name is visible to the model and reads as an instruction, so it is
+  // phrased as the action being taken rather than as a type name.
+  toolName: string;
+  toolDescription: string;
+  inputSchema: ToolInputSchema;
+  maxTokens?: number;
+};
+
+export type StructuredResult = {
+  // Whatever the model produced, unvalidated. The caller parses it.
+  value: unknown;
+  modelId: string;
+  // How the value was obtained. Worth surfacing because the fallback path is
+  // materially less reliable, and a chain that silently never uses tool use is
+  // something to find out about from a log rather than from a bad analysis.
+  via: "toolUse" | "text";
+};
+
+// Asks for a structured object rather than prose, by giving the model exactly
+// one tool and requiring it.
+//
+// `toolChoice: { tool }` is what makes this a constraint rather than a
+// suggestion: the model cannot answer in prose, so there is no prompt to
+// out-argue and no fenced JSON to recover from on the happy path.
+//
+// The text fallback is not redundant. Tool support varies across the three
+// models in the chain and is not verified for all of them, so a model that
+// ignores the tool and answers in prose still produces a usable object rather
+// than a failed request — the fences it wraps that prose in are stripped by
+// extractJsonObject at the call site.
+export async function converseStructured(
+  args: ConverseStructuredArgs
+): Promise<StructuredResult> {
+  const modelIds = config.bedrockTextModelIds;
+  const failures: string[] = [];
+
+  for (const modelId of modelIds) {
+    try {
+      const response = await bedrockClient.send(
+        new ConverseCommand({
+          modelId,
+          system: [{ text: args.system }],
+          messages: [{ role: "user", content: [{ text: args.prompt }] }],
+          inferenceConfig: {
+            maxTokens: args.maxTokens ?? BEDROCK.MAX_TOKENS,
+            // Zero, not BEDROCK.TEMPERATURE. This is a classification into a
+            // fixed set of buckets, and there is no version of it that benefits
+            // from variety.
+            temperature: 0,
+          },
+          toolConfig: {
+            tools: [
+              {
+                toolSpec: {
+                  name: args.toolName,
+                  description: args.toolDescription,
+                  inputSchema: { json: args.inputSchema },
+                },
+              },
+            ],
+            toolChoice: { tool: { name: args.toolName } },
+          },
+        })
+      );
+
+      const content = response.output?.message?.content ?? [];
+
+      // Walked rather than found with a type predicate: ContentBlock is a
+      // closed union including an `$unknown` member, so a predicate narrowing
+      // to a hand-written shape is rejected. Reading the field off each block
+      // needs no narrowing at all.
+      let toolInput: unknown;
+      for (const block of content) {
+        if ("toolUse" in block && block.toolUse?.input !== undefined) {
+          toolInput = block.toolUse.input;
+          break;
+        }
+      }
+
+      if (toolInput !== undefined) {
+        if (failures.length > 0) {
+          console.warn(
+            `[bedrock] structured answer from ${modelId} after ${failures.length} failed — ${failures.join(" | ")}`
+          );
+        }
+        return { value: toolInput, modelId, via: "toolUse" };
+      }
+
+      // No tool block. The model answered in prose despite being required not
+      // to, which some models in the chain do. Hand the text back for the
+      // caller to strip and parse.
+      const text = readText(content);
+      if (text.length > 0) {
+        console.warn(
+          `[bedrock] ${modelId} ignored toolChoice and answered in text — falling back to parsing`
+        );
+        return { value: text, modelId, via: "text" };
+      }
+
+      failures.push(`${modelId}: empty response`);
+    } catch (error) {
+      failures.push(
+        `${modelId}: ${error instanceof Error ? error.message : "unknown error"}`
+      );
+    }
+  }
+
+  throw new BedrockError(
+    `All Bedrock text models failed — ${failures.join(" | ")}`,
+    modelIds
+  );
+}

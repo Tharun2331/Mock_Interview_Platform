@@ -1,6 +1,7 @@
 import z from "zod";
 import type { PlanResponse } from "@repo/shared";
 import { INTERVIEW, INTERVIEW_TOOL_NAMES } from "../lib/constants";
+import { gapQuestionTargets, type GapAnalysis } from "@repo/shared";
 import { wrapUpAtRemainingMinutes } from "../lib/interviewClock";
 
 // The Mock Interview agent is the one agent that is not a `ConverseCommand`
@@ -91,6 +92,56 @@ function renderClock(targetMinutes: number, clock: InterviewClock): string[] {
   ];
 }
 
+// How the interview spends its questions against the job description.
+//
+// Rendered only when a gap analysis exists. It is optional throughout — a
+// candidate who pasted no posting gets the session brief alone, which is the
+// behaviour this product had before any of this existed.
+//
+// The 60/40 split is expressed as a rule rather than a count because the
+// interviewer has no counter: it cannot track "I have asked six of ten". Naming
+// which requirements to probe and which to confirm gets the same distribution
+// from a model that can only see the list.
+function renderGapBudget(analysis: GapAnalysis): string[] {
+  const { probe, confirm } = gapQuestionTargets(analysis);
+
+  // Nothing to steer with. An analysis that found no requirements is a posting
+  // the model could not read, and inventing emphasis from it would be worse
+  // than falling back to the brief.
+  if (probe.length === 0 && confirm.length === 0) return [];
+
+  const lines = ["WHAT THIS ROLE ASKS FOR"];
+
+  if (probe.length > 0) {
+    lines.push(
+      "Spend roughly three questions in five here. The candidate's material does",
+      "not evidence these, so this is where the interview earns its keep — and",
+      "where they most need to hear what they could not answer.",
+      ...probe.map((item) => `- ${item.requirement} — ${item.evidence}`)
+    );
+  }
+
+  if (confirm.length > 0) {
+    lines.push(
+      "",
+      "Spend roughly two questions in five here, confirming rather than probing.",
+      "Their material already evidences these, so ask for the specifics behind",
+      "the claim rather than whether it is true.",
+      ...confirm.map((item) => `- ${item.requirement} — ${item.evidence}`)
+    );
+  }
+
+  lines.push(
+    "",
+    "This is emphasis inside the one round, not a second round and not a script.",
+    "Do not read the list aloud and do not tell them how they were bucketed —",
+    "it would tell a candidate what the interview thinks of them mid-answer.",
+    ""
+  );
+
+  return lines;
+}
+
 // The first stream has to be told to speak first. Every later one must NOT be:
 // the interview is already underway, and re-issuing the opening instructions to
 // a stream that opens thirty minutes in tells the model to greet the candidate
@@ -147,6 +198,10 @@ export type InterviewPromptOptions = {
   // time source was a tool result it may or may not have called for. Production
   // had the same hole for its first six and a half minutes.
   clock?: InterviewClock;
+  // What the job description asks for, bucketed against the candidate material.
+  // Null for a session with no posting, which is the default path rather than
+  // an error path — the interview then runs on the session brief alone.
+  gapAnalysis?: GapAnalysis | null;
   // The length the session is actually running to, which is the plan's own
   // figure except under the test override. Passed in rather than read from the
   // plan so the prompt cannot state one budget while the server's timers
@@ -164,7 +219,7 @@ export function buildInterviewSystemPrompt(
   options: InterviewPromptOptions = {}
 ): string {
   const targetMinutes = options.targetMinutes ?? plan.targetMinutes;
-  const { clock, resuming = false } = options;
+  const { clock, resuming = false, gapAnalysis = null } = options;
 
   return [
     ...(clock === undefined ? [] : renderClock(targetMinutes, clock)),
@@ -176,6 +231,10 @@ export function buildInterviewSystemPrompt(
     "Drawn from the candidate's own repositories and resume. Never read it aloud,",
     "never mention that you have it, and never refer to it as a document.",
     renderFocusAreas(plan),
+    "",
+    // Absent for a session with no job description, which is the default path
+    // rather than an error path.
+    ...(gapAnalysis === null ? [] : renderGapBudget(gapAnalysis)),
     "",
     `Question budget: roughly ${plan.questionMix.behavioural} behavioural, ${plan.questionMix.technical} technical, ${plan.questionMix.roleSpecific} role-specific.`,
     `Target length: about ${targetMinutes} minutes. This is a hard budget,`,

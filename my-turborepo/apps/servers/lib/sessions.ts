@@ -5,12 +5,14 @@ import {
 import {
   BatchGetCommand,
   BatchWriteCommand,
+  GetCommand,
   PutCommand,
   QueryCommand,
   TransactWriteCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import {
+  GapAnalysisSchema,
   ITEM_TYPE,
   KEY_PREFIX,
   PLAN_LIMITS,
@@ -21,6 +23,7 @@ import {
   sessionPk,
   sessionSk,
   userPk,
+  type GapAnalysis,
   type PlannerInput,
   type PlanResponse,
   type PreInterviewRepo,
@@ -547,6 +550,80 @@ export async function completeEvaluation(args: {
   }
 
   return true;
+}
+
+// The job-description gap analysis for a session.
+//
+// Stored so the Mock Interview agent can read it on every stream — a renewal
+// happens roughly every six minutes, and re-running the analysis each time
+// would multiply a per-session Bedrock call by the length of the interview.
+export async function putGapAnalysis(args: {
+  analysis: GapAnalysis;
+}): Promise<void> {
+  try {
+    await dynamoClient.send(
+      new PutCommand({
+        TableName: requireTable(),
+        Item: {
+          PK: sessionPk(args.analysis.sessionId),
+          SK: SORT_KEY.GAP,
+          ...args.analysis,
+          // Every session-scoped item carries one, or it outlives the session
+          // it belongs to and becomes an orphan nothing reads and nothing
+          // deletes.
+          expiresAt: sessionExpiresAt(),
+        },
+      })
+    );
+  } catch (error) {
+    throw new ServiceError(
+      `${MESSAGES.GAP_WRITE_FAILED} — ${
+        error instanceof Error ? error.message : "unknown"
+      }`
+    );
+  }
+}
+
+// Null when the session has none, which is the normal case: the job description
+// is optional, and without one the Gap agent never ran.
+//
+// Returns null on a read failure too, deliberately. This is targeting
+// information for an interview that is already live — degrading to the
+// unfocused-but-working behaviour beats failing a session the candidate is
+// sitting in.
+export async function loadGapAnalysis(args: {
+  sessionId: string;
+}): Promise<GapAnalysis | null> {
+  let response;
+  try {
+    response = await dynamoClient.send(
+      new GetCommand({
+        TableName: requireTable(),
+        Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.GAP },
+      })
+    );
+  } catch (error) {
+    console.warn(
+      `[sessions] ${args.sessionId} gap read failed, continuing without it — ${
+        error instanceof Error ? error.message : "unknown"
+      }`
+    );
+    return null;
+  }
+
+  if (response.Item === undefined) return null;
+
+  const parsed = GapAnalysisSchema.safeParse(response.Item);
+  if (!parsed.success) {
+    // Same reasoning as a read failure: a stored analysis that no longer
+    // matches its schema is not worth ending an interview over.
+    console.warn(
+      `[sessions] ${args.sessionId} gap analysis did not parse, continuing without it`
+    );
+    return null;
+  }
+
+  return parsed.data;
 }
 
 // Loads a session for the live interview and moves it to `in_progress`.
