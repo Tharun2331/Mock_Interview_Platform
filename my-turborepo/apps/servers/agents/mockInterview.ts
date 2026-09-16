@@ -1,7 +1,12 @@
 import z from "zod";
 import type { PlanResponse } from "@repo/shared";
 import { INTERVIEW, INTERVIEW_TOOL_NAMES } from "../lib/constants";
-import { gapQuestionTargets, type GapAnalysis } from "@repo/shared";
+import {
+  gapQuestionTargets,
+  intelIsEmpty,
+  type CompanyIntel,
+  type GapAnalysis,
+} from "@repo/shared";
 import { wrapUpAtRemainingMinutes } from "../lib/interviewClock";
 
 // The Mock Interview agent is the one agent that is not a `ConverseCommand`
@@ -102,6 +107,75 @@ function renderClock(targetMinutes: number, clock: InterviewClock): string[] {
 // interviewer has no counter: it cannot track "I have asked six of ten". Naming
 // which requirements to probe and which to confirm gets the same distribution
 // from a model that can only see the list.
+// Tone and emphasis, never subject matter.
+//
+// Each line is written as a nudge rather than a rule, and every "unknown" is
+// silently skipped: a company the search could not read should leave the
+// interview exactly as it found it. An all-unknown result renders nothing at
+// all — a section saying "we learned nothing" spends tokens telling the
+// interviewer to ignore it.
+//
+// SCOPE, and this is the part worth holding onto: nothing here may create a
+// round. A company famous for algorithm puzzles gets "lean theoretical", not a
+// LeetCode round — that needs an execution sandbox, and a system-design round
+// needs a diagramming surface. Both are v2, and a prompt that invents them
+// produces an interview the product cannot actually conduct.
+function renderCompanyIntel(intel: CompanyIntel): string[] {
+  if (intelIsEmpty(intel)) return [];
+
+  const lines = [`HOW ${intel.company.toUpperCase()} TENDS TO INTERVIEW`];
+
+  const notes = (intel.notes ?? "").trim();
+  if (notes.length > 0) {
+    // First, and named as authoritative. The enums below are assembled from
+    // public pages; this came from someone who spoke to a recruiter, and when
+    // the two disagree the person closer to the source wins.
+    lines.push(
+      "The candidate was told this directly. Where it disagrees with anything",
+      "below, this is what is true:",
+      notes,
+      ""
+    );
+  }
+
+  if (intel.style === "practical") {
+    lines.push("Lean practical: what they built and debugged, not what they can recite.");
+  } else if (intel.style === "theoretical") {
+    lines.push("Lean theoretical: reasoning and fundamentals behind the choices they made.");
+  } else if (intel.style === "mixed") {
+    lines.push("Mix practical and theoretical roughly evenly.");
+  }
+
+  if (intel.focus === "product") {
+    lines.push("Weight toward product work: users, tradeoffs, and what shipped.");
+  } else if (intel.focus === "infrastructure") {
+    lines.push("Weight toward systems work: scale, failure, and operability.");
+  } else if (intel.focus === "mixed") {
+    lines.push("Give product and systems work comparable weight.");
+  }
+
+  // Deliberately phrased as the bar to hold, not as a level to assign. The
+  // plan's own startingDifficulty is calibrated from the candidate's material
+  // and is still the thing being tested live; this only says how hard the room
+  // is, and must not override what the interviewer actually hears.
+  if (intel.seniority !== "unknown") {
+    lines.push(
+      `They interview to a ${intel.seniority} bar. Hold that standard when judging an`,
+      "answer — but keep calibrating difficulty to what you actually hear."
+    );
+  }
+
+  lines.push(
+    "",
+    "This is tone and emphasis inside this one round. It does not add a round, a",
+    "whiteboard, or a coding exercise, and it never outranks the requirements",
+    "above. Do not mention the company's process aloud.",
+    ""
+  );
+
+  return lines;
+}
+
 function renderGapBudget(analysis: GapAnalysis): string[] {
   const { probe, confirm } = gapQuestionTargets(analysis);
 
@@ -202,6 +276,10 @@ export type InterviewPromptOptions = {
   // Null for a session with no posting, which is the default path rather than
   // an error path — the interview then runs on the session brief alone.
   gapAnalysis?: GapAnalysis | null;
+  // What is publicly known about the company's interviews, plus whatever the
+  // candidate was told directly. Null for most sessions, and an all-unknown
+  // result renders nothing — this is the most optional input the prompt has.
+  companyIntel?: CompanyIntel | null;
   // The length the session is actually running to, which is the plan's own
   // figure except under the test override. Passed in rather than read from the
   // plan so the prompt cannot state one budget while the server's timers
@@ -219,7 +297,12 @@ export function buildInterviewSystemPrompt(
   options: InterviewPromptOptions = {}
 ): string {
   const targetMinutes = options.targetMinutes ?? plan.targetMinutes;
-  const { clock, resuming = false, gapAnalysis = null } = options;
+  const {
+    clock,
+    resuming = false,
+    gapAnalysis = null,
+    companyIntel = null,
+  } = options;
 
   return [
     ...(clock === undefined ? [] : renderClock(targetMinutes, clock)),
@@ -235,6 +318,11 @@ export function buildInterviewSystemPrompt(
     // Absent for a session with no job description, which is the default path
     // rather than an error path.
     ...(gapAnalysis === null ? [] : renderGapBudget(gapAnalysis)),
+    // Renders after the gap budget deliberately: the budget decides WHAT gets
+    // asked, this decides only HOW it is asked. Read the other way round, a
+    // company's reputation for algorithm puzzles could pull the whole interview
+    // off the requirements the posting actually listed.
+    ...(companyIntel === null ? [] : renderCompanyIntel(companyIntel)),
     "",
     `Question budget: roughly ${plan.questionMix.behavioural} behavioural, ${plan.questionMix.technical} technical, ${plan.questionMix.roleSpecific} role-specific.`,
     `Target length: about ${targetMinutes} minutes. This is a hard budget,`,

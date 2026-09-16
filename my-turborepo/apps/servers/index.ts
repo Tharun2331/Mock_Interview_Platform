@@ -5,6 +5,7 @@ import { config } from "./lib/config";
 import { planRouter } from "./routes/plan";
 import { preInterviewRouter } from "./routes/preInterview";
 import { gapRouter } from "./routes/gap";
+import { companyIntelRouter } from "./routes/companyIntel";
 import { profileRouter } from "./routes/profile";
 import { sessionsRouter } from "./routes/sessions";
 import { attachInterviewSocket } from "./routes/interview";
@@ -39,6 +40,10 @@ app.use("/api/v1/sessions", AuthMiddleware, apiRateLimiter, sessionsRouter);
 // Cognito-protected and rate limited like the rest: it runs a Bedrock call, so
 // it is among the more expensive things an authenticated caller can trigger.
 app.use("/api/v1/gap", AuthMiddleware, apiRateLimiter, gapRouter);
+// Same protection as /gap, and it needs it more: this is the one route that
+// reaches a non-AWS service, so an unauthenticated caller here would be
+// spending someone else's Tavily quota as well as Bedrock tokens.
+app.use("/api/v1/company", AuthMiddleware, apiRateLimiter, companyIntelRouter);
 
 // The HTTP server is captured rather than discarded: the interview WebSocket
 // attaches to its `upgrade` event, which is the only place a handshake can be

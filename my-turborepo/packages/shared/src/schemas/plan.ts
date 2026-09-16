@@ -73,6 +73,14 @@ export const PlanRequestSchema = z.object({
   // analysis of nothing is a Bedrock call that can only produce noise, and the
   // interview falls back to resume and GitHub alone.
   jobDescription: z.string().trim().min(1).max(8_000).optional(),
+  // Who the round is imitating. Optional like the posting, and gated behind it:
+  // the Company Intel agent runs only when BOTH are present, because a company
+  // name with no posting is a search with nothing to aim the result at.
+  companyName: z.string().trim().min(1).max(120).optional(),
+  // Anything the candidate already knows about the process — from a recruiter,
+  // from a friend who interviewed there. Outranks whatever search turns up:
+  // they are closer to the source than a public page is.
+  companyNotes: z.string().trim().min(1).max(1_000).optional(),
 });
 
 export type PlanRequest = z.infer<typeof PlanRequestSchema>;

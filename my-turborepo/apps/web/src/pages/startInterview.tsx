@@ -7,7 +7,12 @@ import {
   FileTextIcon,
   FolderGit2Icon,
 } from "lucide-react";
-import { GAP_LIMITS, PlanResponseSchema, type PlanResponse } from "@repo/shared";
+import {
+  GAP_LIMITS,
+  INTEL_LIMITS,
+  PlanResponseSchema,
+  type PlanResponse,
+} from "@repo/shared";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,6 +82,8 @@ export function StartInterview() {
   const [targetRole, setTargetRole] = useState("");
   const [roleError, setRoleError] = useState<string | null>(null);
   const [jobDescription, setJobDescription] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [companyNotes, setCompanyNotes] = useState("");
   const [setup, setSetup] = useState<Setup>({ status: "idle" });
 
   const isBusy = setup.status === "creating" || setup.status === "planning";
@@ -85,6 +92,13 @@ export function StartInterview() {
   // that is only whitespace is no posting at all, and the route rejects one.
   const trimmedJd = jobDescription.trim();
   const jdTooLong = trimmedJd.length > GAP_LIMITS.MAX_JOB_DESCRIPTION_CHARS;
+
+  // The company fields appear only once a posting exists, because the server
+  // only researches a company alongside one. Rendering them any earlier would
+  // offer an input that silently does nothing.
+  const trimmedCompany = companyName.trim();
+  const trimmedNotes = companyNotes.trim();
+  const showCompanyFields = trimmedJd.length > 0;
 
   // Split from session creation deliberately. The session already exists by the
   // time this runs, so a failure here is retryable on its own.
@@ -99,6 +113,17 @@ export function StartInterview() {
         // posting as "skip the Gap agent", and `""` would fail its `.min(1)`
         // and 400 the whole plan over a field nobody filled in.
         ...(trimmedJd.length > 0 ? { jobDescription: trimmedJd } : {}),
+        // Both gated on the posting for the same reason the server is: without
+        // one, a company name has nothing to aim the result at. Sent only when
+        // they would actually be used, so the body says what will happen.
+        ...(trimmedJd.length > 0 && trimmedCompany.length > 0
+          ? { companyName: trimmedCompany }
+          : {}),
+        ...(trimmedJd.length > 0 &&
+        trimmedCompany.length > 0 &&
+        trimmedNotes.length > 0
+          ? { companyNotes: trimmedNotes }
+          : {}),
       });
 
       const parsed = PlanResponseSchema.safeParse(response.data);
@@ -387,6 +412,58 @@ export function StartInterview() {
               {jdTooLong ? MESSAGES.START_JD_TOO_LONG : MESSAGES.START_JD_HINT}
             </p>
           </div>
+
+          {/* Revealed by the posting rather than always present. Two more
+              fields on an empty form is a longer form for everyone; revealed
+              here they arrive at the moment they start doing something. */}
+          {showCompanyFields ? (
+            <div className="flex flex-col gap-4 border-l border-hairline pl-4">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-baseline justify-between">
+                  <Label htmlFor="company">{MESSAGES.START_COMPANY_LABEL}</Label>
+                  <span className="font-mono text-[0.7rem] uppercase tracking-[0.12em] text-ink-faint">
+                    {MESSAGES.START_JD_OPTIONAL}
+                  </span>
+                </div>
+                <Input
+                  id="company"
+                  value={companyName}
+                  disabled={isBusy}
+                  placeholder={MESSAGES.START_COMPANY_PLACEHOLDER}
+                  aria-describedby="company-hint"
+                  maxLength={INTEL_LIMITS.MAX_COMPANY_CHARS}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                />
+                <p id="company-hint" className="text-xs text-ink-subtle">
+                  {MESSAGES.START_COMPANY_HINT}
+                </p>
+              </div>
+
+              {/* Only once a company is named — notes about nobody are notes
+                  the interview has no way to attach to anything. */}
+              {trimmedCompany.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="company-notes">
+                    {MESSAGES.START_COMPANY_NOTES_LABEL}
+                  </Label>
+                  <Textarea
+                    id="company-notes"
+                    value={companyNotes}
+                    disabled={isBusy}
+                    rows={3}
+                    placeholder={MESSAGES.START_COMPANY_NOTES_PLACEHOLDER}
+                    aria-describedby="company-notes-hint"
+                    maxLength={INTEL_LIMITS.MAX_NOTES_CHARS}
+                    className="max-h-40 resize-y"
+                    onChange={(e) => setCompanyNotes(e.target.value)}
+                  />
+                  <p id="company-notes-hint" className="text-xs text-ink-subtle">
+                    {MESSAGES.START_COMPANY_NOTES_HINT}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </CardContent>
 
         <CardFooter className="mt-6 flex-col gap-3">

@@ -17,6 +17,7 @@ import { startEvaluationSummary } from "../lib/evaluations";
 import { enqueueEvaluations } from "../lib/sqs";
 import {
   finishInterview,
+  loadCompanyIntel,
   loadGapAnalysis,
   recordAnswer,
   startInterview,
@@ -319,7 +320,14 @@ async function handleConnection(
     // budget section entirely. A read failure also lands here as null rather
     // than throwing: this is targeting for an interview about to start, and
     // losing it costs focus rather than the session.
-    const gapAnalysis = await loadGapAnalysis({ sessionId });
+    // Both read once and reused by every stream, and both null for most
+    // sessions. In parallel because they are independent reads on the same
+    // partition and this sits between the candidate pressing start and the
+    // interviewer speaking.
+    const [gapAnalysis, companyIntel] = await Promise.all([
+      loadGapAnalysis({ sessionId }),
+      loadCompanyIntel({ sessionId }),
+    ]);
 
     // Which stream is being opened. The first gets the opening instructions;
     // every later one is told the interview is already under way.
@@ -411,6 +419,7 @@ async function handleConnection(
           targetMinutes,
           resuming: !isFirstStream,
           gapAnalysis,
+          companyIntel,
         });
       },
       tools: INTERVIEW_TOOLS,

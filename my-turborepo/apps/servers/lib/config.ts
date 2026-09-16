@@ -130,6 +130,16 @@ export const config = {
   // Without a timeout a hung upstream holds the request open indefinitely and
   // requests pile up behind it.
   githubTimeoutMs:        Number(env("GITHUB_TIMEOUT_MS", "5000")),
+  // The Tavily key is NOT read from the environment — only the NAME of the SSM
+  // parameter holding it is. That is the whole point: the secret itself never
+  // appears in a task definition, a .env file, or `docker inspect`, and reading
+  // it requires the task role's ssm:GetParameter grant rather than a file.
+  tavilyApiKeyParam:      env("TAVILY_API_KEY_PARAM", ""),
+  tavilyApiBase:          env("TAVILY_API_BASE", "https://api.tavily.com"),
+  // Shorter than the GitHub timeout on purpose. This sits in front of a
+  // candidate waiting on a plan, and everything it produces is optional — a
+  // slow answer is worth less here than a fast absence.
+  tavilyTimeoutMs:        Number(env("TAVILY_TIMEOUT_MS", "4000")),
   // The GitHub call is unauthenticated (60 req/hr per IP), so an unthrottled
   // route burns the shared quota for every user at once.
   rateLimitWindowMs:      Number(env("RATE_LIMIT_WINDOW_MS", "60000")),
