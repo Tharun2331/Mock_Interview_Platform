@@ -3,7 +3,6 @@ import { NavLink, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { LogOutIcon, TrendingUpIcon, UserRoundIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-
 import { BrandMark } from "@/components/BrandMark";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -36,7 +35,22 @@ export function Header() {
 
   return (
     <header className="flex h-14 w-full shrink-0 items-center justify-between border-b border-hairline bg-background/80 px-4 backdrop-blur-sm sm:px-6">
-      <BrandMark />
+      <NavLink
+      to="/start"
+      className={({ isActive }) =>
+      cn(
+        "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
+        isActive
+          ? "text-ink"
+          : "text-ink-subtle hover:text-ink"
+      )
+    }
+      > 
+        
+        <BrandMark />
+      
+      </NavLink>
+      
       <div className="flex items-center gap-1">
         {/* A content destination, so it leads the group — the theme toggle and
             the two account actions stay together after it.
@@ -66,7 +80,7 @@ export function Header() {
           </NavLink>
         ) : null}
 
-        
+
 
         {/* The profile is no longer part of starting an interview, so this is
             the only way back to it once onboarding is done. NavLink rather

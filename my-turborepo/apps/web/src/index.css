@@ -12,5 +12,8 @@
        centres, the interview fills the frame — and a centring rule on body
        fights the ones that need the height. */
     @apply m-0 min-h-full min-w-[320px];
+    /* No background here: globals.css already gives body `bg-background`, and
+       the built CSS confirms it. The colour that needed fixing was on <html>,
+       which is painted inline in index.html before the bundle runs. */
   }
 }
