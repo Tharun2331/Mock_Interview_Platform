@@ -10,7 +10,7 @@ export function RequireAuth() {
     return (
       // Bootstrapping is one of auth's four renderable conditions, and it gets
       // the product's canvas rather than an unstyled flash on the way in.
-      <div className="flex h-screen w-full flex-col items-center justify-center gap-5 bg-background">
+      <div className="flex h-full w-full flex-col items-center justify-center gap-5 bg-background">
         <PresenceOrb
           hue="var(--cue)"
           className="size-12 animate-pulse motion-reduce:animate-none"

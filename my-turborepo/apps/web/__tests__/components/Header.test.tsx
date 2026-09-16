@@ -1,43 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanup, render, screen } from "@testing-library/react";
-import type { ProfileView } from "@repo/shared";
-
-type ProfileState =
-  | { status: "loading" }
-  | { status: "ready"; profile: ProfileView | null }
-  | { status: "error"; message: string };
-
-let profileState: ProfileState = { status: "loading" };
-
-mock.module("@/lib/profile", () => ({
-  useProfile: () => ({
-    ...profileState,
-    reload: () => {},
-    setProfile: () => {},
-    clear: () => {},
-  }),
-}));
-
-// Amplify reaches for a configured Cognito pool on import; the header only
-// needs the function to exist.
-mock.module("aws-amplify/auth", () => ({ signOut: async () => {} }));
+// The SHARED stubs, not local mock.module calls. Each of these modules is
+// registered exactly once for the whole process — see the helpers' headers.
+import "../helpers/amplifyAuthStub";
+import {
+  COMPLETE_PROFILE as COMPLETE,
+  resetProfileStub,
+  setProfileState,
+  type ProfileState,
+} from "../helpers/profileStub";
 
 const { Header } = await import("@/components/layout/Header");
 const { MESSAGES } = await import("@/lib/messages");
 const { MemoryRouter } = await import("react-router");
-
-const COMPLETE: ProfileView = {
-  userId: "user-1",
-  username: "tharun",
-  firstName: "Tharun",
-  lastName: "Sekar",
-  githubUsername: "Tharun2331",
-  hasResume: true,
-  repoCount: 2,
-  profileVersion: 3,
-  complete: true,
-  updatedAt: "2026-09-12T10:00:00.000Z",
-};
 
 function renderHeader(path = "/start") {
   return render(
@@ -47,15 +22,13 @@ function renderHeader(path = "/start") {
   );
 }
 
-beforeEach(() => {
-  profileState = { status: "loading" };
-});
+beforeEach(resetProfileStub);
 
 afterEach(cleanup);
 
 describe("the history link", () => {
   it("points at the history page for a complete profile", () => {
-    profileState = { status: "ready", profile: COMPLETE };
+    setProfileState({ status: "ready", profile: COMPLETE });
     renderHeader();
 
     const link = screen.getByRole("link", { name: MESSAGES.HISTORY_NAV });
@@ -66,17 +39,17 @@ describe("the history link", () => {
   // bounces straight back to onboarding, which reads as the app refusing rather
   // than as a guard doing its job.
   it("is hidden while the profile is incomplete", () => {
-    profileState = {
+    setProfileState({
       status: "ready",
       profile: { ...COMPLETE, complete: false, hasResume: false },
-    };
+    });
     renderHeader();
 
     expect(screen.queryByRole("link", { name: MESSAGES.HISTORY_NAV })).toBeNull();
   });
 
   it("is hidden for a candidate who has saved no profile yet", () => {
-    profileState = { status: "ready", profile: null };
+    setProfileState({ status: "ready", profile: null });
     renderHeader();
 
     expect(screen.queryByRole("link", { name: MESSAGES.HISTORY_NAV })).toBeNull();
@@ -88,7 +61,7 @@ describe("the history link", () => {
     ["loading", { status: "loading" } as ProfileState],
     ["errored", { status: "error", message: "network down" } as ProfileState],
   ])("is hidden while the profile is %s", (_label, state) => {
-    profileState = state;
+    setProfileState(state);
     renderHeader();
 
     expect(screen.queryByRole("link", { name: MESSAGES.HISTORY_NAV })).toBeNull();
@@ -98,7 +71,7 @@ describe("the history link", () => {
   // name has to come from text that is always in the DOM rather than from a
   // conditionally rendered span.
   it("keeps an accessible name even where the label is visually hidden", () => {
-    profileState = { status: "ready", profile: COMPLETE };
+    setProfileState({ status: "ready", profile: COMPLETE });
     renderHeader();
 
     expect(
@@ -109,7 +82,7 @@ describe("the history link", () => {
 
 describe("the rest of the header", () => {
   it("still offers the profile and sign out", () => {
-    profileState = { status: "ready", profile: COMPLETE };
+    setProfileState({ status: "ready", profile: COMPLETE });
     renderHeader();
 
     expect(screen.getByRole("link", { name: MESSAGES.PROFILE_NAV })).toBeDefined();
@@ -119,7 +92,7 @@ describe("the rest of the header", () => {
   // The profile link is how someone finishes onboarding, so it must survive
   // exactly the states that hide history.
   it("keeps the profile link when the profile is incomplete", () => {
-    profileState = { status: "ready", profile: null };
+    setProfileState({ status: "ready", profile: null });
     renderHeader();
 
     expect(screen.getByRole("link", { name: MESSAGES.PROFILE_NAV })).toBeDefined();

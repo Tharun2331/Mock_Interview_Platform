@@ -15,7 +15,7 @@ export function RedirectIfAuthenticated() {
   // tokens are stored, so a genuine first-time visitor waits imperceptibly.
   if (status === "loading") {
     return (
-      <div className="flex h-screen w-full flex-col items-center justify-center gap-5 bg-background">
+      <div className="flex h-full w-full flex-col items-center justify-center gap-5 bg-background">
         <PresenceOrb
           hue="var(--cue)"
           className="size-12 animate-pulse motion-reduce:animate-none"
