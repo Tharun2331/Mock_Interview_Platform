@@ -6,6 +6,7 @@ import { planRouter } from "./routes/plan";
 import { preInterviewRouter } from "./routes/preInterview";
 import { gapRouter } from "./routes/gap";
 import { companyIntelRouter } from "./routes/companyIntel";
+import { coachRouter } from "./routes/coach";
 import { profileRouter } from "./routes/profile";
 import { sessionsRouter } from "./routes/sessions";
 import { attachInterviewSocket } from "./routes/interview";
@@ -44,6 +45,9 @@ app.use("/api/v1/gap", AuthMiddleware, apiRateLimiter, gapRouter);
 // reaches a non-AWS service, so an unauthenticated caller here would be
 // spending someone else's Tavily quota as well as Bedrock tokens.
 app.use("/api/v1/company", AuthMiddleware, apiRateLimiter, companyIntelRouter);
+// Reads only this candidate's own history, proven by the token rather than by
+// anything in the request — there is no id in the path to get wrong.
+app.use("/api/v1/coach", AuthMiddleware, apiRateLimiter, coachRouter);
 
 // The HTTP server is captured rather than discarded: the interview WebSocket
 // attaches to its `upgrade` event, which is the only place a handshake can be

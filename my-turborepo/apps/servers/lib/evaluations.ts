@@ -15,6 +15,7 @@ import {
   userPk,
   userSummarySk,
   type SessionHistoryItem,
+  type UserSessionSummary,
   SORT_KEY,
   SessionAnswerSchema,
   SessionEvalSummarySchema,
@@ -302,6 +303,10 @@ async function putSessionSummary(args: {
           role: meta.role,
           overallScore: overallScore(args.averages),
           ...extremeDimensions(args.averages),
+          // Carried as well as collapsed. The chart reads overallScore; the
+          // Coach needs the three separately to say which dimension to work
+          // on, and copying them here is what keeps its read to one Query.
+          averages: args.averages,
           questionCount: args.questionCount,
         },
       })
@@ -324,8 +329,40 @@ async function putSessionSummary(args: {
 export async function listSessionHistory(args: {
   userId: string;
 }): Promise<SessionHistoryItem[]> {
+  const summaries = await listUserSessionSummaries(args);
+
+  return summaries.map((summary) => ({
+    sessionId: summary.sessionId,
+    completedAt: summary.completedAt,
+    role: summary.role,
+    overallScore: summary.overallScore,
+    topStrength: summary.topStrength,
+    topWeakness: summary.topWeakness,
+    questionCount: summary.questionCount,
+  }));
+}
+
+/**
+ * The same Query, returning the whole row.
+ *
+ * Split out for the Coach, which needs `averages` — the history page
+ * deliberately does not, and narrowing there is what keeps the card list from
+ * carrying data it never renders. One function owns the pagination so the two
+ * readers cannot drift on the `begins_with` filter, which is the part that
+ * matters: the USER partition also holds PROFILE and PLAN, and an unfiltered
+ * Query hands those back as summaries.
+ *
+ * This is the access pattern that makes the Coach one read rather than 1+N.
+ * Evaluations themselves live under SESSION#<sid> with nothing linking them to
+ * a user, so "every evaluation for this candidate" is not expressible as a
+ * query — it is a scan of their sessions. These rows are the denormalised
+ * answer, written once when a session completes.
+ */
+export async function listUserSessionSummaries(args: {
+  userId: string;
+}): Promise<UserSessionSummary[]> {
   const TableName = requireTable();
-  const items: SessionHistoryItem[] = [];
+  const items: UserSessionSummary[] = [];
   let cursor: Record<string, unknown> | undefined;
 
   do {
@@ -364,15 +401,7 @@ export async function listSessionHistory(args: {
       // history; an exception costs them all of it.
       if (!parsed.success) continue;
 
-      items.push({
-        sessionId: parsed.data.sessionId,
-        completedAt: parsed.data.completedAt,
-        role: parsed.data.role,
-        overallScore: parsed.data.overallScore,
-        topStrength: parsed.data.topStrength,
-        topWeakness: parsed.data.topWeakness,
-        questionCount: parsed.data.questionCount,
-      });
+      items.push(parsed.data);
     }
 
     cursor = response.LastEvaluatedKey;
