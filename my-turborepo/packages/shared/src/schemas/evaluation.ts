@@ -154,6 +154,10 @@ export const EvaluationViewSchema = z.object({
   clarity: z.number().min(0).max(EVALUATION_LIMITS.MAX_SCORE),
   depth: z.number().min(0).max(EVALUATION_LIMITS.MAX_SCORE),
   rationale: z.string().min(1),
+  // Present only where the answer was weak enough to earn one. Carried on the
+  // view so the session summarizer can reuse it rather than paying to rewrite
+  // the same answer a second time.
+  sampleAnswer: z.string().optional(),
   evaluatedAt: z.iso.datetime(),
 });
 
@@ -197,6 +201,53 @@ export type EvaluationResponse = z.infer<typeof EvaluationResponseSchema>;
 export const ScoreDimensionSchema = z.enum(["correctness", "clarity", "depth"]);
 
 export type ScoreDimension = z.infer<typeof ScoreDimensionSchema>;
+
+export const SESSION_SUMMARY_LIMITS = {
+  // One paragraph. This lands on a row the history page reads on every load,
+  // so every character here is paid for by a screen that never shows it.
+  MAX_SUMMARY_CHARS: 900,
+  // Two or three is the brief, and three is the cap. A "weakest examples" list
+  // that runs to six is a transcript with extra steps.
+  MAX_FLAGGED: 3,
+  MAX_QUESTION_CHARS: 300,
+  // Enough for a real spoken answer, truncated rather than dropped — a
+  // shortened example still shows the shape of what went wrong.
+  MAX_ANSWER_CHARS: 700,
+} as const;
+
+// One weak exchange, kept whole enough to learn from.
+export const FlaggedExampleSchema = z.object({
+  question: z.string().min(1).max(SESSION_SUMMARY_LIMITS.MAX_QUESTION_CHARS),
+  category: QuestionTypeSchema,
+  originalAnswer: z.string().max(SESSION_SUMMARY_LIMITS.MAX_ANSWER_CHARS),
+  improvedAnswer: z.string().max(SESSION_SUMMARY_LIMITS.MAX_ANSWER_CHARS),
+});
+
+export type FlaggedExample = z.infer<typeof FlaggedExampleSchema>;
+
+/**
+ * What one interview showed, read across all of its answers.
+ *
+ * Distinct from `UserSessionSummary` below despite the similar name, and the
+ * difference is worth holding: that one is the ROW — keys, scores, dates. This
+ * is the narrative that hangs off it. They are nested rather than merged
+ * because the row is written when an interview completes and this is attached
+ * a moment later, after a model call that may fail.
+ *
+ * Per-category by design. "Struggled to justify tradeoffs on caching" and
+ * "answers lacked structure" are different problems with different fixes, and
+ * a single averaged sentence hides both.
+ */
+export const SessionSummarySchema = z.object({
+  summaryText: z.string().min(1).max(SESSION_SUMMARY_LIMITS.MAX_SUMMARY_CHARS),
+  // May be empty — a session where nothing was weak has nothing to flag, and
+  // inventing an example to fill the list would teach the wrong lesson.
+  flaggedExamples: z
+    .array(FlaggedExampleSchema)
+    .max(SESSION_SUMMARY_LIMITS.MAX_FLAGGED),
+});
+
+export type SessionSummary = z.infer<typeof SessionSummarySchema>;
 
 // USER#<uid> / SUMMARY#<completedAt> — one row per finished interview.
 //
@@ -248,6 +299,17 @@ export const UserSessionSummarySchema = z.object({
       depth: z.number().min(0).max(EVALUATION_LIMITS.MAX_SCORE),
     })
     .optional(),
+  // What this interview showed, in words. Attached a moment after the row is
+  // written, by a model call that is allowed to fail — so a row without it is
+  // a normal state, not a broken one.
+  //
+  // This deliberately breaks the rule stated above, and the reason is the
+  // Coach: reading these from the session partition instead would be one Query
+  // per session, and the whole point of this row is that a candidate's history
+  // is a single Query. The mitigation is the cap in SESSION_SUMMARY_LIMITS and
+  // a ProjectionExpression on the history read, so the card list never
+  // transfers a paragraph it does not render.
+  summary: SessionSummarySchema.optional(),
   questionCount: z.number().int().min(0),
 });
 

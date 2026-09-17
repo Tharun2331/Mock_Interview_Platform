@@ -5,10 +5,13 @@ import {
 } from "@aws-sdk/client-sqs";
 import { EvalJobSchema } from "@repo/shared";
 import { runEvaluator } from "./agents/evaluator";
+import { runSessionSummarizer } from "./agents/sessionSummarizer";
 import { WORKER } from "./lib/constants";
 import {
+  attachSessionSummary,
   finalizeIfComplete,
   loadEvaluationJob,
+  loadSessionEvaluations,
   putEvaluation,
 } from "./lib/evaluations";
 import { requireEvalQueue, sqsClient } from "./lib/sqs";
@@ -118,12 +121,61 @@ export async function handleMessage(body: string): Promise<MessageOutcome> {
   // the queue to ever look again.
   const finalized = await finalizeIfComplete({ sessionId });
 
+  // The session summary hangs off the same once-only election, which is the
+  // whole reason that conditional write exists. Two workers finishing their
+  // last message milliseconds apart both count the same total; exactly one
+  // gets `finalized`, so exactly one pays for this generation.
+  if (finalized.kind === "finalized" && finalized.historyRow !== undefined) {
+    await summariseSession(sessionId, finalized.historyRow);
+  }
+
   return {
     kind: "scored",
     questionId,
     modelId: result.modelId,
     finalized: finalized.kind,
   };
+}
+
+// Reads the finished interview back and writes what it showed onto the
+// candidate's history row.
+//
+// Swallows everything. This runs AFTER the session has already been closed out
+// and its history card written, so a failure here costs a paragraph — while a
+// throw would redeliver the message, re-run the completion check, and leave the
+// summary to be retried by a worker that has nothing new to say. The Coach
+// reads a session without one perfectly well.
+async function summariseSession(
+  sessionId: string,
+  historyRow: { userId: string; completedAt: string }
+): Promise<void> {
+  try {
+    const evaluation = await loadSessionEvaluations({
+      sessionId,
+      userId: historyRow.userId,
+    });
+
+    const summary = await runSessionSummarizer({
+      role: evaluation.role ?? "the role they applied for",
+      evaluations: evaluation.evaluations,
+    });
+
+    if (summary === null) {
+      console.log(`[summarizer] ${sessionId} produced nothing usable`);
+      return;
+    }
+
+    await attachSessionSummary({ ...historyRow, summary });
+    console.log(
+      `[summarizer] ${sessionId} summarised, ${summary.flaggedExamples.length} examples flagged`
+    );
+  } catch (error) {
+    console.error(
+      `[summarizer] ${sessionId} failed, session closed without a summary — ${
+        error instanceof Error ? error.message : error
+      }`
+    );
+  }
 }
 
 async function processMessage(message: Message, QueueUrl: string): Promise<void> {

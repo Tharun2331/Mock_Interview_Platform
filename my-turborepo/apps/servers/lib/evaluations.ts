@@ -29,6 +29,7 @@ import {
   type EvaluatorInput,
   type SessionAnswer,
   type SessionMeta,
+  type SessionSummary,
 } from "@repo/shared";
 import { dynamoClient, parseItem, requireTable } from "./dynamo";
 import { ServiceError, SessionAccessError } from "./errors";
@@ -227,6 +228,9 @@ export async function loadSessionEvaluations(args: {
       clarity: evaluation.data.clarity,
       depth: evaluation.data.depth,
       rationale: evaluation.data.rationale,
+      // Absent on strong answers, and on every row written before sample
+      // answers existed.
+      sampleAnswer: evaluation.data.sampleAnswer,
       evaluatedAt: evaluation.data.evaluatedAt,
       // modelId deliberately dropped here. See EvaluationViewSchema.
     });
@@ -259,11 +263,13 @@ export async function loadSessionEvaluations(args: {
 // copied rather than recomputed so the card expires with the session it points
 // at — recomputing would give it a slightly later expiry and leave a history
 // entry whose every underlying item is gone.
+// Returns the key of the row it wrote, so the caller can attach a summary to
+// it without re-reading META. Undefined when there was no session to key by.
 async function putSessionSummary(args: {
   sessionId: string;
   averages: EvaluationAverages;
   questionCount: number;
-}): Promise<void> {
+}): Promise<{ userId: string; completedAt: string } | undefined> {
   const TableName = requireTable();
 
   let metaResponse;
@@ -284,7 +290,7 @@ async function putSessionSummary(args: {
 
   // Nothing to key the row by. Only reachable if the session was erased while
   // its last evaluation was in flight.
-  if (metaResponse.Item === undefined) return;
+  if (metaResponse.Item === undefined) return undefined;
 
   const meta = parseItem(SessionMetaSchema, metaResponse.Item, "META");
   const completedAt = new Date().toISOString();
@@ -311,6 +317,7 @@ async function putSessionSummary(args: {
         },
       })
     );
+    return { userId: meta.userId, completedAt };
   } catch (error) {
     throw new ServiceError(
       `${MESSAGES.EVAL_SUMMARY_WRITE_FAILED} — ${
@@ -329,7 +336,21 @@ async function putSessionSummary(args: {
 export async function listSessionHistory(args: {
   userId: string;
 }): Promise<SessionHistoryItem[]> {
-  const summaries = await listUserSessionSummaries(args);
+  // Projected, unlike the Coach's read of the same rows.
+  //
+  // These rows now carry a session summary — a paragraph plus up to three
+  // question-and-answer pairs — which the card list never renders. Without a
+  // projection every history page load would transfer several kilobytes per
+  // card to show a date and a score.
+  //
+  // Worth being precise about what this does and does not save: DynamoDB bills
+  // read capacity on the item size BEFORE projection, so this is transfer and
+  // parse cost, not read cost. That is still the cost that grows with a
+  // candidate's history on a page they open often.
+  const summaries = await listUserSessionSummaries({
+    ...args,
+    fields: HISTORY_CARD_FIELDS,
+  });
 
   return summaries.map((summary) => ({
     sessionId: summary.sessionId,
@@ -358,8 +379,24 @@ export async function listSessionHistory(args: {
  * query — it is a scan of their sessions. These rows are the denormalised
  * answer, written once when a session completes.
  */
+// Exactly what a history card renders, and the attributes UserSessionSummary
+// needs to parse at all. `type` is in the list because the schema validates it.
+const HISTORY_CARD_FIELDS = [
+  "#type",
+  "sessionId",
+  "completedAt",
+  "role",
+  "overallScore",
+  "topStrength",
+  "topWeakness",
+  "questionCount",
+] as const;
+
 export async function listUserSessionSummaries(args: {
   userId: string;
+  /** Projection. Omitted, the whole row comes back — which is what the Coach
+   *  wants and what the card list does not. */
+  fields?: readonly string[] | undefined;
 }): Promise<UserSessionSummary[]> {
   const TableName = requireTable();
   const items: UserSessionSummary[] = [];
@@ -384,6 +421,14 @@ export async function listUserSessionSummaries(args: {
           // index, nothing for the client to reorder.
           ScanIndexForward: false,
           ExclusiveStartKey: cursor,
+          ...(args.fields === undefined
+            ? {}
+            : {
+                ProjectionExpression: args.fields.join(", "),
+                // `type` is a DynamoDB reserved word, so it cannot appear bare
+                // in a projection. Learned here once already with `depth`.
+                ExpressionAttributeNames: { "#type": "type" },
+              }),
         })
       );
     } catch (error) {
@@ -540,7 +585,15 @@ export async function startEvaluationSummary(args: {
 // them differently and only one of them is a state change.
 export type FinalizeOutcome =
   | { kind: "incomplete"; scored: number; expected: number }
-  | { kind: "finalized"; scored: number; averages: EvaluationAverages }
+  | {
+      kind: "finalized";
+      scored: number;
+      averages: EvaluationAverages;
+      // The history row this finalisation wrote, so the caller can attach a
+      // session summary to it without re-reading META. Undefined when the
+      // session was erased mid-flight and there was nothing to key by.
+      historyRow?: { userId: string; completedAt: string } | undefined;
+    }
   // Another worker's final message got there first. Not an error — exactly one
   // of the two was always going to win.
   | { kind: "already-finalized" }
@@ -726,8 +779,9 @@ export async function finalizeIfComplete(args: {
   // while a session left at `evaluating` is one whose feedback never appears at
   // all. The second is worse, so a failure here must not stop the transition
   // below.
+  let historyRow: { userId: string; completedAt: string } | undefined;
   try {
-    await putSessionSummary({
+    historyRow = await putSessionSummary({
       sessionId: args.sessionId,
       averages,
       questionCount: scores.length,
@@ -746,7 +800,7 @@ export async function finalizeIfComplete(args: {
   // scores to show for it.
   await completeEvaluation({ sessionId: args.sessionId });
 
-  return { kind: "finalized", scored: scores.length, averages };
+  return { kind: "finalized", scored: scores.length, averages, historyRow };
 }
 
 // PutItem, unconditionally. SQS is at-least-once, so a redelivery that slips
@@ -796,6 +850,48 @@ export async function putEvaluation(args: {
   } catch (error) {
     throw new ServiceError(
       `${MESSAGES.EVAL_WRITE_FAILED} — ${
+        error instanceof Error ? error.message : "unknown"
+      }`
+    );
+  }
+}
+
+// Attaches a session summary to the history row a finalisation just wrote.
+//
+// A separate UpdateItem rather than part of that Put, because the summary costs
+// a Bedrock call and the row must exist whether or not that call succeeds — a
+// candidate's history card is worth more than the paragraph on it.
+//
+// Conditional on the row still existing. An account erased between the two
+// writes would otherwise resurrect a row keyed to a deleted user, which is the
+// exact thing the erasure sweep exists to prevent.
+export async function attachSessionSummary(args: {
+  userId: string;
+  completedAt: string;
+  summary: SessionSummary;
+}): Promise<void> {
+  try {
+    await dynamoClient.send(
+      new UpdateCommand({
+        TableName: requireTable(),
+        Key: { PK: userPk(args.userId), SK: userSummarySk(args.completedAt) },
+        UpdateExpression: "SET #summary = :summary",
+        // `summary` is not reserved today, but the alias costs nothing and this
+        // file already lost an afternoon to `depth` being reserved.
+        ExpressionAttributeNames: { "#summary": "summary" },
+        ExpressionAttributeValues: { ":summary": args.summary },
+        ConditionExpression: "attribute_exists(PK)",
+      })
+    );
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException) {
+      console.warn(
+        `[evaluations] history row for ${args.userId} vanished before its summary landed`
+      );
+      return;
+    }
+    throw new ServiceError(
+      `${MESSAGES.EVAL_SUMMARY_WRITE_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
       }`
     );
