@@ -107,6 +107,48 @@ async function runQuery(
 }
 
 /**
+ * Which source the key comes from.
+ *
+ * Pure and exported so the precedence is testable without rebuilding `config`
+ * from the environment — the production gate itself lives in config.ts, which
+ * blanks the direct key there before this is ever consulted.
+ */
+export function keySource(
+  directKey: string,
+  _parameterName: string
+): "direct" | "ssm" {
+  // Trimmed, so clearing the variable by deleting the key and leaving a space
+  // falls through to SSM rather than sending " " as a bearer token — a 401
+  // that reads like a bad key rather than an unset one.
+  return directKey.trim().length > 0 ? "direct" : "ssm";
+}
+
+// Said once per process rather than per search. Which source answered is the
+// first thing worth knowing when a local run behaves differently from a
+// deployed one, and it is noise on every subsequent call.
+let announced = false;
+
+async function resolveApiKey(): Promise<string> {
+  const source = keySource(config.tavilyApiKey, config.tavilySsmParameterName);
+
+  if (!announced) {
+    announced = true;
+    console.log(
+      source === "direct"
+        ? "[tavily] using TAVILY_API_KEY from the environment (non-production only)"
+        : `[tavily] reading the API key from SSM: ${config.tavilySsmParameterName}`
+    );
+  }
+
+  // The direct key never exists in production — config.ts blanks it there — so
+  // this branch is unreachable on a deployed task by construction rather than
+  // by discipline.
+  return source === "direct"
+    ? config.tavilyApiKey
+    : getSecret(config.tavilySsmParameterName);
+}
+
+/**
  * Both queries, capped.
  *
  * Runs them in parallel and keeps whichever returned: one query failing is not
@@ -118,7 +160,7 @@ async function runQuery(
  * to a candidate, but not in a log.
  */
 export async function searchCompany(company: string): Promise<SearchSnippet[]> {
-  const apiKey = await getSecret(config.tavilyApiKeyParam);
+  const apiKey = await resolveApiKey();
   const [first, second] = await Promise.allSettled(
     intelQueries(company).map((query) => runQuery(apiKey, query))
   );
