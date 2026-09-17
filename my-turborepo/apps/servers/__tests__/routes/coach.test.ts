@@ -174,6 +174,10 @@ describe("GET /api/v1/coach", () => {
     const response = await fetch(`${url}/api/v1/coach`);
 
     expect(response.status).toBe(200);
-    expect(CoachReportSchema.parse(await response.json()).roadmap).toHaveLength(1);
+    // Two items for the one readable row — one per track — rather than one per
+    // session. The broken row contributes nothing and does not fail the rest.
+    const report = CoachReportSchema.parse(await response.json());
+    expect(report.roadmap).toHaveLength(2);
+    expect(new Set(report.roadmap.map((item) => item.topic)).size).toBe(1);
   });
 });

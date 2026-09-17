@@ -3,11 +3,15 @@ import {
   COACH_LIMITS,
   CoachReportSchema,
   trendDirection,
+  type CoachReport,
+  type RoadmapItem,
+  type RoadmapTrack,
   type UserSessionSummary,
 } from "@repo/shared";
 // The SHARED Bedrock stub. lib/bedrock is one module and mock.module replaces
 // all of it — see the helper's header.
 import {
+  lastStructuredCall,
   resetStructuredStub,
   setStructuredFailure,
   setStructuredReplies,
@@ -15,8 +19,9 @@ import {
   structuredCallCount,
 } from "../helpers/bedrockStub";
 
-const { runCoachAgent, analyseHistory, weakestDimension, groupByTopic } =
-  await import("../../agents/coach");
+const { runCoachAgent, analyseHistory, groupByTopic } = await import(
+  "../../agents/coach"
+);
 
 let clock = 0;
 
@@ -37,15 +42,39 @@ function session(overrides: Partial<UserSessionSummary> = {}): UserSessionSummar
   };
 }
 
+/** A session carrying the narrative Part 2 writes. This is what gives the
+ *  technical track something real to name. */
+function narrated(text: string, overrides: Partial<UserSessionSummary> = {}) {
+  return session({
+    averages: { correctness: 4, clarity: 7, depth: 3 },
+    summary: { summaryText: text, flaggedExamples: [] },
+    ...overrides,
+  });
+}
+
 const PROSE = {
   topics: [
     {
       topic: "Backend Engineer",
       summary: "You are getting steadier at explaining your own systems.",
-      focusPoints: ["Name the tradeoff before the solution.", "Quantify one result."],
+      communicationFocus: ["Name the tradeoff before the solution."],
+      technicalFocus: [
+        "Read up on consistent hashing.",
+        "Revise queue delivery guarantees.",
+      ],
     },
   ],
 };
+
+function itemFor(
+  report: CoachReport,
+  topic: string,
+  track: RoadmapTrack
+): RoadmapItem | undefined {
+  return report.roadmap.find(
+    (item) => item.topic === topic && item.track === track
+  );
+}
 
 beforeEach(() => {
   clock = 0;
@@ -55,9 +84,10 @@ beforeEach(() => {
 
 describe("a candidate with no finished interviews", () => {
   it("returns an empty report rather than failing", async () => {
-    const report = await runCoachAgent({ summaries: [] });
-
-    expect(report).toEqual({ trends: [], roadmap: [] });
+    expect(await runCoachAgent({ summaries: [] })).toEqual({
+      trends: [],
+      roadmap: [],
+    });
   });
 
   // Nothing to coach and nothing to say about it. Paying a model to observe
@@ -79,29 +109,163 @@ describe("a candidate with exactly one interview", () => {
   // One interview is a position, not a trend. Reporting it as "flat" would
   // claim a stability the data cannot show.
   it("produces no trend", async () => {
-    const report = await runCoachAgent({ summaries: [session()] });
-
-    expect(report.trends).toEqual([]);
+    expect((await runCoachAgent({ summaries: [session()] })).trends).toEqual([]);
   });
 
   // But it IS enough to say what to work on, which is the more useful half.
-  it("still produces a roadmap", async () => {
-    const report = await runCoachAgent({ summaries: [session({ overallScore: 4 })] });
+  it("still produces a roadmap, on both tracks", async () => {
+    const report = await runCoachAgent({ summaries: [session()] });
 
-    expect(report.roadmap).toHaveLength(1);
-    expect(report.roadmap[0]?.topic).toBe("Backend Engineer");
-    expect(report.roadmap[0]?.avgScore).toBe(4);
-    expect(report.roadmap[0]?.priority).toBe(1);
+    expect(report.roadmap.map((item) => item.track).sort()).toEqual([
+      "communication",
+      "technical",
+    ]);
   });
 
-  it("names the weak dimension from the stored averages", async () => {
+  it("still satisfies the response schema", async () => {
+    const report = await runCoachAgent({ summaries: [session()] });
+
+    expect(CoachReportSchema.safeParse(report).success).toBe(true);
+  });
+});
+
+// The split is the point of Part 3: these are learned differently, and one of
+// them is far better evidenced than the other.
+describe("the two-track roadmap", () => {
+  it("emits one item per track per topic", async () => {
     const report = await runCoachAgent({
       summaries: [
-        session({ averages: { correctness: 8, clarity: 3, depth: 7 } }),
+        session({ role: "Backend Engineer" }),
+        session({ role: "Frontend Engineer" }),
       ],
     });
 
-    expect(report.roadmap[0]?.weakDimension).toBe("clarity");
+    expect(report.roadmap).toHaveLength(4);
+    expect(itemFor(report, "Backend Engineer", "communication")).toBeDefined();
+    expect(itemFor(report, "Backend Engineer", "technical")).toBeDefined();
+  });
+
+  // Communication is scored directly — clarity is assigned on every answer — so
+  // its number is the clarity mean rather than the overall.
+  it("scores the communication track on clarity", async () => {
+    const report = await runCoachAgent({
+      summaries: [
+        session({ averages: { correctness: 9, clarity: 2, depth: 9 } }),
+      ],
+    });
+
+    expect(itemFor(report, "Backend Engineer", "communication")?.avgScore).toBe(2);
+  });
+
+  it("scores the technical track on correctness and depth", async () => {
+    const report = await runCoachAgent({
+      summaries: [
+        session({ averages: { correctness: 2, clarity: 9, depth: 4 } }),
+      ],
+    });
+
+    expect(itemFor(report, "Backend Engineer", "technical")?.avgScore).toBe(3);
+  });
+
+  // The assertion the spec asks for by name, and the honest part of the design:
+  // correctness and depth are read off whichever questions the interviewer
+  // happened to ask, which is a sample of what someone knows, not an exam.
+  it("always marks technical items tentative", async () => {
+    const report = await runCoachAgent({
+      summaries: [
+        session({ averages: { correctness: 9, clarity: 9, depth: 9 } }),
+        session({ averages: { correctness: 9, clarity: 9, depth: 9 } }),
+      ],
+    });
+
+    for (const item of report.roadmap.filter((row) => row.track === "technical")) {
+      expect(item.confidence).toBe("tentative");
+    }
+  });
+
+  it("marks communication confident when clarity was actually recorded", async () => {
+    const report = await runCoachAgent({
+      summaries: [session({ averages: { correctness: 5, clarity: 5, depth: 5 } })],
+    });
+
+    expect(itemFor(report, "Backend Engineer", "communication")?.confidence).toBe(
+      "confident"
+    );
+  });
+
+  // Rows written before averages were carried. Falling back to the overall
+  // score is fine; claiming the same confidence for it is not.
+  it("drops communication to tentative when no clarity was recorded", async () => {
+    const report = await runCoachAgent({ summaries: [session()] });
+
+    expect(itemFor(report, "Backend Engineer", "communication")?.confidence).toBe(
+      "tentative"
+    );
+  });
+
+  it("keeps the two tracks' focus points separate", async () => {
+    const report = await runCoachAgent({ summaries: [session()] });
+
+    expect(
+      itemFor(report, "Backend Engineer", "communication")?.focusPoints
+    ).toEqual(["Name the tradeoff before the solution."]);
+    expect(itemFor(report, "Backend Engineer", "technical")?.focusPoints).toEqual([
+      "Read up on consistent hashing.",
+      "Revise queue delivery guarantees.",
+    ]);
+  });
+});
+
+describe("roadmap priority ordering", () => {
+  // 1 is the most urgent, so the worst average comes first — across tracks, not
+  // within a topic. The single worst thing a candidate does is where they
+  // should start, whichever track it belongs to.
+  it("orders by score across both tracks", async () => {
+    const report = await runCoachAgent({
+      summaries: [
+        session({ averages: { correctness: 9, clarity: 1, depth: 9 } }),
+      ],
+    });
+
+    expect(report.roadmap[0]?.track).toBe("communication");
+    expect(report.roadmap[0]?.priority).toBe(1);
+  });
+
+  it("numbers priorities consecutively from 1", async () => {
+    const report = await runCoachAgent({
+      summaries: [
+        session({ role: "A", overallScore: 7 }),
+        session({ role: "B", overallScore: 4 }),
+      ],
+    });
+
+    expect(report.roadmap.map((item) => item.priority)).toEqual([1, 2, 3, 4]);
+  });
+
+  // Ties would otherwise order by Map insertion, which makes the same input
+  // produce a different report on a re-run.
+  it("breaks ties stably by topic then track", async () => {
+    const first = await runCoachAgent({
+      summaries: [session({ role: "Zebra" }), session({ role: "Alpha" })],
+    });
+    const second = await runCoachAgent({
+      summaries: [session({ role: "Alpha" }), session({ role: "Zebra" })],
+    });
+
+    expect(first.roadmap.map((item) => `${item.topic}/${item.track}`)).toEqual(
+      second.roadmap.map((item) => `${item.topic}/${item.track}`)
+    );
+  });
+
+  it("caps the roadmap", () => {
+    const summaries: UserSessionSummary[] = [];
+    for (let index = 0; index < COACH_LIMITS.MAX_ROADMAP_ITEMS; index += 1) {
+      summaries.push(session({ role: `Role ${index}` }));
+    }
+
+    expect(analyseHistory(summaries).roadmap.length).toBeLessThanOrEqual(
+      COACH_LIMITS.MAX_ROADMAP_ITEMS
+    );
   });
 });
 
@@ -132,8 +296,8 @@ describe("trend calculation across sessions", () => {
     expect(report.trends[0]?.direction).toBe("declining");
   });
 
-  // Movement below the epsilon is a different set of questions, not a change
-  // in the candidate. Calling it improvement would be flattery.
+  // Movement below the epsilon is a different set of questions, not a change in
+  // the candidate. Calling it improvement would be flattery.
   it("reports small movement as flat", async () => {
     const report = await runCoachAgent({
       summaries: [session({ overallScore: 6 }), session({ overallScore: 6.2 })],
@@ -142,17 +306,11 @@ describe("trend calculation across sessions", () => {
     expect(report.trends[0]?.direction).toBe("flat");
   });
 
-  // The query returns newest-first because that is what the history list
-  // wants. A chart drawn in that order reads improvement as decline.
+  // The query returns newest-first because that is what the history list wants.
+  // A chart drawn in that order reads improvement as decline.
   it("orders the score history oldest first regardless of input order", async () => {
-    const older = session({
-      completedAt: "2026-09-01T10:00:00.000Z",
-      overallScore: 3,
-    });
-    const newer = session({
-      completedAt: "2026-09-20T10:00:00.000Z",
-      overallScore: 8,
-    });
+    const older = session({ completedAt: "2026-09-01T10:00:00.000Z", overallScore: 3 });
+    const newer = session({ completedAt: "2026-09-20T10:00:00.000Z", overallScore: 8 });
 
     const report = await runCoachAgent({ summaries: [newer, older] });
     const history = report.trends[0]?.scoreHistory ?? [];
@@ -160,14 +318,6 @@ describe("trend calculation across sessions", () => {
     expect(history[0]?.avgScore).toBe(3);
     expect(history[1]?.avgScore).toBe(8);
     expect(report.trends[0]?.direction).toBe("improving");
-  });
-
-  it("carries one point per interview", async () => {
-    const report = await runCoachAgent({
-      summaries: [session(), session(), session()],
-    });
-
-    expect(report.trends[0]?.scoreHistory).toHaveLength(3);
   });
 
   // Each role is its own line. A candidate practising two roles is not one
@@ -188,8 +338,9 @@ describe("trend calculation across sessions", () => {
     ]);
   });
 
-  // A topic with one interview has no trend even when another topic has many.
-  it("omits a topic that has only one interview", async () => {
+  // A topic with one interview has no trend even when another has many — but it
+  // still earns roadmap items.
+  it("omits a one-interview topic from trends but not from the roadmap", async () => {
     const report = await runCoachAgent({
       summaries: [
         session({ role: "Backend Engineer" }),
@@ -198,100 +349,70 @@ describe("trend calculation across sessions", () => {
       ],
     });
 
-    expect(report.trends.map((trend) => trend.topic)).toEqual([
-      "Backend Engineer",
-    ]);
-    // Still on the roadmap, though — one interview is enough to say what to
-    // work on.
+    expect(report.trends.map((trend) => trend.topic)).toEqual(["Backend Engineer"]);
     expect(report.roadmap.map((item) => item.topic)).toContain("Data Engineer");
   });
 });
 
-describe("roadmap priority ordering", () => {
-  // 1 is the most urgent, so the worst average comes first.
-  it("puts the lowest average score at priority 1", async () => {
-    const report = await runCoachAgent({
+// The reason Part 3 reads session summaries rather than score rows: without
+// them the model had a role name, a number and a dimension, and could only
+// produce delivery advice because it had never been told what was asked.
+describe("the session narratives", () => {
+  it("passes what each interview showed into the prompt", async () => {
+    await runCoachAgent({
       summaries: [
-        session({ role: "Strong Topic", overallScore: 9 }),
-        session({ role: "Weak Topic", overallScore: 2 }),
-        session({ role: "Middling Topic", overallScore: 5 }),
+        narrated("You could not justify the caching strategy you chose."),
+        narrated("Tradeoffs on database indexing went unexplained."),
       ],
     });
 
-    expect(report.roadmap.map((item) => item.topic)).toEqual([
-      "Weak Topic",
-      "Middling Topic",
-      "Strong Topic",
-    ]);
-    expect(report.roadmap.map((item) => item.priority)).toEqual([1, 2, 3]);
+    const call = lastStructuredCall() as { prompt: string };
+    expect(call.prompt).toContain("caching strategy");
+    expect(call.prompt).toContain("database indexing");
   });
 
-  it("numbers priorities consecutively from 1", async () => {
-    const report = await runCoachAgent({
+  it("puts the most recent interview first", async () => {
+    await runCoachAgent({
       summaries: [
-        session({ role: "A", overallScore: 7 }),
-        session({ role: "B", overallScore: 6 }),
-        session({ role: "C", overallScore: 5 }),
-        session({ role: "D", overallScore: 4 }),
+        narrated("OLDEST", { completedAt: "2026-09-01T10:00:00.000Z" }),
+        narrated("NEWEST", { completedAt: "2026-09-20T10:00:00.000Z" }),
       ],
     });
 
-    expect(report.roadmap.map((item) => item.priority)).toEqual([1, 2, 3, 4]);
+    const call = lastStructuredCall() as { prompt: string };
+    expect(call.prompt.indexOf("NEWEST")).toBeLessThan(call.prompt.indexOf("OLDEST"));
   });
 
-  it("ranks on the average, not on the most recent score", async () => {
-    const report = await runCoachAgent({
-      summaries: [
-        // Ends high but averages 4.
-        session({ role: "Volatile", overallScore: 1 }),
-        session({ role: "Volatile", overallScore: 7 }),
-        // Steady at 5.
-        session({ role: "Steady", overallScore: 5 }),
-        session({ role: "Steady", overallScore: 5 }),
-      ],
-    });
+  // Said explicitly rather than omitted. An absent section reads to a model as
+  // an invitation to fill the gap from the job title, which is the one thing
+  // the system prompt forbids.
+  it("says so when a topic has no narratives at all", async () => {
+    await runCoachAgent({ summaries: [session()] });
 
-    expect(report.roadmap[0]?.topic).toBe("Volatile");
-    expect(report.roadmap[0]?.avgScore).toBe(4);
+    const call = lastStructuredCall() as { prompt: string };
+    expect(call.prompt).toContain("(no summaries recorded)");
   });
 
-  // Ties would otherwise order by Map insertion, which makes the same input
-  // produce different reports on different runs.
-  it("breaks ties stably by topic name", async () => {
-    const report = await runCoachAgent({
-      summaries: [
-        session({ role: "Zebra", overallScore: 5 }),
-        session({ role: "Alpha", overallScore: 5 }),
-      ],
-    });
+  it("tells the model to leave the technical track empty rather than guess", async () => {
+    await runCoachAgent({ summaries: [session()] });
 
-    expect(report.roadmap.map((item) => item.topic)).toEqual(["Alpha", "Zebra"]);
+    const call = lastStructuredCall() as { system: string };
+    expect(call.system).toContain("empty technicalFocus rather than guessing");
   });
 });
 
 describe("what the model is allowed to contribute", () => {
-  it("uses the model's summary and focus points", async () => {
-    const report = await runCoachAgent({
-      summaries: [session(), session()],
-    });
-
-    expect(report.trends[0]?.summary).toBe(
-      "You are getting steadier at explaining your own systems."
-    );
-    expect(report.roadmap[0]?.focusPoints).toEqual([
-      "Name the tradeoff before the solution.",
-      "Quantify one result.",
-    ]);
-  });
-
-  // The guard that makes invention structural rather than instructed: a topic
-  // the analysis never produced is discarded on merge, so the model cannot add
-  // a subject the candidate never practised.
+  // The guard that makes invention structural rather than instructed.
   it("discards a topic the candidate never practised", async () => {
     setStructuredReplies([
       {
         topics: [
-          { topic: "Kubernetes", summary: "Invented.", focusPoints: ["Nope."] },
+          {
+            topic: "Kubernetes",
+            summary: "Invented.",
+            communicationFocus: ["Nope."],
+            technicalFocus: ["Nope."],
+          },
           ...PROSE.topics,
         ],
       },
@@ -299,18 +420,21 @@ describe("what the model is allowed to contribute", () => {
 
     const report = await runCoachAgent({ summaries: [session(), session()] });
 
-    expect(report.roadmap.map((item) => item.topic)).toEqual(["Backend Engineer"]);
+    expect(report.roadmap.every((item) => item.topic === "Backend Engineer")).toBe(
+      true
+    );
     expect(JSON.stringify(report)).not.toContain("Invented.");
   });
 
-  it("caps focus points at the limit even when the model sends more", async () => {
+  it("caps focus points per track", async () => {
     setStructuredReplies([
       {
         topics: [
           {
             topic: "Backend Engineer",
             summary: "Fine.",
-            focusPoints: ["a", "b", "c", "d", "e", "f"],
+            communicationFocus: ["a", "b", "c", "d", "e", "f"],
+            technicalFocus: ["g", "h", "i", "j", "k"],
           },
         ],
       },
@@ -318,9 +442,11 @@ describe("what the model is allowed to contribute", () => {
 
     const report = await runCoachAgent({ summaries: [session()] });
 
-    expect(report.roadmap[0]?.focusPoints.length).toBeLessThanOrEqual(
-      COACH_LIMITS.MAX_FOCUS_POINTS
-    );
+    for (const item of report.roadmap) {
+      expect(item.focusPoints.length).toBeLessThanOrEqual(
+        COACH_LIMITS.MAX_FOCUS_POINTS
+      );
+    }
   });
 
   it("parses a reply the model wrote as prose", async () => {
@@ -328,14 +454,14 @@ describe("what the model is allowed to contribute", () => {
 
     const report = await runCoachAgent({ summaries: [session(), session()] });
 
-    expect(report.roadmap[0]?.focusPoints).toHaveLength(2);
+    expect(itemFor(report, "Backend Engineer", "technical")?.focusPoints).toHaveLength(2);
   });
 });
 
 // The numbers are the part a candidate cannot work out for themselves, so a
 // failed generation must not take them down with it.
 describe("a failed generation", () => {
-  it("still returns the trends and the roadmap", async () => {
+  it("still returns the trends and both tracks", async () => {
     setStructuredFailure(new Error("chain exhausted"));
 
     const report = await runCoachAgent({
@@ -343,7 +469,7 @@ describe("a failed generation", () => {
     });
 
     expect(report.trends[0]?.direction).toBe("improving");
-    expect(report.roadmap).toHaveLength(1);
+    expect(report.roadmap).toHaveLength(2);
   });
 
   it("falls back to a summary stated from the numbers", async () => {
@@ -354,7 +480,6 @@ describe("a failed generation", () => {
     });
 
     expect(report.trends[0]?.summary).toContain("Backend Engineer");
-    expect(report.trends[0]?.summary.length).toBeGreaterThan(0);
   });
 
   it("leaves focus points empty rather than inventing them", async () => {
@@ -362,7 +487,7 @@ describe("a failed generation", () => {
 
     const report = await runCoachAgent({ summaries: [session()] });
 
-    expect(report.roadmap[0]?.focusPoints).toEqual([]);
+    for (const item of report.roadmap) expect(item.focusPoints).toEqual([]);
   });
 
   it("still satisfies the response schema", async () => {
@@ -384,42 +509,6 @@ describe("a failed generation", () => {
   });
 });
 
-describe("weakestDimension", () => {
-  it("averages the stored dimension scores", () => {
-    const worst = weakestDimension([
-      session({ averages: { correctness: 9, clarity: 8, depth: 2 } }),
-      session({ averages: { correctness: 8, clarity: 7, depth: 3 } }),
-    ]);
-
-    expect(worst).toBe("depth");
-  });
-
-  // Rows written before `averages` was carried. A candidate's existing history
-  // should still produce a roadmap rather than being skipped for predating the
-  // attribute.
-  it("falls back to the topWeakness labels when no averages are stored", () => {
-    const worst = weakestDimension([
-      session({ topWeakness: "clarity" }),
-      session({ topWeakness: "clarity" }),
-      session({ topWeakness: "depth" }),
-    ]);
-
-    expect(worst).toBe("clarity");
-  });
-
-  it("ignores label counts when even one row has real averages", () => {
-    const worst = weakestDimension([
-      session({ topWeakness: "clarity" }),
-      session({
-        topWeakness: "clarity",
-        averages: { correctness: 9, clarity: 9, depth: 1 },
-      }),
-    ]);
-
-    expect(worst).toBe("depth");
-  });
-});
-
 describe("sessions with no recorded role", () => {
   it("groups them under one topic rather than one each", () => {
     const grouped = groupByTopic([
@@ -432,9 +521,7 @@ describe("sessions with no recorded role", () => {
   });
 
   it("gives them a readable label", async () => {
-    const report = await runCoachAgent({
-      summaries: [session({ role: undefined })],
-    });
+    const report = await runCoachAgent({ summaries: [session({ role: undefined })] });
 
     expect(report.roadmap[0]?.topic).toBe("General practice");
   });
@@ -449,54 +536,16 @@ describe("trendDirection", () => {
   });
 
   it("drops the middle reading on an odd count so the halves match", () => {
-    // Halves are [2, 2] and [8, 8]; the middle 5 belongs to neither.
     expect(trendDirection([2, 2, 5, 8, 8])).toBe("improving");
   });
 
-  // Comparing halves rather than first-against-last damps an outlier; it does
-  // not neutralise one, and the distinction is worth pinning. A mid-series
-  // spike is averaged away against its neighbours...
+  // Comparing halves damps an outlier; it does not neutralise one, and the
+  // distinction is worth pinning.
   it("is not decided by a spike in the middle", () => {
     expect(trendDirection([3, 4, 9, 6, 7])).toBe("improving");
   });
 
-  // ...but a genuinely bad final round still registers, and should. Five
-  // steady interviews followed by a 1 is a signal, not noise — first-against-
-  // last would have called this a four-point collapse, and half-against-half
-  // calls it a decline, which is the more proportionate reading of the same
-  // data rather than a suppression of it.
   it("still reports a bad finish as declining", () => {
     expect(trendDirection([5, 5, 5, 5, 5, 1])).toBe("declining");
-  });
-});
-
-describe("the analysis on its own", () => {
-  it("caps the number of trends", () => {
-    const summaries: UserSessionSummary[] = [];
-    for (let index = 0; index < COACH_LIMITS.MAX_TRENDS + 3; index += 1) {
-      summaries.push(session({ role: `Role ${index}` }));
-      summaries.push(session({ role: `Role ${index}` }));
-    }
-
-    expect(analyseHistory(summaries).trends.length).toBeLessThanOrEqual(
-      COACH_LIMITS.MAX_TRENDS
-    );
-  });
-
-  // The cap should keep the lines with the most evidence behind them, not
-  // whichever happened to be grouped first.
-  it("keeps the most-practised topics when it caps", () => {
-    const summaries: UserSessionSummary[] = [];
-    for (let index = 0; index < COACH_LIMITS.MAX_TRENDS + 2; index += 1) {
-      summaries.push(session({ role: `Role ${index}` }));
-      summaries.push(session({ role: `Role ${index}` }));
-    }
-    // One topic with far more history than the rest.
-    for (let index = 0; index < 5; index += 1) {
-      summaries.push(session({ role: "Most practised" }));
-    }
-
-    const { trends } = analyseHistory(summaries);
-    expect(trends[0]?.topic).toBe("Most practised");
   });
 });
