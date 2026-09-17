@@ -18,6 +18,17 @@ process.env.EVAL_QUEUE_URL =
   "https://sqs.us-east-1.amazonaws.com/000000000000/prepilot-eval-test";
 process.env.AWS_REGION = "us-east-1";
 
+// The Tavily key is the sharpest case of the rule above. A developer's real key
+// sits in `.env` as TAVILY_API_KEY for local runs, and Bun would auto-load it
+// here — so the suite would exercise the direct-key branch on this machine and
+// the SSM branch in CI, which is two different code paths wearing one set of
+// results. Blanked so every machine tests the production shape: SSM only.
+process.env.TAVILY_API_KEY = "";
+process.env.TAVILY_SSM_PARAMETER_NAME = "/prepilot/test/tavily/apikey";
+// Kept short so a test that reaches a real timeout does not spend four seconds
+// proving it. lib/tavily's AbortController is what the hang test asserts on.
+process.env.TAVILY_TIMEOUT_MS = "300";
+
 // Nonsense credentials, deliberately. The SDK resolves lazily, so an unmocked
 // command would otherwise pick up the machine's real profile or hang on IMDS in
 // CI. These make such a call fail fast and locally rather than reach AWS.
