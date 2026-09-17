@@ -1,6 +1,7 @@
 import {
   EVALUATION_LIMITS,
   EvaluationScoresSchema,
+  needsSampleAnswer,
   type EvaluationScores,
   type EvaluatorInput,
 } from "@repo/shared";
@@ -49,7 +50,21 @@ const SYSTEM_PROMPT = [
   "Address them as \"you\". Two or three sentences.",
   "",
   "Reply with a single JSON object and nothing else, matching exactly:",
-  '{"correctness":N,"clarity":N,"depth":N,"rationale":"string"}',
+  '{"correctness":N,"clarity":N,"depth":N,"rationale":"string","sampleAnswer":"string"}',
+  "",
+  "sampleAnswer is CONDITIONAL. Include it only when the answer was weak:",
+  `  technical or role-specific — the mean of correctness and depth is below ${EVALUATION_LIMITS.SAMPLE_ANSWER_THRESHOLD}`,
+  `  behavioural — the mean of correctness and clarity is below ${EVALUATION_LIMITS.SAMPLE_ANSWER_THRESHOLD}`,
+  "Otherwise omit the key entirely. A strong answer does not need rewriting and",
+  "the rationale already says what would sharpen it.",
+  "",
+  "When you do include it, rewrite THEIR answer — keep their project, their",
+  "systems, their decisions, and fix what was missing. Do not write a model",
+  "answer from scratch about work they never did: a candidate cannot learn from",
+  "an example that is not theirs, and cannot repeat it in a real interview.",
+  "Write it as spoken words, first person, the length a person actually speaks.",
+  "If their answer was empty there is nothing to rewrite — omit the key.",
+  `Keep it under ${EVALUATION_LIMITS.MAX_SAMPLE_ANSWER_CHARS} characters.`,
   "",
   `Every score is an integer from ${EVALUATION_LIMITS.MIN_SCORE} to ${EVALUATION_LIMITS.MAX_SCORE}.`,
   `Keep the rationale under ${EVALUATION_LIMITS.MAX_RATIONALE_CHARS} characters.`,
@@ -145,5 +160,35 @@ export async function runEvaluator(
     );
   }
 
-  return { ...parsed.data, modelId };
+  // The gate is enforced here, not trusted to the prompt.
+  //
+  // It has to be applied after the call rather than before it, because the gate
+  // reads the very scores the call produces — asking first would mean two round
+  // trips per weak answer, and this agent already runs once per question. So
+  // the prompt states the rule to keep the common case cheap, and this drops
+  // anything that arrived against it.
+  //
+  // Both directions matter. A sample answer on a strong reply is noise a
+  // candidate reads as "you got this wrong"; an empty or whitespace one is a
+  // model complying with the letter of the schema, and storing "" would look
+  // like a real rewrite to the session summarizer and suppress the
+  // regeneration that should have happened.
+  const scores = parsed.data;
+  const wanted = needsSampleAnswer(input.questionType, scores);
+  const offered = (scores.sampleAnswer ?? "").trim();
+
+  if (!wanted && offered.length > 0) {
+    console.log(
+      `[evaluator] dropped an unrequested sample answer for a ${input.questionType} question`
+    );
+  }
+
+  return {
+    ...scores,
+    sampleAnswer:
+      wanted && offered.length > 0
+        ? offered.slice(0, EVALUATION_LIMITS.MAX_SAMPLE_ANSWER_CHARS)
+        : undefined,
+    modelId,
+  };
 }

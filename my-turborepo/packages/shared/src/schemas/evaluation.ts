@@ -4,6 +4,7 @@ import {
   ITEM_TYPE,
   QuestionTypeSchema,
   SessionEvaluationSchema,
+  type QuestionType,
 } from "./session";
 
 // What the Evaluator agent consumes and what it emits. Separate from the stored
@@ -22,7 +23,47 @@ export const EVALUATION_LIMITS = {
   // bound exists so a runaway transcript cannot blow the prompt budget.
   MAX_TRANSCRIPT_CHARS: 6_000,
   MAX_QUESTION_CHARS: 1_000,
+  // Long enough to be a real spoken answer, short enough that a candidate
+  // reads it rather than skims it. A rewrite twice the length of the original
+  // is not a rewrite, it is a lecture.
+  MAX_SAMPLE_ANSWER_CHARS: 1_200,
+  // Below this mean, an answer is weak enough that showing a stronger version
+  // teaches more than the rationale alone. At or above it, the rationale is
+  // enough and the extra tokens buy nothing.
+  SAMPLE_ANSWER_THRESHOLD: 6,
 } as const;
+
+// Which pair of dimensions decides whether an answer was weak, per category.
+//
+// Not one rule for all three, because the categories fail differently. A
+// technical answer is weak when it is wrong or shallow — how smoothly it was
+// delivered is beside the point. A behavioural answer is weak when it is
+// inaccurate or unfollowable: "depth" on a story about a disagreement with a
+// colleague mostly measures how long they talked.
+//
+// role_specific pairs with technical rather than behavioural because those
+// questions test hands-on experience against the posting's requirements, which
+// is a correctness-and-depth question wearing a role's clothes.
+export const WEAKNESS_DIMENSIONS = {
+  technical: ["correctness", "depth"],
+  role_specific: ["correctness", "depth"],
+  behavioural: ["correctness", "clarity"],
+} as const satisfies Record<QuestionType, readonly ["correctness", ...string[]]>;
+
+/**
+ * Whether this answer is weak enough to be worth rewriting.
+ *
+ * Pure and exported: it is the gate the Evaluator applies to the model's own
+ * output, and the one piece of this feature worth testing without a model.
+ */
+export function needsSampleAnswer(
+  questionType: QuestionType,
+  scores: { correctness: number; clarity: number; depth: number }
+): boolean {
+  const [first, second] = WEAKNESS_DIMENSIONS[questionType];
+  const mean = (scores[first] + scores[second]) / 2;
+  return mean < EVALUATION_LIMITS.SAMPLE_ANSWER_THRESHOLD;
+}
 
 // Derived from the stored item rather than redeclared, so the model is
 // validated against exactly the fields that will be persisted. A parallel
@@ -37,6 +78,7 @@ export const EvaluationScoresSchema = SessionEvaluationSchema.pick({
   clarity: true,
   depth: true,
   rationale: true,
+  sampleAnswer: true,
 });
 
 export type EvaluationScores = z.infer<typeof EvaluationScoresSchema>;

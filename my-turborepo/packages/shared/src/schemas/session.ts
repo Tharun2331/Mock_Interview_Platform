@@ -263,6 +263,18 @@ export const SessionEvaluationSchema = z.object({
   clarity: z.number().min(0).max(10),
   depth: z.number().min(0).max(10),
   rationale: z.string().min(1),
+  // A rewritten, stronger version of this candidate's answer to this exact
+  // question. Present only when the answer was weak enough to be worth one.
+  //
+  // Optional rather than empty-string-when-absent, and the distinction is load
+  // bearing: the session summarizer reuses this where it exists instead of
+  // regenerating, so "" would look like a sample answer that came back blank
+  // and suppress the regeneration that should have happened.
+  //
+  // A rewrite of THEIR answer, never a model answer written from scratch —
+  // keeping their own material is what makes it usable as a comparison rather
+  // than as an unreachable ideal.
+  sampleAnswer: z.string().optional(),
   // Which model produced this. When the primary is unavailable and the request
   // falls through the chain, scores from two different models are not strictly
   // comparable — and without this attribute that is invisible forever.

@@ -6,6 +6,7 @@ import {
   intelIsEmpty,
   type CompanyIntel,
   type GapAnalysis,
+  type QuestionType,
 } from "@repo/shared";
 import { wrapUpAtRemainingMinutes } from "../lib/interviewClock";
 
@@ -455,6 +456,42 @@ export const LogExchangeInputSchema = z.object({
 });
 
 export type LogExchangeInput = z.infer<typeof LogExchangeInputSchema>;
+
+/**
+ * The interviewer's own label for an exchange, translated into the category
+ * every downstream reader uses.
+ *
+ * These two vocabularies exist for different reasons and should not be merged.
+ * `exchangeType` describes the CONVERSATIONAL move the interviewer just made —
+ * opening, following up, changing subject — which is what it needs to pace
+ * itself. `questionType` describes what a question TESTS, which is what the
+ * Evaluator gates on and the Coach reports against.
+ *
+ * `followup` is the interesting case and the reason this takes a previous
+ * value. A follow-up inherits the subject of whatever it followed: "can you
+ * say more about that?" after a behavioural question is still behavioural, and
+ * scoring it against correctness and depth would mark a candidate down for not
+ * citing an algorithm in a story about a disagreement with a colleague.
+ *
+ * `opening` and `transition` fall to technical, which is the residual bucket
+ * rather than a claim — an opening question is "tell me about yourself", and
+ * nothing in this product's three categories describes that well.
+ */
+export function toQuestionType(
+  exchangeType: LogExchangeInput["exchangeType"],
+  previous: QuestionType = "technical"
+): QuestionType {
+  switch (exchangeType) {
+    case "behavioural":
+      return "behavioural";
+    case "roleSpecific":
+      return "role_specific";
+    case "followup":
+      return previous;
+    default:
+      return "technical";
+  }
+}
 
 export const GetSessionStateInputSchema = z.object({});
 
