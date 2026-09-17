@@ -1,7 +1,7 @@
 import { signOut } from "aws-amplify/auth";
 import { NavLink, useNavigate } from "react-router";
 import { toast } from "sonner";
-import { LogOutIcon, TrendingUpIcon, UserRoundIcon } from "lucide-react";
+import { LogOutIcon, SparklesIcon, TrendingUpIcon, UserRoundIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/BrandMark";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -77,6 +77,30 @@ export function Header() {
                 accessible name comes from the span, which is present either
                 way. */}
             <span className="sr-only sm:not-sr-only">{MESSAGES.HISTORY_NAV}</span>
+          </NavLink>
+        ) : null}
+
+        {/* Gated on the same flag as history, and for the same reason: both
+            read a candidate's own finished interviews, so neither means
+            anything before there are any. Sits next to history because the
+            two are the same material read two ways — what happened, and what
+            to do about it. */}
+        {showHistory ? (
+          <NavLink
+            to="/coach"
+            className={({ isActive }) =>
+              cn(
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                isActive ? "text-ink" : "text-ink-subtle hover:text-ink"
+              )
+            }
+          >
+            <SparklesIcon aria-hidden className="size-4" />
+            {/* Label hidden at the narrowest widths, same as history — five
+                items with their text visible overflow the bar at 375px. The
+                accessible name still comes from the span, which is present
+                either way. */}
+            <span className="sr-only sm:not-sr-only">{MESSAGES.COACH_NAV}</span>
           </NavLink>
         ) : null}
 

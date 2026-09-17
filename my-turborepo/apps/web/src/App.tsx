@@ -7,6 +7,7 @@ import { StartInterview } from "./pages/startInterview";
 import { BrowserRouter, Routes, Route, Navigate  } from "react-router";
 import { Result } from "./pages/result";
 import { SessionHistory } from "./pages/history";
+import { Coach } from "./pages/coach";
 import { Interview } from "./pages/interview";
 import {Signup} from "./pages/signup";
 import { SignIn } from "./pages/signin";
@@ -87,6 +88,9 @@ export function App() {
               rest of the interview flow — there is nothing to list until a
               candidate has onboarded. */}
           <Route path="/history" element={<SessionHistory />} />
+          {/* No session id: the coach reads every finished interview, so
+              there is nothing in the path that could name the wrong one. */}
+          <Route path="/coach" element={<Coach />} />
         </Route>
       </Route>
     </Route>

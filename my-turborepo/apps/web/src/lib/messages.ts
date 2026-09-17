@@ -341,6 +341,56 @@ export const MESSAGES = {
   HISTORY_EMPTY_ACTION: "Start your first interview",
   HISTORY_LOAD_FAILED: "We could not load your interviews.",
 
+  // --- Coach ---
+  //
+  // Coaching, not judgement. A candidate reading this has just been scored and
+  // is already nervous, so every string here is direct about a weakness without
+  // being demeaning — "worth working on", never "poor".
+  COACH_NAV: "Coach",
+  COACH_TITLE: "Your coach",
+  COACH_SUBTITLE: "What to work on next",
+  COACH_INTRO:
+    "Drawn from every interview you have finished. The scores are yours; the suggestions are where they point.",
+
+  COACH_TRENDS_TITLE: "How you are tracking",
+  // The single-interview case. Named as a next step rather than as missing
+  // data — one interview is a real result, it is simply not yet a direction.
+  COACH_TRENDS_NEEDS_MORE:
+    "One interview is a starting point, not a direction. Finish another in the same role and a trend appears here.",
+  COACH_DIRECTION_IMPROVING: "Improving",
+  COACH_DIRECTION_DECLINING: "Slipping",
+  COACH_DIRECTION_FLAT: "Holding steady",
+  COACH_TREND_ALT: (topic: string, rounds: number, first: number, last: number) =>
+    `${topic}: ${rounds} interviews, from ${first} out of 10 to ${last} out of 10.`,
+  COACH_ROUNDS: (count: number) =>
+    count === 1 ? "1 interview" : `${count} interviews`,
+
+  COACH_ROADMAP_TITLE: "Where to put your time",
+  COACH_ROADMAP_AVERAGE: "Average so far",
+  COACH_WEAKEST: "Weakest",
+  // Plain-language anchors. A bare "weakest: depth" teaches nothing — each one
+  // names what the dimension actually measures so the advice below it lands.
+  COACH_DIMENSION_LABEL: {
+    correctness: "Accuracy",
+    clarity: "Clarity",
+    depth: "Depth",
+  } as const,
+  COACH_DIMENSION_ANCHOR: {
+    correctness: "Getting the facts and the reasoning right.",
+    clarity: "Saying it in an order someone else can follow.",
+    depth: "Going past the first answer into why it worked.",
+  } as const,
+  // The model wrote nothing usable, so the numbers are shown without advice
+  // rather than with invented advice.
+  COACH_NO_FOCUS_POINTS:
+    "No suggestions this time — the score and the weakest area above still stand.",
+
+  COACH_EMPTY_TITLE: "Nothing to coach yet",
+  COACH_EMPTY_BODY:
+    "Finish an interview and this becomes a read on what to practise, built from your own answers.",
+  COACH_EMPTY_ACTION: "Start your first interview",
+  COACH_LOAD_FAILED: "We could not load your coaching.",
+
   // On the results page, pointing at the history. Named for what it shows
   // rather than as a generic "back".
   RESULT_VIEW_HISTORY: "View all past interviews",
