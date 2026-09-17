@@ -187,6 +187,25 @@ export const UserSessionSummarySchema = z.object({
   overallScore: z.number().min(0).max(EVALUATION_LIMITS.MAX_SCORE),
   topStrength: ScoreDimensionSchema,
   topWeakness: ScoreDimensionSchema,
+  // The three dimension averages this row was derived from.
+  //
+  // Added for the Coach, and it is the difference between one Query and 1+N.
+  // `overallScore` collapses the three into one number, which is all the
+  // history chart needs — but a study roadmap has to name WHICH dimension to
+  // work on, and topStrength/topWeakness only label the ends. Without these,
+  // building a roadmap means reading every session's EVAL# items back, which
+  // is a fan-out that grows with a candidate's history and pulls every
+  // rationale to compute three means.
+  //
+  // Optional because rows written before this existed do not have it. The
+  // Coach degrades to topWeakness for those rather than skipping the session.
+  averages: z
+    .object({
+      correctness: z.number().min(0).max(EVALUATION_LIMITS.MAX_SCORE),
+      clarity: z.number().min(0).max(EVALUATION_LIMITS.MAX_SCORE),
+      depth: z.number().min(0).max(EVALUATION_LIMITS.MAX_SCORE),
+    })
+    .optional(),
   questionCount: z.number().int().min(0),
 });
 
