@@ -8,7 +8,12 @@ import {
   TrendingDownIcon,
   TrendingUpIcon,
 } from "lucide-react";
-import type { CoachReport, ScoreDimension, Trend } from "@repo/shared";
+import type {
+  CoachConfidence,
+  CoachReport,
+  RoadmapTrack,
+  Trend,
+} from "@repo/shared";
 
 import { PresenceOrb } from "@/components/PresenceOrb";
 import { TrendSparkline } from "@/components/TrendSparkline";
@@ -69,19 +74,51 @@ function DirectionChip({ direction }: { direction: Trend["direction"] }) {
   );
 }
 
-function WeakDimension({ dimension }: { dimension: ScoreDimension }) {
+// How much weight to put on an item, stated rather than implied.
+//
+// The technical track is always inferred: correctness and depth are read off
+// whichever questions the interviewer happened to ask. Presenting that with the
+// same authority as a clarity score would be overclaiming, and a candidate who
+// later discovers the difference stops trusting the confident half too.
+//
+// Not a colour. A "tentative" badge in amber would read as a warning about
+// their performance rather than about our certainty.
+function ConfidenceBadge({ confidence }: { confidence: CoachConfidence }) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="font-mono text-[0.7rem] uppercase tracking-[0.12em] text-ink-faint">
-        {MESSAGES.COACH_WEAKEST}
-      </span>
-      <span className="text-sm text-ink">
-        {MESSAGES.COACH_DIMENSION_LABEL[dimension]}
-      </span>
-      {/* The anchor. "Weakest: depth" on its own teaches nothing — this is the
+    <span
+      className="rounded border border-hairline px-1.5 py-0.5 font-mono text-[0.65rem] uppercase tracking-[0.1em] text-ink-faint"
+      title={MESSAGES.COACH_CONFIDENCE_ANCHOR[confidence]}
+    >
+      {MESSAGES.COACH_CONFIDENCE_LABEL[confidence]}
+    </span>
+  );
+}
+
+function TrackHeading({
+  track,
+  confidence,
+}: {
+  track: RoadmapTrack;
+  confidence: CoachConfidence;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium text-ink">
+          {MESSAGES.COACH_TRACK_LABEL[track]}
+        </span>
+        <ConfidenceBadge confidence={confidence} />
+      </div>
+      {/* The anchor. A track name on its own teaches nothing — this is the
           sentence that makes the focus points below read as a consequence. */}
       <span className="text-xs leading-relaxed text-ink-subtle">
-        {MESSAGES.COACH_DIMENSION_ANCHOR[dimension]}
+        {MESSAGES.COACH_TRACK_ANCHOR[track]}
+      </span>
+      {/* Spelled out beneath the badge as well as in its tooltip: a title
+          attribute is invisible on a touch screen, and this is the sentence
+          that stops "Inferred" reading as a criticism. */}
+      <span className="text-xs leading-relaxed text-ink-faint">
+        {MESSAGES.COACH_CONFIDENCE_ANCHOR[confidence]}
       </span>
     </div>
   );
@@ -229,7 +266,8 @@ export function Coach() {
         <ol className="flex flex-col gap-4">
           {roadmap.map((item) => (
             <li
-              key={item.topic}
+              // Two items per topic now, so the topic alone is not unique.
+              key={`${item.topic}/${item.track}`}
               className="flex flex-col gap-4 rounded-lg border border-border bg-surface-2 p-5"
             >
               <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
@@ -251,7 +289,7 @@ export function Coach() {
                     </span>
                   </div>
                 </div>
-                <WeakDimension dimension={item.weakDimension} />
+                <TrackHeading track={item.track} confidence={item.confidence} />
               </div>
 
               {item.focusPoints.length > 0 ? (

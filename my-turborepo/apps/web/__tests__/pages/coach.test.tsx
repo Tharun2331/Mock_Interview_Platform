@@ -31,11 +31,21 @@ function report(overrides: Partial<CoachReport> = {}): CoachReport {
     roadmap: [
       {
         topic: "Backend Engineer",
-        avgScore: 5.5,
-        weakDimension: "depth",
+        avgScore: 4.2,
+        track: "communication",
+        confidence: "confident",
         focusPoints: ["Name the tradeoff before the solution."],
+        priority: 1,
       },
-    ].map((item, index) => ({ ...item, priority: index + 1 })) as CoachReport["roadmap"],
+      {
+        topic: "Backend Engineer",
+        avgScore: 5.5,
+        track: "technical",
+        confidence: "tentative",
+        focusPoints: ["Read up on consistent hashing."],
+        priority: 2,
+      },
+    ],
     ...overrides,
   };
 }
@@ -105,7 +115,8 @@ describe("a candidate with one interview", () => {
     renderPage();
     await settle();
 
-    expect(screen.getByText("Backend Engineer")).toBeDefined();
+    // Named on both tracks, so this is getAllByText rather than getByText.
+    expect(screen.getAllByText("Backend Engineer").length).toBeGreaterThan(0);
     expect(
       screen.getByText("Name the tradeoff before the solution.")
     ).toBeDefined();
@@ -186,14 +197,16 @@ describe("the roadmap", () => {
         {
           topic: "Weakest",
           avgScore: 2,
-          weakDimension: "depth",
+          track: "communication",
+          confidence: "confident",
           focusPoints: [],
           priority: 1,
         },
         {
           topic: "Strongest",
           avgScore: 9,
-          weakDimension: "clarity",
+          track: "technical",
+          confidence: "tentative",
           focusPoints: [],
           priority: 2,
         },
@@ -208,14 +221,49 @@ describe("the roadmap", () => {
     expect(items[1]?.textContent).toContain("Strongest");
   });
 
-  // "Weakest: depth" on its own teaches nothing. The anchor is what makes the
+  // A track name on its own teaches nothing. The anchor is what makes the
   // focus points read as a consequence rather than as unrelated advice.
-  it("explains what the weak dimension actually means", async () => {
+  it("explains what each track actually means", async () => {
     renderPage();
     await settle();
 
-    expect(screen.getByText(MESSAGES.COACH_DIMENSION_LABEL.depth)).toBeDefined();
-    expect(screen.getByText(MESSAGES.COACH_DIMENSION_ANCHOR.depth)).toBeDefined();
+    expect(screen.getByText(MESSAGES.COACH_TRACK_LABEL.communication)).toBeDefined();
+    expect(screen.getByText(MESSAGES.COACH_TRACK_ANCHOR.communication)).toBeDefined();
+    expect(screen.getByText(MESSAGES.COACH_TRACK_LABEL.technical)).toBeDefined();
+  });
+
+  // The honest half of the design, and it has to be visible rather than buried
+  // in the prose: one of these rests on a number scored on every answer, the
+  // other on a pattern read off whichever questions came up.
+  it("marks which advice is measured and which is inferred", async () => {
+    renderPage();
+    await settle();
+
+    expect(screen.getByText(MESSAGES.COACH_CONFIDENCE_LABEL.confident)).toBeDefined();
+    expect(screen.getByText(MESSAGES.COACH_CONFIDENCE_LABEL.tentative)).toBeDefined();
+  });
+
+  // A tooltip is invisible on a touch screen, so the sentence is on the page
+  // too — it is what stops "Inferred" reading as a criticism.
+  it("spells out what inferred means, not only in a tooltip", async () => {
+    renderPage();
+    await settle();
+
+    expect(
+      screen.getByText(MESSAGES.COACH_CONFIDENCE_ANCHOR.tentative)
+    ).toBeDefined();
+  });
+
+  it("shows both tracks for one topic", async () => {
+    renderPage();
+    await settle();
+
+    // Counted off the <ol> rather than every listitem on the page: the focus
+    // points inside each card are list items too.
+    const ordered = screen
+      .getAllByRole("list")
+      .find((list) => list.tagName.toLowerCase() === "ol");
+    expect(ordered?.children.length).toBe(2);
   });
 
   it("shows the average to one decimal", async () => {
@@ -236,7 +284,8 @@ describe("the roadmap", () => {
     renderPage();
     await settle();
 
-    expect(screen.getByText(MESSAGES.COACH_NO_FOCUS_POINTS)).toBeDefined();
+    // Once per track, since both were emptied.
+    expect(screen.getAllByText(MESSAGES.COACH_NO_FOCUS_POINTS)).toHaveLength(2);
   });
 });
 

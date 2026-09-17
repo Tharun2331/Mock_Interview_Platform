@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EVALUATION_LIMITS, ScoreDimensionSchema } from "./evaluation";
+import { EVALUATION_LIMITS } from "./evaluation";
 
 // What the Coach produces: where a candidate is heading, and what to work on.
 //
@@ -24,6 +24,8 @@ export const COACH_LIMITS = {
   // Enough to cover the roles a candidate actually rehearses. Past this the
   // report stops being a plan and becomes a list.
   MAX_TRENDS: 6,
+  // Up to two per topic now that the roadmap has tracks, so this caps roughly
+  // three topics rather than six. Past that a study plan stops being a plan.
   MAX_ROADMAP_ITEMS: 6,
   MAX_FOCUS_POINTS: 4,
   MAX_TOPIC_CHARS: 200,
@@ -65,10 +67,36 @@ export const TrendSchema = z.object({
 
 export type Trend = z.infer<typeof TrendSchema>;
 
+// Two tracks, because they are learned differently and evidenced differently.
+//
+// `communication` is how an answer was delivered — structure, order, getting to
+// the point. It is measured directly: clarity is scored on every answer, so a
+// claim about it rests on a number that was actually assigned.
+//
+// `technical` is what the candidate knows. Nothing in this product tests that
+// directly — it reads correctness and depth off answers to questions the
+// interviewer happened to ask, which is a sample, not an exam.
+export const RoadmapTrackSchema = z.enum(["communication", "technical"]);
+
+export type RoadmapTrack = z.infer<typeof RoadmapTrackSchema>;
+
+// How much weight the reader should put on an item.
+//
+// Stated in the data rather than hedged in the prose, so the UI can mark it and
+// a candidate can see which advice is grounded and which is inferred. The
+// technical track is always tentative: "you seem shaky on caching" drawn from
+// two questions that touched caching is a pattern, not a diagnosis, and
+// presenting it with the same confidence as a clarity score would be
+// overclaiming on the strength of a small sample.
+export const CoachConfidenceSchema = z.enum(["confident", "tentative"]);
+
+export type CoachConfidence = z.infer<typeof CoachConfidenceSchema>;
+
 export const RoadmapItemSchema = z.object({
   topic: z.string().min(1).max(COACH_LIMITS.MAX_TOPIC_CHARS),
   avgScore: z.number().min(0).max(EVALUATION_LIMITS.MAX_SCORE),
-  weakDimension: ScoreDimensionSchema,
+  track: RoadmapTrackSchema,
+  confidence: CoachConfidenceSchema,
   // May be empty. The numbers are computed and the prose is generated, so a
   // failed model call costs a candidate the advice and not the roadmap — the
   // topic, its score and its weakest dimension are still worth reading.

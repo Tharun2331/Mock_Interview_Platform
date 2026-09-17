@@ -380,9 +380,9 @@ export async function listSessionHistory(args: {
  * answer, written once when a session completes.
  */
 // Exactly what a history card renders, and the attributes UserSessionSummary
-// needs to parse at all. `type` is in the list because the schema validates it.
+// needs to parse at all. Plain names — the aliasing is done below.
 const HISTORY_CARD_FIELDS = [
-  "#type",
+  "type",
   "sessionId",
   "completedAt",
   "role",
@@ -391,6 +391,36 @@ const HISTORY_CARD_FIELDS = [
   "topWeakness",
   "questionCount",
 ] as const;
+
+/**
+ * Builds a ProjectionExpression with EVERY name aliased.
+ *
+ * Aliasing only the names that look reserved is how this file has now failed
+ * twice. `depth` took down the completion query; `role` took down the history
+ * page the moment a projection was added to it, from a list where `type` was
+ * aliased and the rest were assumed safe. DynamoDB reserves several hundred
+ * words including `role`, `name`, `status`, `count` and `timestamp`, and a
+ * violation is a hard request failure rather than a missing attribute.
+ *
+ * Aliasing unconditionally costs nothing and removes the judgement call. There
+ * is no version of this where someone correctly remembers the list.
+ *
+ * Worth knowing: aws-sdk-client-mock does not validate expressions against the
+ * reserved-word list, so a unit test asserting the request shape cannot catch
+ * a bare name. The test below asserts the STRUCTURE instead — that nothing
+ * unaliased ever reaches the expression.
+ */
+export function aliasedProjection(fields: readonly string[]): {
+  ProjectionExpression: string;
+  ExpressionAttributeNames: Record<string, string>;
+} {
+  return {
+    ProjectionExpression: fields.map((field) => `#${field}`).join(", "),
+    ExpressionAttributeNames: Object.fromEntries(
+      fields.map((field) => [`#${field}`, field])
+    ),
+  };
+}
 
 export async function listUserSessionSummaries(args: {
   userId: string;
@@ -421,14 +451,7 @@ export async function listUserSessionSummaries(args: {
           // index, nothing for the client to reorder.
           ScanIndexForward: false,
           ExclusiveStartKey: cursor,
-          ...(args.fields === undefined
-            ? {}
-            : {
-                ProjectionExpression: args.fields.join(", "),
-                // `type` is a DynamoDB reserved word, so it cannot appear bare
-                // in a projection. Learned here once already with `depth`.
-                ExpressionAttributeNames: { "#type": "type" },
-              }),
+          ...(args.fields === undefined ? {} : aliasedProjection(args.fields)),
         })
       );
     } catch (error) {

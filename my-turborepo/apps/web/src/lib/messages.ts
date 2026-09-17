@@ -367,18 +367,29 @@ export const MESSAGES = {
 
   COACH_ROADMAP_TITLE: "Where to put your time",
   COACH_ROADMAP_AVERAGE: "Average so far",
-  COACH_WEAKEST: "Weakest",
-  // Plain-language anchors. A bare "weakest: depth" teaches nothing — each one
-  // names what the dimension actually measures so the advice below it lands.
-  COACH_DIMENSION_LABEL: {
-    correctness: "Accuracy",
-    clarity: "Clarity",
-    depth: "Depth",
+  // Two tracks, named for the activity rather than the metric. "Clarity 4.2"
+  // is a measurement; "how you explain it" is something a person can practise.
+  COACH_TRACK_LABEL: {
+    communication: "How you explain it",
+    technical: "What to study",
   } as const,
-  COACH_DIMENSION_ANCHOR: {
-    correctness: "Getting the facts and the reasoning right.",
-    clarity: "Saying it in an order someone else can follow.",
-    depth: "Going past the first answer into why it worked.",
+  COACH_TRACK_ANCHOR: {
+    communication:
+      "Structure and order — naming the point before the detail, so a listener can follow.",
+    technical:
+      "The concepts behind your answers, drawn from what came up in your interviews.",
+  } as const,
+  // Confidence is shown, not hidden in the prose. A candidate deserves to know
+  // which advice rests on a number and which is a pattern read off a handful
+  // of questions — the alternative is quietly presenting both as equal.
+  COACH_CONFIDENCE_LABEL: {
+    confident: "Measured",
+    tentative: "Inferred",
+  } as const,
+  COACH_CONFIDENCE_ANCHOR: {
+    confident: "Scored directly on every answer you gave.",
+    tentative:
+      "A pattern across the questions you happened to be asked, not a full test of what you know.",
   } as const,
   // The model wrote nothing usable, so the numbers are shown without advice
   // rather than with invented advice.
