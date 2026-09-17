@@ -760,6 +760,7 @@ export async function putEvaluation(args: {
   clarity: number;
   depth: number;
   rationale: string;
+  sampleAnswer?: string | undefined;
   modelId: string;
 }): Promise<void> {
   try {
@@ -779,6 +780,11 @@ export async function putEvaluation(args: {
           clarity: args.clarity,
           depth: args.depth,
           rationale: args.rationale,
+          // Absent for an answer that did not need one. The document client
+          // strips undefined, so the attribute is missing rather than null —
+          // which is what lets the session summarizer tell "no rewrite was
+          // warranted" from "a rewrite came back empty".
+          sampleAnswer: args.sampleAnswer,
           // Which model produced this. Scores from two different models are not
           // strictly comparable, and without this attribute that is invisible
           // forever.

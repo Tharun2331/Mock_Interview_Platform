@@ -10,6 +10,7 @@ import { verifier } from "../lib/cognitoAuth";
 import { SessionAccessError, SessionStateError } from "../lib/errors";
 import { MESSAGES } from "../lib/messages";
 import { config } from "../lib/config";
+import type { QuestionType } from "@repo/shared";
 import { effectiveTargetMinutes, nudgeSchedule } from "../lib/interviewClock";
 import { classifyAnswer } from "../lib/scoreableAnswer";
 import { SonicConversation } from "../lib/sonic";
@@ -24,7 +25,9 @@ import {
 } from "../lib/sessions";
 import {
   INTERVIEW_TOOLS,
+  LogExchangeInputSchema,
   buildInterviewSystemPrompt,
+  toQuestionType,
   type InterviewClock,
 } from "../agents/mockInterview";
 
@@ -111,6 +114,17 @@ export function isInterruptionSentinel(content: string): boolean {
 
 type ToolCall = { toolName: string; toolUseId: string; content: string };
 
+// Tool input arrives as a JSON string the model generated, so it can be
+// truncated or malformed. Returning undefined lets the caller fall back rather
+// than taking a live interview down over a steering signal.
+function safeJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
 // Where the session stands against its planned length. The single place minutes
 // are derived, so the tool results and the renewed stream's system prompt can
 // never disagree about what time it is.
@@ -137,6 +151,28 @@ function runTool(call: ToolCall, state: InterviewState): unknown {
   switch (call.toolName) {
     case INTERVIEW_TOOL_NAMES.LOG_EXCHANGE: {
       state.exchanges += 1;
+
+      // The interviewer's own label for what it just asked, kept for the
+      // transcript write that follows.
+      //
+      // This input was previously parsed by nothing at all — the tool declared
+      // four fields and the handler read none of them, so every answer in the
+      // table was recorded as `technical` regardless of what was actually
+      // asked. That made the Evaluator's per-category gating and the Coach's
+      // per-category reporting describe a world with one category in it.
+      //
+      // Best-effort on purpose. The tool is a steering signal the model may
+      // emit late, malformed, or not at all, and an unparseable input must
+      // leave the previous label standing rather than throw inside a live
+      // stream. The transcript itself never depends on this.
+      const parsed = safeJson(call.content);
+      const input = LogExchangeInputSchema.safeParse(parsed);
+      if (input.success) {
+        state.questionType = toQuestionType(
+          input.data.exchangeType,
+          state.questionType
+        );
+      }
       // TODO(persistence): write an ANSWER#<qId> item here. Buffered in memory
       // for now so the transport can be verified independently of the
       // DynamoDB write path.
@@ -181,6 +217,14 @@ type InterviewState = {
   // not before the session ended. SPECULATIVE is what was actually spoken and
   // it arrives with the audio.
   buffer: ExchangeBuffer;
+
+  // What the interviewer said it was asking, carried forward between tool
+  // calls. Sticky rather than per-exchange because `logExchange` fires AFTER an
+  // answer completes while the transcript flush can fire independently — so
+  // the last label the interviewer gave is the best available description of
+  // the exchange being written. Starts at `technical`, which is what every
+  // answer was unconditionally recorded as before this existed.
+  questionType: QuestionType;
 
   // Completed exchanges, kept in memory purely to replay into a renewed Sonic
   // stream. DynamoDB is the durable copy; this is the working set the model
@@ -311,6 +355,9 @@ async function handleConnection(
       targetMinutes,
       exchanges: 0,
       endRequested: false,
+      // The residual bucket, and what every answer was recorded as before the
+      // interviewer's own label was wired through.
+      questionType: "technical",
       buffer: new ExchangeBuffer(),
       history: [],
     };
@@ -356,10 +403,11 @@ async function handleConnection(
         await recordAnswer({
           sessionId,
           ...exchange,
-          // Not yet distinguished. The plan carries a budget per type but the
-          // stream does not say which one a given question came from, so
-          // everything is recorded as technical until the model reports it.
-          questionType: "technical",
+          // What the interviewer reported on its last logExchange call. The
+          // Evaluator gates its sample answer on this and the Coach reports
+          // against it, so a wrong label here is worse than a coarse one —
+          // hence the conservative fallback in toQuestionType.
+          questionType: state.questionType,
         });
         // Recorded either way — the transcript is the durable record of the
         // conversation and the Coach reads all of it. Only genuine attempts at

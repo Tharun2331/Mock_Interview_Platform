@@ -100,6 +100,10 @@ export async function handleMessage(body: string): Promise<MessageOutcome> {
     clarity: result.clarity,
     depth: result.depth,
     rationale: result.rationale,
+    // Undefined for an answer that was already strong enough. The Evaluator
+    // has already applied the gate, so this is passed through rather than
+    // re-decided here.
+    sampleAnswer: result.sampleAnswer,
     modelId: result.modelId,
   });
 

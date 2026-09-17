@@ -80,6 +80,46 @@ describe("the history link", () => {
   });
 });
 
+// Gated exactly like history, and for the same reason: both read a
+// candidate's own finished interviews, so neither means anything before there
+// are any. Shown earlier, they would be links that bounce to onboarding.
+describe("the coach link", () => {
+  it("points at the coach page for a complete profile", () => {
+    setProfileState({ status: "ready", profile: COMPLETE });
+    renderHeader();
+
+    const link = screen.getByRole("link", { name: MESSAGES.COACH_NAV });
+    expect(link.getAttribute("href")).toBe("/coach");
+  });
+
+  it("is hidden for a candidate who has saved no profile yet", () => {
+    setProfileState({ status: "ready", profile: null });
+    renderHeader();
+
+    expect(screen.queryByRole("link", { name: MESSAGES.COACH_NAV })).toBeNull();
+  });
+
+  it.each([
+    ["loading", { status: "loading" } as ProfileState],
+    ["errored", { status: "error", message: "network down" } as ProfileState],
+  ])("is hidden while the profile is %s", (_label, state) => {
+    setProfileState(state);
+    renderHeader();
+
+    expect(screen.queryByRole("link", { name: MESSAGES.COACH_NAV })).toBeNull();
+  });
+
+  // Same reasoning as the history link: the label is visually hidden at the
+  // narrowest widths, so the accessible name has to come from text that is
+  // always in the DOM.
+  it("keeps an accessible name where the label is visually hidden", () => {
+    setProfileState({ status: "ready", profile: COMPLETE });
+    renderHeader();
+
+    expect(screen.getByRole("link", { name: MESSAGES.COACH_NAV })).toBeDefined();
+  });
+});
+
 describe("the rest of the header", () => {
   it("still offers the profile and sign out", () => {
     setProfileState({ status: "ready", profile: COMPLETE });
