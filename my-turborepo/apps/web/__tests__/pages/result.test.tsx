@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type { EvaluationResponse } from "@repo/shared";
 
 // The API client is the boundary. Mocked before the page is imported, because
@@ -52,6 +58,7 @@ function renderAt(path = `/results/${SESSION_ID}`) {
         <Route path="/results/:sessionId" element={<Result />} />
         <Route path="/results" element={<Result />} />
         <Route path="/start" element={<p>start page</p>} />
+        <Route path="/coach" element={<p>coach page</p>} />
       </Routes>
     </MemoryRouter>
   );
@@ -249,5 +256,49 @@ describe("states with nothing to show", () => {
       expect(screen.getByText(MESSAGES.RESULT_MISSING_SESSION)).toBeDefined()
     );
     expect(fetchEvaluation).not.toHaveBeenCalled();
+  });
+});
+
+// The results page is where a candidate's attention already is. Without a way
+// out of it toward the roadmap, the Coach is reachable only from a header item
+// nobody has a reason to click at that moment.
+describe("the link to the coaching roadmap", () => {
+  const finished: EvaluationResponse = {
+    status: "complete",
+    completed: 1,
+    total: 1,
+    averages: { correctness: 7, clarity: 6, depth: 3 },
+    evaluations: [evaluation()],
+    role: "Backend Engineer",
+  };
+
+  it("navigates to the coach page", async () => {
+    nextResult = finished;
+    renderAt();
+
+    const button = await screen.findByRole("button", {
+      name: MESSAGES.RESULT_VIEW_COACH,
+    });
+    fireEvent.click(button);
+
+    await waitFor(() => expect(screen.getByText("coach page")).toBeDefined());
+  });
+
+  it("stays hidden while the interview is still being scored", async () => {
+    // The Coach reads the summary row written at finalisation. Offering the
+    // link before that lands sends the candidate to a roadmap missing the
+    // interview they just finished, which reads as the feature being broken.
+    nextResult = {
+      status: "evaluating",
+      completed: 1,
+      total: 6,
+      evaluations: [evaluation()],
+    };
+    renderAt();
+
+    await waitFor(() => expect(fetchEvaluation).toHaveBeenCalled());
+    expect(
+      screen.queryByRole("button", { name: MESSAGES.RESULT_VIEW_COACH })
+    ).toBeNull();
   });
 });

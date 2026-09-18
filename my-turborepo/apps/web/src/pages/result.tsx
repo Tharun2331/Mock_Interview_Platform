@@ -345,6 +345,26 @@ export function Result() {
         ))}
       </section>
 
+      {/* Gated on scoring being finished, not merely on there being a page to
+          go to. The Coach reads USER#<uid>/SUMMARY# rows, and this interview's
+          row is written at finalisation — the same moment `averages` appears.
+          Offering the link while scoring is still running would send a
+          candidate to a roadmap that does not yet include the interview they
+          are standing in, which reads as the feature being broken. */}
+      {!scoring ? (
+        <section className="flex flex-col items-center gap-2 rounded-lg border border-border bg-surface-2 p-5 text-center">
+          <p className="max-w-md text-sm leading-relaxed text-ink-muted">
+            {MESSAGES.RESULT_VIEW_COACH_HINT}
+          </p>
+          {/* The one primary button on the page. Reading this round is what the
+              candidate came for; deciding what to do about it is the thing
+              they leave without unless it is asked for. */}
+          <Button className="cursor-pointer" onClick={() => void navigate("/coach")}>
+            {MESSAGES.RESULT_VIEW_COACH}
+          </Button>
+        </section>
+      ) : null}
+
       <div className="flex flex-wrap justify-center gap-3">
         {/* Offered here because this is the moment a candidate has a second
             data point worth comparing against — the trend only means anything

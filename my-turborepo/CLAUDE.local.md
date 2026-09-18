@@ -43,7 +43,7 @@ ECS, so nothing runs outside a laptop. That is the whole of what remains.
 | 5.5 — Gap + Company Intel agents | ✅ Complete — not in the original plan |
 | 6 — Coach | ✅ Complete **without RAG**, deliberately — see the phase below |
 | 7 — Deploy + CI/CD + Observability | 🔸 ~40% — CI gates every PR; no ECS, no CD, no alarms, prod empty |
-| Testing (cross-cutting) | 🟢 974 tests: 726 backend, 151 web, 97 shared. Backend 89.1% funcs / 90.2% lines |
+| Testing (cross-cutting) | 🟢 976 tests: 726 backend, 153 web, 97 shared. Backend 89.1% funcs / 90.2% lines |
 
 **Next highest-leverage step: the `ecs` module.** It is the only thing between
 this and a URL somebody else can open, and it blocks every other Phase 7 item.
@@ -780,7 +780,7 @@ shared helper first.
 
 ### Pass 4 ✅ — the agents added after Phase 5 (948 tests total)
 
-Backend **89.1% funcs / 90.2% lines**. 726 backend, 151 web, 97 shared.
+Backend **89.1% funcs / 90.2% lines**. 726 backend, 153 web, 97 shared.
 
 Two shared stubs were extracted here, both for the mock.module rule below:
 `__tests__/helpers/profileStub.ts` (web) and `ssmStub.ts` (backend). The web one

@@ -405,6 +405,12 @@ export const MESSAGES = {
   // On the results page, pointing at the history. Named for what it shows
   // rather than as a generic "back".
   RESULT_VIEW_HISTORY: "View all past interviews",
+  RESULT_VIEW_COACH: "See what to work on",
+  // Says what the page adds rather than naming it. "Coach" is already in the
+  // header; a candidate who has just read six answer cards needs a reason to
+  // click, not a second label for a destination they can already see.
+  RESULT_VIEW_COACH_HINT:
+    "Your roadmap now includes this interview, alongside every earlier round.",
 
   // The three dimensions, as a card shows them.
   DIMENSION_LABEL: {
