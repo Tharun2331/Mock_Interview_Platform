@@ -43,9 +43,63 @@ function wordCount(normalised: string): number {
 // Length-capped rather than matched loosely: a real answer can thank the
 // interviewer on its way past, and "thanks — so the way I'd approach that is…"
 // must still be scored. Only an utterance that is ENTIRELY courtesy counts.
-const COURTESY_MAX_WORDS = 8;
-const COURTESY_PATTERN =
-  /^(ok|okay|alright|sure|yeah|yes|no)?\s*(thank you|thanks|thank you so much|thankyou)\s*(so much|very much|for your time|again|bye|have a good day|you too)?$/;
+const COURTESY_MAX_WORDS = 10;
+
+// The sign-off tails, kept as their own alternation rather than spelled into
+// one long pattern.
+//
+// "thank you have a good one" reached the Evaluator and scored 0/0/0, with
+// coaching that the candidate had missed an entire question about Terraform and
+// security. The pattern allowed "have a good day" and not "have a good one",
+// which is the kind of gap a hand-written alternation always has — so the tail
+// is now a list that can be extended without re-reading a regex.
+const COURTESY_TAILS = [
+  "so much",
+  "very much",
+  "for your time",
+  "again",
+  "bye",
+  "goodbye",
+  "you too",
+  "have a good day",
+  "have a good one",
+  "have a great day",
+  "have a nice day",
+  "take care",
+  "cheers",
+  "appreciate it",
+  "it was nice talking to you",
+  "it was great talking to you",
+].join("|");
+
+const COURTESY_PATTERN = new RegExp(
+  `^(ok|okay|alright|sure|yeah|yes|no)?\\s*` +
+    `(thank you|thanks|thankyou|cheers)\\s*` +
+    `((${COURTESY_TAILS})\\s*)*$`
+);
+
+// A farewell with no thanks in it at all — "have a good one", "you too".
+// Separate from the pattern above because that one requires the thanks.
+const FAREWELL_PATTERN = new RegExp(`^(ok|okay|alright|sure)?\\s*(${COURTESY_TAILS})$`);
+
+// Asking about the session itself rather than answering the question.
+//
+// "how much time is left" scored 0/0/0 with coaching that a senior engineer
+// would have acknowledged the closing gracefully. It is not an answer, it is
+// the candidate asking the app a question — and the interview screen showing a
+// countdown is the actual fix for them needing to ask at all.
+//
+// Capped like the others, and requiring the interrogative form: "we had about
+// five minutes left on the migration" is an answer that mentions time.
+const META_MAX_WORDS = 12;
+const META_PATTERNS: ReadonlyArray<RegExp> = [
+  /\b(how much|how many minutes?|what s the|what is the) (time|minutes?) (is )?(left|remaining)\b/,
+  /\bhow long (do we have|is left|have we got)\b/,
+  /\b(are we|is this|is that) (done|finished|over|the last question)\b/,
+  /\b(do you have|any) (any )?(other|more|further) questions?\b/,
+  /\bis there anything else\b/,
+  /\b(should|shall) (i|we) (keep going|continue|stop)\b/,
+];
 
 // Asking to hear the question again.
 //
@@ -108,7 +162,7 @@ const OPENER_WORDS = new Set([
   "i",
 ]);
 
-export type SkipReason = "courtesy" | "clarification" | "opener";
+export type SkipReason = "courtesy" | "clarification" | "opener" | "meta";
 
 export type ScoreableVerdict =
   | { scoreable: true }
@@ -122,8 +176,20 @@ export function classifyAnswer(transcript: string): ScoreableVerdict {
   // no answer, so this is belt and braces rather than a live path.
   if (words === 0) return { scoreable: false, reason: "courtesy" };
 
-  if (words <= COURTESY_MAX_WORDS && COURTESY_PATTERN.test(text)) {
+  if (
+    words <= COURTESY_MAX_WORDS &&
+    (COURTESY_PATTERN.test(text) || FAREWELL_PATTERN.test(text))
+  ) {
     return { scoreable: false, reason: "courtesy" };
+  }
+
+  // Ahead of the clarification check: "do you have any other questions" is a
+  // question about the session, not a request to hear one repeated.
+  if (
+    words <= META_MAX_WORDS &&
+    META_PATTERNS.some((pattern) => pattern.test(text))
+  ) {
+    return { scoreable: false, reason: "meta" };
   }
 
   if (
