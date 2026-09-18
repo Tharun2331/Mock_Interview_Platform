@@ -1,11 +1,23 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  DynamoDBDocumentClient,
+  GetCommand,
+  PutCommand,
+  QueryCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
-import { CoachReportSchema, ITEM_TYPE, userPk } from "@repo/shared";
+import {
+  COACH_CACHE_VERSION,
+  CoachReportSchema,
+  ITEM_TYPE,
+  userPk,
+} from "@repo/shared";
 import { z } from "zod";
 import {
   resetStructuredStub,
+  setStructuredFailure,
   setStructuredReplies,
+  structuredCallCount,
 } from "../helpers/bedrockStub";
 import type { MountedApp } from "../helpers/testApp";
 
@@ -179,5 +191,147 @@ describe("GET /api/v1/coach", () => {
     const report = CoachReportSchema.parse(await response.json());
     expect(report.roadmap).toHaveLength(2);
     expect(new Set(report.roadmap.map((item) => item.topic)).size).toBe(1);
+  });
+});
+
+// The cache at USER#<uid>/COACH. A DynamoDB item, not Redis and not an HTTP
+// header — the freshness rule is "until this candidate's history changes",
+// which no max-age can express.
+describe("GET /api/v1/coach cache", () => {
+  const rows = [
+    summaryRow({ overallScore: 3 }),
+    summaryRow({
+      overallScore: 8,
+      completedAt: "2026-09-10T10:00:00.000Z",
+      SK: "SUMMARY#2026-09-10T10:00:00.000Z",
+    }),
+  ];
+
+  // The stamp the handler computes from the rows above. Spelled out rather than
+  // taken from coachCacheStamp, so a change to the stamp's definition breaks
+  // this test instead of being mirrored by it.
+  const stamp = {
+    rowCount: 2,
+    latestCompletedAt: "2026-09-10T10:00:00.000Z",
+    summarisedCount: 0,
+    version: COACH_CACHE_VERSION,
+  };
+
+  const prose = {
+    topics: [
+      {
+        topic: "Backend Engineer",
+        summary: "Cached prose.",
+        communicationFocus: ["Cached point."],
+        technicalFocus: [],
+      },
+    ],
+  };
+
+  function cacheItem(overrides: Record<string, unknown> = {}) {
+    return {
+      PK: userPk(USER.id),
+      SK: "COACH",
+      type: ITEM_TYPE.CACHED_COACH,
+      stamp,
+      prose,
+      generatedAt: "2026-09-10T11:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    ddb.on(QueryCommand).resolves({ Items: rows });
+  });
+
+  it("stores the prose after generating a report", async () => {
+    ddb.on(GetCommand).resolves({});
+    const { url } = await start();
+
+    await fetch(`${url}/api/v1/coach`);
+
+    const put = ddb.commandCalls(PutCommand)[0]?.args[0].input;
+    expect(put?.Item?.SK).toBe("COACH");
+    expect(put?.Item?.type).toBe(ITEM_TYPE.CACHED_COACH);
+    expect(put?.Item?.stamp).toEqual(stamp);
+  });
+
+  it("serves a fresh cache without calling Bedrock", async () => {
+    ddb.on(GetCommand).resolves({ Item: cacheItem() });
+    const { url } = await start();
+
+    const response = await fetch(`${url}/api/v1/coach`);
+    const report = CoachReportSchema.parse(await response.json());
+
+    expect(structuredCallCount()).toBe(0);
+    expect(report.trends[0]?.summary).toBe("Cached prose.");
+    // Nothing to write on a hit. A Put per page load to store bytes already
+    // there would spend the write the cache exists to avoid.
+    expect(ddb.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
+  it("still computes the numbers on a hit rather than serving stored ones", async () => {
+    // Only prose is cached. A repaired or backfilled row must show up on the
+    // next request, not after the candidate's next interview.
+    ddb.on(GetCommand).resolves({ Item: cacheItem() });
+    const { url } = await start();
+
+    const report = CoachReportSchema.parse(
+      await (await fetch(`${url}/api/v1/coach`)).json()
+    );
+
+    expect(report.trends[0]?.direction).toBe("improving");
+    expect(report.trends[0]?.scoreHistory).toHaveLength(2);
+  });
+
+  it("regenerates when the history has changed since the report was written", async () => {
+    ddb
+      .on(GetCommand)
+      .resolves({ Item: cacheItem({ stamp: { ...stamp, rowCount: 1 } }) });
+    const { url } = await start();
+
+    const report = CoachReportSchema.parse(
+      await (await fetch(`${url}/api/v1/coach`)).json()
+    );
+
+    expect(structuredCallCount()).toBe(1);
+    expect(report.trends[0]?.summary).toBe("You are steadying out.");
+  });
+
+  it("serves the page when the cache cannot be read", async () => {
+    // The cache exists to save money. Losing it costs a Bedrock call, not a
+    // 500 on a page that had everything it needed to render.
+    ddb.on(GetCommand).rejects(new Error("dynamo unavailable"));
+    const { url } = await start();
+
+    const response = await fetch(`${url}/api/v1/coach`);
+
+    expect(response.status).toBe(200);
+    expect(structuredCallCount()).toBe(1);
+  });
+
+  it("serves the page when the cache cannot be written", async () => {
+    ddb.on(GetCommand).resolves({});
+    ddb.on(PutCommand).rejects(new Error("dynamo unavailable"));
+    const { url } = await start();
+
+    const response = await fetch(`${url}/api/v1/coach`);
+    const report = CoachReportSchema.parse(await response.json());
+
+    expect(response.status).toBe(200);
+    expect(report.roadmap[0]?.topic).toBe("Backend Engineer");
+  });
+
+  it("does not cache a report whose prose generation failed", async () => {
+    // A cached empty generation looks fresh forever, turning one transient
+    // Bedrock failure into a permanently numbers-only report.
+    ddb.on(GetCommand).resolves({});
+    setStructuredFailure(new Error("throttled"));
+    const { url } = await start();
+
+    const response = await fetch(`${url}/api/v1/coach`);
+
+    expect(response.status).toBe(200);
+    expect(ddb.commandCalls(PutCommand)).toHaveLength(0);
   });
 });

@@ -43,7 +43,7 @@ ECS, so nothing runs outside a laptop. That is the whole of what remains.
 | 5.5 — Gap + Company Intel agents | ✅ Complete — not in the original plan |
 | 6 — Coach | ✅ Complete **without RAG**, deliberately — see the phase below |
 | 7 — Deploy + CI/CD + Observability | 🔸 ~40% — CI gates every PR; no ECS, no CD, no alarms, prod empty |
-| Testing (cross-cutting) | 🟢 948 tests: 710 backend, 151 web, 87 shared. Backend 89.1% funcs / 90.2% lines |
+| Testing (cross-cutting) | 🟢 974 tests: 726 backend, 151 web, 97 shared. Backend 89.1% funcs / 90.2% lines |
 
 **Next highest-leverage step: the `ecs` module.** It is the only thing between
 this and a URL somebody else can open, and it blocks every other Phase 7 item.
@@ -451,10 +451,39 @@ knows and not an examination of it. Presenting it with a clarity score's
 authority would be overclaiming, and a candidate who works that out later stops
 trusting the confident half too.
 
-### Not done
-- [ ] `GET /coach` regenerates on every request — one Ministral call per page
-      load, no cache. The obvious fix is a `USER#<uid>/COACH` row stamped with
-      the session count, invalidated the way the plan cache is
+### Cached at `USER#<uid>/COACH`
+
+A DynamoDB item, not Redis (ADR-0006) and not a `Cache-Control` header. The
+freshness rule is not a duration — a report is valid until the candidate's
+history changes and indefinitely if it does not — so no `max-age` expresses it,
+and a browser cache cannot skip the Bedrock call that is the entire point.
+
+**Only the prose is stored.** Every score, direction and priority is recomputed
+per request from rows the handler had to read anyway, so a repaired or
+backfilled row shows up immediately instead of after the next interview.
+
+Invalidation is **pull-based**: a four-field stamp compared on read, not a
+delete issued by whatever changed the data. Push invalidation has a failure this
+codebase has already been bitten by — if the write succeeds and the delete does
+not, the cache is stale forever with nothing that will ever look again.
+
+| Stamp field | Catches |
+|-------------|---------|
+| `rowCount` | a session finished, or an old one aged out via TTL |
+| `latestCompletedAt` | one row expiring while another lands — count unchanged |
+| `summarisedCount` | the summarizer attaching a narrative to a row the report was already built without. Neither field above moves |
+| `version` | a deploy changed the prompt. The one trigger with no signal in the data |
+
+`runCoachAgent` takes optional `cachedProse` and returns
+`{ report, prose, generated }`. It does not know what a cache is — the route
+owns the freshness decision, because the route read the rows the stamp is
+computed from. A failed generation returns `prose: null` and is deliberately not
+cached: storing an empty generation would look fresh forever, turning one
+transient Bedrock failure into a permanently numbers-only report.
+
+`deleteProfileItems` names this SK explicitly. The USER partition has no prefix
+sweep, so a cache added without a line there outlives the account it belongs to
+— `__tests__/lib/erasure.test.ts` now asserts that, which nothing did before.
 - [ ] No link from the results page to `/coach`
 
 ---
@@ -751,7 +780,7 @@ shared helper first.
 
 ### Pass 4 ✅ — the agents added after Phase 5 (948 tests total)
 
-Backend **89.1% funcs / 90.2% lines**. 710 backend, 151 web, 87 shared.
+Backend **89.1% funcs / 90.2% lines**. 726 backend, 151 web, 97 shared.
 
 Two shared stubs were extracted here, both for the mock.module rule below:
 `__tests__/helpers/profileStub.ts` (web) and `ssmStub.ts` (backend). The web one

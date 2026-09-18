@@ -103,6 +103,8 @@ export const MESSAGES = {
   ACCOUNT_DELETE_FAILED: "We could not finish deleting your account. Some data may remain — try again shortly.",
   PLAN_CACHE_READ_FAILED: "Could not read the cached interview plan.",
   PLAN_CACHE_SAVE_FAILED: "Could not cache the interview plan.",
+  COACH_CACHE_READ_FAILED: "Could not read the cached coaching report.",
+  COACH_CACHE_SAVE_FAILED: "Could not cache the coaching report.",
   // Log-facing. Redaction failing closed means the upload fails: storing text
   // that only the deterministic pass had seen would put names and addresses in
   // DynamoDB with nothing downstream able to tell.

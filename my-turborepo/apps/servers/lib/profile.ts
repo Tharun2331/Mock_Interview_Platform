@@ -6,13 +6,17 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import {
+  CachedCoachSchema,
   CachedPlanSchema,
   ITEM_TYPE,
   PLAN_LIMITS,
   SORT_KEY,
   UserProfileSchema,
   userPk,
+  type CachedCoach,
   type CachedPlan,
+  type CoachCacheStamp,
+  type CoachProse,
   type PlanResponse,
   type PreInterviewRepo,
   type UserProfile,
@@ -27,6 +31,7 @@ import { MESSAGES } from "./messages";
 
 const PROFILE_CONTEXT = "PROFILE";
 const PLAN_CONTEXT = "PLAN";
+const COACH_CONTEXT = "COACH";
 
 const profileKey = (userId: string) => ({
   PK: userPk(userId),
@@ -36,6 +41,14 @@ const profileKey = (userId: string) => ({
 const cachedPlanKey = (userId: string) => ({
   PK: userPk(userId),
   SK: SORT_KEY.PLAN,
+});
+
+// SORT_KEY.COACH is also the SK of the per-session RAG sketch in session.ts.
+// Different partition — SESSION#<sid> there, USER#<uid> here — so the two
+// cannot collide, and nothing writes that one.
+const cachedCoachKey = (userId: string) => ({
+  PK: userPk(userId),
+  SK: SORT_KEY.COACH,
 });
 
 // A write is refused once erasure has been requested. Applied to every mutating
@@ -282,8 +295,16 @@ export async function deleteProfileItems(args: {
 }): Promise<void> {
   const TableName = requireTable();
 
-  // Plan first, profile second — same ordering logic one level down.
-  for (const Key of [cachedPlanKey(args.userId), profileKey(args.userId)]) {
+  // Derived items first, profile last — same ordering logic one level down.
+  //
+  // Every user-scoped SK must be named here. There is no prefix sweep for this
+  // partition, so a new cache added without a line in this array is an item
+  // that survives an erasure request.
+  for (const Key of [
+    cachedPlanKey(args.userId),
+    cachedCoachKey(args.userId),
+    profileKey(args.userId),
+  ]) {
     try {
       await dynamoClient.send(new DeleteCommand({ TableName, Key }));
     } catch (error) {
@@ -426,5 +447,75 @@ export async function putCachedPlan(args: {
     );
   } catch (error) {
     throw readFailure(error, MESSAGES.PLAN_CACHE_SAVE_FAILED);
+  }
+}
+
+// A cached coaching report, at USER#<uid> / COACH.
+//
+// Same machine as the plan cache: a DynamoDB item and a stamp compared on read.
+// Two differences worth knowing before editing either:
+//
+//   1. Only the model's prose is stored. Every score, direction and priority is
+//      recomputed per request from rows the handler had to read anyway.
+//   2. A miss is cheap and a stale hit is not. A stale report tells a candidate
+//      to study something they have already fixed, so the freshness check is
+//      deliberately strict — any change to the inputs regenerates.
+//
+// No TTL, matching PROFILE and PLAN. This is account-scoped, and the stamp
+// already expires it the moment the candidate's history changes.
+export async function getCachedCoach(args: {
+  userId: string;
+}): Promise<CachedCoach | null> {
+  const TableName = requireTable();
+
+  let response;
+  try {
+    response = await dynamoClient.send(
+      new GetCommand({
+        TableName,
+        Key: cachedCoachKey(args.userId),
+        // A report written seconds ago by this candidate's previous request
+        // must not be missed by an eventually-consistent read — that pays for a
+        // second generation to produce the same prose.
+        ConsistentRead: true,
+      })
+    );
+  } catch (error) {
+    throw readFailure(error, MESSAGES.COACH_CACHE_READ_FAILED);
+  }
+
+  if (response.Item === undefined) return null;
+
+  return parseItem(CachedCoachSchema, response.Item, COACH_CONTEXT);
+}
+
+// Overwrites unconditionally — one report per user, newest wins.
+//
+// The caller passes the stamp it computed from the rows it actually read,
+// before the Bedrock call rather than after. Recomputing here would pick up a
+// summary attached while the model was running and mark prose that never saw it
+// as fresh — the same trap `putCachedPlan` documents for `profileVersion`.
+export async function putCachedCoach(args: {
+  userId: string;
+  prose: CoachProse;
+  stamp: CoachCacheStamp;
+}): Promise<void> {
+  const TableName = requireTable();
+
+  try {
+    await dynamoClient.send(
+      new PutCommand({
+        TableName,
+        Item: {
+          ...cachedCoachKey(args.userId),
+          type: ITEM_TYPE.CACHED_COACH,
+          prose: args.prose,
+          stamp: args.stamp,
+          generatedAt: new Date().toISOString(),
+        },
+      })
+    );
+  } catch (error) {
+    throw readFailure(error, MESSAGES.COACH_CACHE_SAVE_FAILED);
   }
 }

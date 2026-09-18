@@ -97,6 +97,7 @@ export const ITEM_TYPE = {
   USER_SESSION_SUMMARY: "user_session_summary",
   USER_PROFILE: "user_profile",
   CACHED_PLAN: "cached_plan",
+  CACHED_COACH: "cached_coach",
 } as const;
 
 export const sessionPk = (sessionId: string): string =>
