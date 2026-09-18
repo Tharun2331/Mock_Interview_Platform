@@ -11,7 +11,13 @@ import { SessionAccessError, SessionStateError } from "../lib/errors";
 import { MESSAGES } from "../lib/messages";
 import { config } from "../lib/config";
 import type { QuestionType } from "@repo/shared";
-import { effectiveTargetMinutes, nudgeSchedule } from "../lib/interviewClock";
+import {
+  QUESTIONS_REMAINING,
+  effectiveTargetMinutes,
+  interviewPhase,
+  nudgeSchedule,
+  type InterviewPhase,
+} from "../lib/interviewClock";
 import { classifyAnswer } from "../lib/scoreableAnswer";
 import { SonicConversation } from "../lib/sonic";
 import { startEvaluationSummary } from "../lib/evaluations";
@@ -142,6 +148,34 @@ function clockOf(state: InterviewState): InterviewClock {
   };
 }
 
+// The clock plus the conclusion drawn from it.
+//
+// Rides on every tool result rather than only in the stream header, for the
+// same reason the live minutes do: the header is accurate for one instant and
+// a stream runs for roughly six and a half minutes. A phase read once at the
+// top is a phase the interviewer is still acting on long after it changed.
+//
+// questionsRemaining is sent because "wrap_up" is ambiguous on its own — it
+// could mean "start closing" or "you are closing" — and a number is not. The
+// measured failure this addresses is an interviewer that asked a Terraform
+// question, then "one quick final question" about security, then signed off
+// twice, all after the wrap-up threshold had passed.
+function stateOf(state: InterviewState): InterviewClock & {
+  phase: InterviewPhase;
+  questionsRemaining: number | null;
+} {
+  const phase = interviewPhase(
+    Date.now() - state.startedAt,
+    state.targetMinutes
+  );
+
+  return {
+    ...clockOf(state),
+    phase,
+    questionsRemaining: QUESTIONS_REMAINING[phase],
+  };
+}
+
 // Handles a tool the interviewer invoked. Returns whatever should go back on
 // the stream as the tool result.
 //
@@ -183,10 +217,10 @@ function runTool(call: ToolCall, state: InterviewState): unknown {
       // measured session that ran to the hard stop with the interviewer still
       // opening new threads. Putting the time where the model already looks
       // costs nothing and removes the need for it to ask.
-      return { ok: true, exchangesLogged: state.exchanges, ...clockOf(state) };
+      return { ok: true, exchangesLogged: state.exchanges, ...stateOf(state) };
     }
     case INTERVIEW_TOOL_NAMES.GET_SESSION_STATE: {
-      return { exchangesLogged: state.exchanges, ...clockOf(state) };
+      return { exchangesLogged: state.exchanges, ...stateOf(state) };
     }
     case INTERVIEW_TOOL_NAMES.END_INTERVIEW: {
       state.endRequested = true;
@@ -586,6 +620,11 @@ async function handleConnection(
               // Synchronous up to its first await, so the buffer rolls forward
               // before any further event can append to it.
               if (state.buffer.isComplete) void flushExchange();
+              // After the flush, so a turn that closes an exchange does not
+              // also mark the question it just rolled forward as abandonable.
+              // This is what lets the buffer tell "more sentences of the same
+              // question" from "a whole second question nobody answered".
+              state.buffer.noteTurnEnded();
               sendEvent(socket, { type: "turnEnded" });
             }
             break;

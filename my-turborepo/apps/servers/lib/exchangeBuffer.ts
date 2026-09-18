@@ -47,6 +47,11 @@ export class ExchangeBuffer {
   private askedAt = Date.now();
   private interrupted = false;
 
+  // Whether the interviewer's turn has ended since the current question started
+  // accumulating. Set by noteTurnEnded, cleared the moment new question text
+  // arrives — so it marks a boundary rather than a state.
+  private questionTurnClosed = false;
+
   // Sonic emits a question as several sentence-level blocks, so they are joined
   // rather than replaced.
   appendQuestion(text: string): void {
@@ -57,7 +62,42 @@ export class ExchangeBuffer {
       this.pendingQuestionParts.push(trimmed);
       return;
     }
+
+    // A SECOND complete turn with no answer between them. The candidate never
+    // answered the first question, so it was abandoned — and joining the two
+    // produces a "question" no answer could ever match.
+    //
+    // This is what produced the worst record in the dev table: a Terraform
+    // question, a "one quick final question" about security, and a sign-off
+    // repeated twice, all stored as one questionText against the transcript
+    // "thank you have a good one" — then scored 0/0/0 with coaching that the
+    // candidate had missed an entire question they were never given room to
+    // answer.
+    //
+    // Replacing keeps the question the candidate was actually responding to.
+    // The abandoned one is logged rather than stored: it was never answered,
+    // so there is no exchange to file it under.
+    if (this.questionTurnClosed && this.questionParts.length > 0) {
+      this.abandonedQuestions += 1;
+      this.questionParts = [];
+      // The clock restarts with the question that replaced it, or durationMs
+      // would measure from a question nobody answered.
+      this.askedAt = Date.now();
+    }
+
+    this.questionTurnClosed = false;
     this.questionParts.push(trimmed);
+  }
+
+  /** How many questions the interviewer asked and moved on from without an
+   *  answer. Read only for logging — a non-zero count is the interviewer
+   *  talking over its own pauses. */
+  abandonedQuestions = 0;
+
+  // The interviewer stopped speaking. Called on every turn end, including the
+  // ones that do not close an exchange.
+  noteTurnEnded(): void {
+    this.questionTurnClosed = true;
   }
 
   appendAnswer(text: string): void {
@@ -118,6 +158,11 @@ export class ExchangeBuffer {
     this.answerParts = [];
     this.askedAt = now;
     this.interrupted = false;
+    // The question that just became current arrived on a turn that has already
+    // ended, and the flag is still set from it. Cleared so the NEXT turn is the
+    // one that can abandon it — otherwise a second sentence of the very same
+    // question would count as a whole new unanswered one.
+    this.questionTurnClosed = false;
 
     return exchange;
   }

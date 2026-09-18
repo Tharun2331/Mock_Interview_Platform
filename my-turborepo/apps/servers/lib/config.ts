@@ -72,7 +72,7 @@ const DEFAULT_TEXT_MODELS = [
   "mistral.ministral-3-8b-instruct",
   "us.meta.llama4-scout-17b-instruct-v1:0",
   "qwen.qwen3-coder-30b-a3b-v1:0",
-].join(",");
+].join(","); 
 
 // Shortens an interview to a length that can actually be sat through while
 // developing. A real plan is 15-40 minutes by schema, which makes testing the

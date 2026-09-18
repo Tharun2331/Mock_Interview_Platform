@@ -120,3 +120,42 @@ export function wrapUpAtRemainingMinutes(
     Math.ceil(targetMinutes * TEST_WRAP_UP_REMAINING_FRACTION)
   );
 }
+
+// Which part of the interview this is, as a name rather than as arithmetic.
+//
+// The server already computes every threshold below; before this, the
+// interviewer was handed two numbers and expected to do the subtraction itself
+// on every turn and reach the same conclusion. It did not, reliably — a
+// measured session shows it asking a Terraform question, then a "one quick
+// final question" about security, then signing off twice, all while the clock
+// said the wrap-up had begun.
+//
+// Naming the phase removes the arithmetic from the model's job. It is the same
+// move as putting the live clock in the tool result rather than trusting the
+// stream's opening header: state the conclusion, not the inputs.
+export type InterviewPhase = "core" | "wrap_up" | "closing";
+
+// How many NEW questions the interviewer may still ask in each phase. Sent
+// alongside the phase because "wrap_up" is ambiguous on its own — it could mean
+// "start closing" or "you are closing" — and a number cannot be.
+export const QUESTIONS_REMAINING: Record<InterviewPhase, number | null> = {
+  // Null, not a large number: a budget the interviewer could count down from
+  // would invite it to ration questions against a figure the plan already sets.
+  core: null,
+  wrap_up: 1,
+  closing: 0,
+};
+
+export function interviewPhase(
+  elapsedMs: number,
+  targetMinutes: number,
+  settings: ClockSettings = currentSettings()
+): InterviewPhase {
+  const schedule = nudgeSchedule(targetMinutes, settings);
+
+  // Checked in descending order of severity. At the final call there is no
+  // question left to ask, whatever the wrap-up threshold says.
+  if (elapsedMs >= schedule.finalCallAtMs) return "closing";
+  if (elapsedMs >= schedule.wrapUpAtMs) return "wrap_up";
+  return "core";
+}
