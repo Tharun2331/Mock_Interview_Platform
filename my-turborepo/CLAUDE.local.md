@@ -3,28 +3,51 @@
 > and public on GitHub — deliberately, as a record of how the build progressed.
 > The `.claude.local.md` entry in `.gitignore` is a different file and does not
 > match this one. Write nothing here you would not publish.
-> Updated as work progresses. Last updated: 2026-09-11
+> Updated as work progresses. Last updated: 2026-09-18
 
 ---
 
-## Current position: Phase 5 running end to end, minus deployment
+## Current position: the product is built. Only deployment is left.
 
-The candidate signs in, saves a profile once (name, resume, GitHub), picks a
-role, holds a full spoken interview with Nova 2 Sonic, and **every answer is
-now scored asynchronously**. Verified against real AWS on 2026-09-10: an
-interview queued 3 answers, the worker scored them, and completion detection
-closed the session out.
+Every phase that a candidate can see is done. They sign in, save a profile
+once, optionally paste a job description and name the company, hold a full
+spoken interview with Nova 2 Sonic, read per-answer feedback as it lands, see
+every past round on a history page, and get a two-track study roadmap built
+from all of them.
 
-**The loop is now visible end to end.** `GET /api/v1/sessions/:sessionId/evaluation`
-returns partial results as they land, and `result.tsx` polls it — per-answer
-scores with the candidate's own words and what would have made each stronger,
-plus whole-interview averages once the round finishes. The interview's end
-screen leads there rather than back to setup, and the session lives in the URL
-so feedback survives a reload.
+**Seven agents, not four.** The original plan named Planner, Mock Interview,
+Evaluator and Coach. Three more arrived with the job-description work and are
+now load-bearing:
 
-**What is still missing:** the Coach (Phase 6), and any history view. A
-candidate can read one interview's feedback only by finishing it or keeping the
-link.
+| Agent | Runs | Produces |
+|-------|------|----------|
+| Planner | once per session | focus areas, question mix, difficulty, length |
+| Gap | once per session, if a posting was pasted | each requirement bucketed strong/weak/none |
+| Company Intel | once per session, if a company was named too | interview style, focus, seniority bar |
+| Mock Interview | the live Sonic stream | the interview itself |
+| Evaluator | once per ANSWER | correctness/clarity/depth + a rewrite of weak answers |
+| Session Summarizer | once per completed session | what the whole round showed, per category |
+| Coach | on GET /coach | trends per topic, two-track roadmap |
+
+**The one thing that has never been deployed is the application.** There is no
+ECS, so nothing runs outside a laptop. That is the whole of what remains.
+
+| Phase | Status |
+|-------|--------|
+| 1 — Foundation + Planner | ✅ Complete |
+| 2 — Resume + Auth + Database | ✅ Complete |
+| 3 — WebSocket + Speech | ✅ Complete (Redis dropped — see below) |
+| 4 — Sonic end-to-end | ✅ Complete |
+| 4.5 — Profile, PII redaction, erasure | ✅ Complete |
+| 5 — Evaluator + SQS | ✅ Complete — the `ecs` module moved to Phase 7, where it belongs |
+| 5.5 — Gap + Company Intel agents | ✅ Complete — not in the original plan |
+| 6 — Coach | ✅ Complete **without RAG**, deliberately — see the phase below |
+| 7 — Deploy + CI/CD + Observability | 🔸 ~40% — CI gates every PR; no ECS, no CD, no alarms, prod empty |
+| Testing (cross-cutting) | 🟢 948 tests: 710 backend, 151 web, 87 shared. Backend 89.1% funcs / 90.2% lines |
+
+**Next highest-leverage step: the `ecs` module.** It is the only thing between
+this and a URL somebody else can open, and it blocks every other Phase 7 item.
+It is also where the bill starts — see the cost note in Phase 7.
 
 **Phase 4.5 — candidate material is user-scoped (2026-09-09).** Resume and
 GitHub moved off the session and onto `USER#<uid>/PROFILE`, captured once
@@ -174,7 +197,7 @@ The remaining consequence is the rate-limiter carry-forward above.
 
 ---
 
-## Phase 4 — Sonic end-to-end 🟡
+## Phase 4 — Sonic end-to-end ✅
 
 ### Backend
 - [x] System prompt built from the candidate's plan, resume and repos
@@ -190,9 +213,9 @@ The remaining consequence is the rate-limiter carry-forward above.
 
 ### Frontend
 - [x] Buffered Web Audio playback (no `<audio>` blob)
-- [ ] `Result.tsx` — deliberate 36-line placeholder that says feedback is not
-      wired yet, rather than a skeleton promising data that is not coming.
-      Unblocks with Phase 5/6
+- [x] `result.tsx` — real, and reachable from the interview's end screen. Polls
+      `GET /sessions/:id/evaluation` and shows per-answer scores as they land,
+      with the candidate's own words beside each one
 
 ---
 
@@ -245,9 +268,8 @@ Candidate material moved from session-scoped to user-scoped. Reasoning in
 - [x] `audio/` prefix, its lifecycle rule and `audio_retention_days` removed
 
 ### Not done
-- [ ] The onboarding guard and the upload state machine are still untested —
-      exactly what the frontend skill asks for. Covered by testing pass 2; the
-      runner itself now exists (see **Testing** below)
+- [x] ~~The onboarding guard is untested~~ — `RequireProfile.test.tsx`, pass 2.
+      The **upload state machine** in `ResumeField` is still untested
 - [ ] `POST /profile/resume` re-scrapes GitHub on every resume upload, even
       when the URL has not changed — a wasted call against an unauthenticated
       60/hr quota shared by every user. (`PUT /profile/github` is fine: the
@@ -255,9 +277,21 @@ Candidate material moved from session-scoped to user-scoped. Reasoning in
 
 ---
 
-## Phase 5 — Evaluator + SQS 🟡 (~80%)
+## Phase 5 — Evaluator + SQS ✅
 
-Backend and queue are built and tested. Only the `ecs` module is outstanding.
+Backend, queue and worker are built, tested and applied to dev. The `ecs`
+module was the last item and has moved to Phase 7, where it always belonged.
+
+**The Evaluator now also writes a sample answer** for weak answers only — a
+rewrite of the candidate's OWN answer, never a model answer about work they did
+not do. The gate is per category: technical and role-specific on correctness
+and depth, behavioural on correctness and clarity, because "depth" on a story
+about disagreeing with a colleague mostly measures how long they talked.
+
+It cannot gate before the call — the gate reads the scores the call produces —
+so the prompt states the rule to keep strong answers cheap and the agent
+enforces it afterwards. One round trip, on the one agent that runs once per
+question.
 
 ### Backend ✅
 - [x] `agents/evaluator.ts` — correctness / clarity / depth (0–10), via `converseText`
@@ -318,8 +352,9 @@ with the `sqs` module's `visibility_timeout_seconds`; nothing enforces it.
       `apps/servers/.env` from `terraform output eval_queue_url`, or the
       enqueue raises `ServiceError` at every interview end. (The test preload
       overrides it deliberately, so the suite is unaffected either way.)
-- [ ] `ecs` module — cluster, API service, Spot worker service. **The only
-      thing left in Phase 5**, and as much Phase 7 deploy work as Phase 5.
+- [x] ~~`ecs` module~~ — **moved to Phase 7.** It is deploy work, not product
+      work, and listing it here made Phase 5 look unfinished when the queue,
+      the worker and completion detection had all been live in dev for a week.
 
 **`overview.md` §8 overstates what IAM can do, and the module says so.** It
 describes the worker's grant as "DynamoDB write on `EVAL#*` items only". That
@@ -347,33 +382,129 @@ real money starts.
 
 ---
 
-## Phase 6 — Coach + RAG ⬜
+## Phase 5.5 — Gap and Company Intel agents ✅
 
-- [ ] `agents/coach.ts` — reads all `EVAL#*`, retrieves from the KB, writes `COACH`
-- [ ] `lib/bedrockKB.ts` — `BedrockAgentRuntimeClient` singleton
-- [ ] `GET /api/v1/coach/:sessionId`
-- [ ] `bedrock` module — Knowledge Base + S3 data source
-- [ ] IAM — `bedrock:Retrieve` on the KB ARN
+Not in the original plan. Added when the job-description field arrived, and
+both are **optional throughout**: no posting means neither runs and the
+interview falls back to resume and GitHub alone, which is what this product
+did before they existed.
+
+- [x] `agents/gap.ts` — buckets each requirement strong/weak/none against the
+      candidate's material, via Bedrock **Tool Use** rather than prompt-for-JSON
+- [x] `agents/companyIntel.ts` — two Tavily searches, then an enum
+      classification of style / focus / seniority
+- [x] `routes/gap.ts`, `routes/companyIntel.ts`, both Cognito-protected
+- [x] `lib/tavily.ts` — the **only non-AWS call in the service**. Search is
+      retrieval, not inference, so Bedrock remains the only inference path. What
+      leaves the VPC is a company name and two fixed phrases — never the resume,
+      the transcript or a user id, and the module takes a company name and
+      nothing else so it *cannot* leak candidate material
+- [x] `lib/ssm.ts` — the Tavily key, read from Parameter Store at point of use
+
+**The Gap agent needed a deterministic repair pass, and that is the lesson.**
+Ministral returned eight of twelve requirements as `strong` including ones whose
+own evidence said "not explicitly mentioned", and emitted the same requirement
+twice with opposite buckets. The prompt already forbade both. `repairRequirements`
+now demotes any non-`none` bucket whose evidence names an absence and collapses
+restatements, keeping the weaker bucket — a false `none` costs a question the
+candidate answers well, a false `strong` costs the gap the interview existed to
+find. **Do not replace it with more prompt instructions.**
+
+Company Intel **never throws**. Search down, search empty, key missing, model
+refusing — every path returns the all-unknown reading, and an all-unknown
+reading renders nothing in the prompt.
+
+---
+
+## Phase 6 — Coach ✅ (RAG deliberately deferred to v2)
+
+**No Knowledge Base, no retrieval, no citations.** That is a decision, not an
+unfinished item: everything the Coach says comes from rows this product already
+wrote about this candidate's own interviews, and a KB would add infrastructure
+before there was any evidence it was needed. `SessionCoachSchema` in session.ts
+still carries `plan` and `citations` from the RAG sketch — **nothing writes it**.
+
+- [x] `agents/sessionSummarizer.ts` — runs once per completed session, says what
+      the whole round showed per category
+- [x] `agents/coach.ts` — trends per topic, two-track roadmap
+- [x] `routes/coach.ts` — `GET /api/v1/coach`, no session id (it reads all of them)
+- [x] `pages/coach.tsx` + `TrendSparkline` — sparkline per topic, priority-ordered roadmap
+
+**Every number is computed; the model only writes prose.** Directions, score
+histories, track averages and priorities are arithmetic. The model contributes
+one line per trend and up to four focus points per track, and any topic it
+returns that the analysis did not produce is dropped on merge. "Do not invent
+scores" is a property of the shape rather than an instruction.
+
+**The access pattern is the design.** "Every evaluation for this user" is not
+expressible — `EVAL#` items live under `SESSION#<sid>` with no attribute naming
+a user, so it would be their session list plus one Query per session. The
+Coach instead reads `USER#<uid>/SUMMARY#<completedAt>` in **one Query**. Those
+rows now carry the three dimension averages and the session summary, which is
+what lets the roadmap name subject matter rather than only delivery advice.
+
+**Two tracks, and the confidence is in the data.** `communication` is
+`confident` because clarity is scored on every answer. `technical` is **always
+`tentative`**, even at 9/10: correctness and depth are read off whichever
+questions the interviewer happened to ask, which is a sample of what someone
+knows and not an examination of it. Presenting it with a clarity score's
+authority would be overclaiming, and a candidate who works that out later stops
+trusting the confident half too.
+
+### Not done
+- [ ] `GET /coach` regenerates on every request — one Ministral call per page
+      load, no cache. The obvious fix is a `USER#<uid>/COACH` row stamped with
+      the session count, invalidated the way the plan cache is
+- [ ] No link from the results page to `/coach`
 
 ---
 
 ## Phase 7 — Deploy + CI/CD + Observability 🔸
 
 ### Terraform
-- [x] `modules/cloudfront/`, `modules/s3/`, `modules/ssm/`, `modules/dynamodb/`
-- [ ] Extend `ssm` to cover **all** runtime config, not just Google creds
-- [ ] `cloudwatch` module — log groups, alarms (error rate, latency, DLQ depth)
-- [ ] `environments/prod/` — still five empty files
+- [x] `modules/` — `cloudfront`, `cognito`, `dynamodb`, `iam`, `s3`, `sqs`,
+      `ssm`, `vpc`. All applied to dev
+- [x] `ssm` carries the Tavily key; the server role has `ssm:GetParameter`
+      scoped to that one parameter ARN plus `kms:Decrypt` narrowed by ViaService
+- [ ] **`ecs` module — cluster, API service, Spot worker service.** The blocker:
+      nothing else in this phase can land without it, and nothing runs outside a
+      laptop until it does
+- [ ] `cloudwatch` module — log groups, alarms (error rate, latency, DLQ depth,
+      and Bedrock invocations — see the cost note below)
+- [ ] Extend `ssm` to cover **all** runtime config, not just secrets
+- [ ] `environments/prod/` — still five empty files (0 bytes each)
 
 ### CI/CD
-- [ ] **`.github/workflows/` does not exist.** No deploy pipeline, no PR checks.
-      Deliberately deferred — the runner and the `test` task it will call exist,
-      so the workflow is now a thin wrapper rather than a design problem
+- [x] **`.github/workflows/ci.yml` exists** and runs `check-types` and `test` on
+      every PR and every push to `dev` and `master`. It caught the `mock.module`
+      leak that three local passes missed — see the rule below
 - [x] `check-types` wired for all four workspaces
 - [x] `test` wired as a turbo task — `bun run test` fans out from the root
 - [x] `build.ts` — production `Bun.build()`, fails on missing `BUN_PUBLIC_*`
+- [ ] **No CD at all.** Nothing deploys; CI only gates
 - [ ] Upload `dist/` to S3 on deploy
 - [ ] Presigned URL flow for resume/audio
+
+### Cost — read before starting this phase
+
+This is where the bill begins, and two of the three charges run whether or not
+anybody uses the app:
+
+- **NAT Gateway** — ~$32/month per AZ plus data processing. With no ECS tasks it
+  is currently pure waste. Decide one NAT or one per AZ *deliberately*; a second
+  is the classic way this doubles silently
+- **ALB** — same shape, smaller number
+- **ECS Fargate** — per vCPU-hour. Scaling dev to zero between sessions is the
+  same discipline as destroying the NAT
+
+The `cloudwatch` alarm on Bedrock invocations matters more than it looks: Nova 2
+Sonic bills by open stream duration, so a leaked stream is invisible until the
+bill arrives. No `.tf` can cap it — an alarm is the closest infrastructure gets
+to a safety net.
+
+**Blocking dependency:** the rate limiter is in-memory, so its budget is per
+task. That has to be decided BEFORE ECS runs more than one task, not after.
+Options are in [ADR-0006](docs/adr/0006-drop-redis-dynamodb-alone.md).
 
 ---
 
@@ -557,6 +688,41 @@ nobody asked for, and there is a test pinning it.
 Gated twice: the flag is only read outside production, and ignored there even
 if set. `bun run start` sets `NODE_ENV=production`.
 
+### Turn-taking at the end of an interview (2026-09-18)
+
+One measured session ended with a "question" made of three interviewer turns
+concatenated, scored against the transcript "thank you have a good one", and a
+second record scoring "how much time is left". Both landed 0/0/0 with coaching
+blaming the candidate. Four separate defects, and the first is the one that
+matters:
+
+**The compound question was not one model turn.** `ExchangeBuffer` joins
+question text while `hasAnswer` is false, and Sonic takes its turn after about
+two seconds of silence — so the interviewer asked, waited, asked again, closed,
+and all of it accumulated into one `questionText` no answer could match. The
+buffer now takes `noteTurnEnded()` and REPLACES an unanswered question rather
+than joining to it. Sentence-level blocks within a single turn still join,
+which is the behaviour that function exists for — there is a test pinning both.
+
+**The phase is stated, not derived.** `interviewPhase()` names
+core/wrap_up/closing from the same schedule the timers use, and it rides on
+every `logExchange` and `getSessionState` result rather than only in the stream
+header — a header is accurate for one instant and a stream runs six and a half
+minutes. `questionsRemaining` goes with it because "wrap_up" alone could mean
+"start closing" or "you are closing".
+
+**The scoring filter had two holes**, both visible in that session. The courtesy
+pattern allowed "have a good day" and not "have a good one"; the tails are now a
+list. A question about the session itself — "how much time is left" — matched no
+category, so `meta` exists now. The bias stays under-filtering: an unscored
+pleasantry costs one odd card, a filtered real answer deletes feedback earned.
+
+**Output filtering before playback is not possible here**, and it was asked for.
+Sonic is speech-to-speech: audio reaches the candidate before the text event
+reaches the server. There is no point at which a regex could suppress a question
+already spoken. The buffer fix addresses the same failure at the only layer that
+can act on it.
+
 ### The mock.module rule (learned the hard way, 2026-09-10)
 
 **Never `mock.module` an internal module that another test file is the subject
@@ -582,6 +748,40 @@ the route tests exercise the real Planner.
 because `lib/github.ts` has no test of its own. Anyone writing `github.test.ts`
 must expect to be hijacked — mock `axios` there, or move the github stub into a
 shared helper first.
+
+### Pass 4 ✅ — the agents added after Phase 5 (948 tests total)
+
+Backend **89.1% funcs / 90.2% lines**. 710 backend, 151 web, 87 shared.
+
+Two shared stubs were extracted here, both for the mock.module rule below:
+`__tests__/helpers/profileStub.ts` (web) and `ssmStub.ts` (backend). The web one
+was not optional — `Header.test.tsx` and `RequireProfile.test.tsx` each
+registered their own `@/lib/profile`, which only passed because neither observed
+the other's state. Adding a third caller turned it into six failures at once.
+
+`__tests__/helpers/searchStub.ts` fakes Tavily over `globalThis.fetch` rather
+than mock.module'ing `lib/tavily`, deliberately: stubbing the module would
+delete its timeout, its both-queries-failed rule and its response parsing from
+the suite while appearing to cover them. It delegates every non-Tavily request
+to the real fetch, so the route tests driving live Express servers are untouched.
+
+Cases worth knowing:
+- **`aliasedProjection` aliases every name, not the ones that look reserved.**
+  `depth` took down the completion query; `role` took down the history page the
+  moment a projection was added. aws-sdk-client-mock does NOT validate against
+  the reserved-word list — it accepts a bare name and real DynamoDB rejects it —
+  so the tests assert the STRUCTURE ("no token lacks a #"), which a new field
+  cannot escape
+- `toQuestionType` inherits the category on a follow-up. "Can you say more?"
+  after a behavioural question is still behavioural; scored as technical the
+  Evaluator marks a candidate down for not citing an algorithm in a story about
+  a colleague
+- The Gap repair pass demotes `strong` whose evidence names an absence, and
+  every fixture is real output copied from the dev table
+- The session summarizer never asks for a rewrite that already exists —
+  asserted by `[NEEDS A REWRITE]` being absent from the prompt
+- `trendDirection` compares half against half. One test overclaimed that this
+  neutralises an outlier; it damps one. The test now says what is true
 
 ### Still untested
 
@@ -634,7 +834,9 @@ the cheap outcome.
 
 | Issue | File | Priority |
 |-------|------|----------|
-| No CI/CD at all; `.github/workflows/` absent | — | High before deploy |
+| No CD. `ci.yml` gates PRs but nothing deploys | `.github/workflows/` | High — Phase 7 |
+| `GET /coach` regenerates per request; one Ministral call per page load | `apps/servers/routes/coach.ts` | Medium — cache on `USER#<uid>/COACH` |
+| No link from the results page to `/coach` | `apps/web/src/pages/result.tsx` | Low |
 | Editing `packages/shared` does not invalidate the dev server's cached module | Bun dev server | Medium — restart after any shared edit |
 | Rate limiter is in-memory; per-task budget | `apps/servers/lib/rateLimit.ts` | Medium — options in ADR-0006 |
 | Router mount-time wiring (helmet/cors/auth/rate-limit) is untested — `index.ts` calls `listen()` at module scope, so tests mount routers directly | `apps/servers/index.ts` | Medium — would need `app` exported and the listen guarded |
