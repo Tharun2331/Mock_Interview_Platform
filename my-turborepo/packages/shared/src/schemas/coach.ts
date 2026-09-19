@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { EVALUATION_LIMITS } from "./evaluation";
+import { ITEM_TYPE } from "./session";
 
 // What the Coach produces: where a candidate is heading, and what to work on.
 //
@@ -153,4 +154,128 @@ export function trendDirection(scores: number[]): TrendDirection {
   if (delta >= COACH_LIMITS.TREND_EPSILON) return "improving";
   if (delta <= -COACH_LIMITS.TREND_EPSILON) return "declining";
   return "flat";
+}
+
+// ---------------------------------------------------------------------------
+// The cache
+// ---------------------------------------------------------------------------
+//
+// USER#<uid> / COACH. The same machine as the plan cache one partition over: a
+// DynamoDB item, a stamp compared on read, and no cache library anywhere. See
+// ADR-0006 for why there is no Redis in this stack.
+//
+// ONLY THE PROSE IS CACHED. Every number in a report is recomputed from the
+// summary rows on each request, because those are free and caching them makes a
+// stale score representable — a repaired or backfilled row would otherwise keep
+// serving its old figure until the candidate finished another interview.
+
+/** What the model contributed for one topic, in a shape that can be stored. */
+export const CoachTopicProseSchema = z.object({
+  topic: z.string().min(1).max(COACH_LIMITS.MAX_TOPIC_CHARS),
+  summary: z.string().max(COACH_LIMITS.MAX_SUMMARY_CHARS),
+  communicationFocus: z
+    .array(z.string().min(1).max(COACH_LIMITS.MAX_FOCUS_POINT_CHARS))
+    .max(COACH_LIMITS.MAX_FOCUS_POINTS),
+  technicalFocus: z
+    .array(z.string().min(1).max(COACH_LIMITS.MAX_FOCUS_POINT_CHARS))
+    .max(COACH_LIMITS.MAX_FOCUS_POINTS),
+});
+
+export type CoachTopicProse = z.infer<typeof CoachTopicProseSchema>;
+
+export const CoachProseSchema = z.object({
+  topics: z.array(CoachTopicProseSchema).max(COACH_LIMITS.MAX_TRENDS),
+});
+
+export type CoachProse = z.infer<typeof CoachProseSchema>;
+
+/**
+ * Bumped whenever the prompt or the shape of the prose changes.
+ *
+ * Without it, a deploy that improves the advice leaves every existing candidate
+ * pinned to output from the old prompt until they finish another interview —
+ * silently, because nothing else about their data changed. It is the one
+ * invalidation trigger that has no signal in the data at all.
+ */
+export const COACH_CACHE_VERSION = 1;
+
+/**
+ * The fingerprint of the inputs a report was built from.
+ *
+ * Four fields, one per thing that can change a report:
+ *
+ *   rowCount          a session finished, or an old one aged out via TTL
+ *   latestCompletedAt disambiguates an equal count — one row expiring while
+ *                     another lands leaves rowCount unchanged
+ *   summarisedCount   THE SUBTLE ONE. A history row is written when a session
+ *                     completes and its narrative is attached moments later by
+ *                     the summarizer. A report generated in that window was
+ *                     built without the narrative, and neither of the two
+ *                     fields above changes when it arrives
+ *   version           a deploy changed the prompt
+ */
+export const CoachCacheStampSchema = z.object({
+  rowCount: z.number().int().min(0),
+  latestCompletedAt: z.string(),
+  summarisedCount: z.number().int().min(0),
+  version: z.number().int().min(1),
+});
+
+export type CoachCacheStamp = z.infer<typeof CoachCacheStampSchema>;
+
+export const CachedCoachSchema = z.object({
+  type: z.literal(ITEM_TYPE.CACHED_COACH).default(ITEM_TYPE.CACHED_COACH),
+  stamp: CoachCacheStampSchema,
+  prose: CoachProseSchema,
+  generatedAt: z.iso.datetime(),
+});
+
+export type CachedCoach = z.infer<typeof CachedCoachSchema>;
+
+/** Derived from the rows the request already read, so the freshness check costs
+ *  no extra reads — the same property that makes the plan cache free. */
+export function coachCacheStamp(
+  summaries: ReadonlyArray<{ completedAt: string; summary?: unknown }>
+): CoachCacheStamp {
+  // Max rather than first: the caller's ordering is not this function's
+  // business, and a reversed list must not produce a different stamp.
+  const latest = summaries.reduce(
+    (newest, row) => (row.completedAt > newest ? row.completedAt : newest),
+    ""
+  );
+
+  return {
+    rowCount: summaries.length,
+    latestCompletedAt: latest,
+    summarisedCount: summaries.filter((row) => row.summary !== undefined).length,
+    version: COACH_CACHE_VERSION,
+  };
+}
+
+/**
+ * Whether a cached report still describes the current inputs.
+ *
+ * Pull-based, and that is the design decision rather than an implementation
+ * detail. The alternative — having the summarizer delete this row when it
+ * attaches a narrative — has a failure this codebase has already been bitten
+ * by: if the attach succeeds and the delete does not, the cache is stale
+ * forever with nothing that will ever look again. The same shape as the
+ * `completedCount` problem, in a system where at-least-once is what you get.
+ *
+ * Comparing a fingerprint on read cannot miss an invalidation, because nothing
+ * has to remember to invalidate.
+ */
+export function isCachedCoachFresh(args: {
+  cached: CachedCoach;
+  stamp: CoachCacheStamp;
+}): boolean {
+  const a = args.cached.stamp;
+  const b = args.stamp;
+
+  return (
+    a.rowCount === b.rowCount &&
+    a.latestCompletedAt === b.latestCompletedAt &&
+    a.summarisedCount === b.summarisedCount &&
+    a.version === b.version
+  );
 }

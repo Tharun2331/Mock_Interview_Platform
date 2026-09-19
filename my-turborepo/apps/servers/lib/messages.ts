@@ -27,12 +27,6 @@ export const MESSAGES = {
   INVALID_GAP_BODY:     "Provide a session id and a job description.",
   INTEL_WRITE_FAILED:   "Could not store what we found out about the company.",
   INVALID_INTEL_BODY:   "Provide a session id and a company name.",
-  // Operator-facing, not candidate-facing: these two only ever reach a log.
-  // A missing secret is a deployment that was never finished, and the two
-  // cases are separated because they send someone to different places — one
-  // to Terraform, one to the Parameter Store console.
-  SSM_PARAMETER_MISSING: "Could not read a required parameter from SSM.",
-  SSM_PARAMETER_EMPTY:   "An SSM parameter exists but holds no value.",
   EVAL_SUMMARY_WRITE_FAILED: "Could not open the evaluation rollup.",
   EVAL_SUMMARY_READ_FAILED:  "Could not read the evaluation rollup.",
   INVALID_SESSION_ID:        "That interview session could not be found.",
@@ -103,6 +97,8 @@ export const MESSAGES = {
   ACCOUNT_DELETE_FAILED: "We could not finish deleting your account. Some data may remain — try again shortly.",
   PLAN_CACHE_READ_FAILED: "Could not read the cached interview plan.",
   PLAN_CACHE_SAVE_FAILED: "Could not cache the interview plan.",
+  COACH_CACHE_READ_FAILED: "Could not read the cached coaching report.",
+  COACH_CACHE_SAVE_FAILED: "Could not cache the coaching report.",
   // Log-facing. Redaction failing closed means the upload fails: storing text
   // that only the deterministic pass had seen would put names and addresses in
   // DynamoDB with nothing downstream able to tell.

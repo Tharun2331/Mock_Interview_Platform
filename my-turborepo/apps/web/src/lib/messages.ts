@@ -405,6 +405,12 @@ export const MESSAGES = {
   // On the results page, pointing at the history. Named for what it shows
   // rather than as a generic "back".
   RESULT_VIEW_HISTORY: "View all past interviews",
+  RESULT_VIEW_COACH: "See what to work on",
+  // Says what the page adds rather than naming it. "Coach" is already in the
+  // header; a candidate who has just read six answer cards needs a reason to
+  // click, not a second label for a destination they can already see.
+  RESULT_VIEW_COACH_HINT:
+    "Your roadmap now includes this interview, alongside every earlier round.",
 
   // The three dimensions, as a card shows them.
   DIMENSION_LABEL: {
@@ -516,12 +522,12 @@ export const MESSAGES = {
   START_COMPANY_LABEL: "Company",
   START_COMPANY_PLACEHOLDER: "e.g. Stripe",
   START_COMPANY_HINT:
-    "We look up how they tend to interview and shape the tone to match.",
+    "We shape the tone to match what you tell us about their process below.",
   START_COMPANY_NOTES_LABEL: "What you already know",
   START_COMPANY_NOTES_PLACEHOLDER:
     "Anything a recruiter or a friend told you about their process.",
   START_COMPANY_NOTES_HINT:
-    "This outranks anything we find online — you are closer to the source.",
+    "This is the only thing we use to shape the interview's tone — we don't look anything up.",
   START_SUBMIT: "Build my interview",
   START_SUBMIT_PENDING: "Building…",
   START_PHASE_CREATING: "Preparing your session",

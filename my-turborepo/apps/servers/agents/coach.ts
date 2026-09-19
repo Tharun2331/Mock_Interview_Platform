@@ -5,6 +5,7 @@ import {
   trendDirection,
   type CoachReport,
   type RoadmapItem,
+  type CoachProse,
   type RoadmapTrack,
   type Trend,
   type TrendPoint,
@@ -401,8 +402,62 @@ function focusFor(prose: Prose, topic: string, track: RoadmapTrack): string[] {
     : written.technicalFocus;
 }
 
+// The Map is the working shape and CoachProse is the stored one. Two functions
+// rather than storing the Map directly: a Map does not survive DynamoDB, and
+// going through an array keeps the stored form something a person can read in a
+// table export.
+function proseToStored(prose: Prose): CoachProse {
+  return {
+    topics: [...prose.entries()]
+      .slice(0, COACH_LIMITS.MAX_TRENDS)
+      .map(([topic, written]) => ({ topic, ...written })),
+  };
+}
+
+function storedToProse(stored: CoachProse, known: Set<string>): Prose {
+  const prose: Prose = new Map();
+  for (const entry of stored.topics) {
+    // The same guard applied to a fresh generation, applied again on the way
+    // back out. Cached prose is model output that has been sitting in a table,
+    // and a topic that has since left the analysis must not reappear because it
+    // was written down once.
+    if (!known.has(entry.topic)) continue;
+    prose.set(entry.topic, {
+      summary: entry.summary,
+      communicationFocus: entry.communicationFocus,
+      technicalFocus: entry.technicalFocus,
+    });
+  }
+  return prose;
+}
+
 export type CoachAgentInput = {
   summaries: UserSessionSummary[];
+  /**
+   * Prose from an earlier run whose inputs the caller has confirmed unchanged.
+   *
+   * Supplying it skips the Bedrock call entirely. The caller owns the freshness
+   * decision — `isCachedCoachFresh` — because it is the caller that read the
+   * rows the stamp is computed from. This agent does not know what a cache is
+   * and does not read or write one.
+   */
+  cachedProse?: CoachProse | null | undefined;
+};
+
+export type CoachAgentResult = {
+  report: CoachReport;
+  /**
+   * The prose this run used, in storable form, or null when there was nothing
+   * worth storing — no roadmap, or a model call that produced nothing usable.
+   *
+   * Null must not be cached. Caching an empty generation would pin a candidate
+   * to a numbers-only report until their next interview, turning one transient
+   * Bedrock failure into a persistent one.
+   */
+  prose: CoachProse | null;
+  /** Whether this run called Bedrock. Reported so the route can log a hit rate
+   *  without inferring one from timings. */
+  generated: boolean;
 };
 
 /**
@@ -415,17 +470,28 @@ export type CoachAgentInput = {
  */
 export async function runCoachAgent(
   input: CoachAgentInput
-): Promise<CoachReport> {
+): Promise<CoachAgentResult> {
   const { trends, roadmap } = analyseHistory(input.summaries);
 
-  if (roadmap.length === 0) return { trends: [], roadmap: [] };
+  if (roadmap.length === 0) {
+    return {
+      report: { trends: [], roadmap: [] },
+      prose: null,
+      generated: false,
+    };
+  }
 
-  const stats = groupByTopic(input.summaries);
-  const prose = await writeProse(
-    stats,
-    trends,
-    new Set(roadmap.map((item) => item.topic))
-  );
+  const known = new Set(roadmap.map((item) => item.topic));
+
+  // The cache check happens before `groupByTopic` and before the prompt is
+  // built, so a hit does no work beyond the analysis the report needs anyway.
+  const cached =
+    input.cachedProse === null || input.cachedProse === undefined
+      ? null
+      : storedToProse(input.cachedProse, known);
+
+  const prose =
+    cached ?? (await writeProse(groupByTopic(input.summaries), trends, known));
 
   const report: CoachReport = {
     trends: trends.map((trend) => {
@@ -441,9 +507,15 @@ export async function runCoachAgent(
     })),
   };
 
-  // Validated against the same schema the route returns, so a bug here surfaces
-  // as a caught error rather than as a malformed body the client has to guess
-  // at. Parsed rather than asserted: this is the last point where the shape is
-  // still ours to check.
-  return CoachReportSchema.parse(report);
+  return {
+    // Validated against the same schema the route returns, so a bug here
+    // surfaces as a caught error rather than as a malformed body the client has
+    // to guess at. Parsed rather than asserted: this is the last point where
+    // the shape is still ours to check.
+    report: CoachReportSchema.parse(report),
+    // An empty map means the model call failed or returned nothing this
+    // analysis recognised. Reported as null so the caller does not store it.
+    prose: prose.size === 0 ? null : proseToStored(prose),
+    generated: cached === null,
+  };
 }

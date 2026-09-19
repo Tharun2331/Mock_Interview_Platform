@@ -5,9 +5,13 @@ import { ITEM_TYPE } from "./session";
 //
 // A garnish on the Gap agent, never a replacement. Everything here degrades to
 // "unknown", and an all-unknown result is a valid outcome rather than an error
-// — thin search results must produce "unknown" rather than an invented answer,
-// because a confidently wrong reading of a company's process is worse for a
-// candidate than no reading at all.
+// — thin or absent notes must produce "unknown" rather than an invented
+// answer, because a confidently wrong reading of a company's process is worse
+// for a candidate than no reading at all.
+//
+// v1 has no web search behind this — classification runs on the candidate's
+// own notes alone, never on a page this service fetched itself. Dropped to
+// avoid a NAT Gateway for what was the only outbound call to a non-AWS host.
 //
 // Scope, deliberately narrow for v1: this shapes the tone and emphasis of
 // questions inside the ONE existing interview round. It does not spawn round
@@ -19,10 +23,6 @@ export const INTEL_LIMITS = {
   // The user's own note about the process. Generous enough for a recruiter
   // email pasted whole, capped because it reaches both a model and a prompt.
   MAX_NOTES_CHARS: 1_000,
-  // Two queries in, and only the cleaned snippets reach the model. Past this
-  // the classification is not better, only more expensive.
-  MAX_SNIPPETS: 6,
-  MAX_SNIPPET_CHARS: 800,
 } as const;
 
 // Every enum carries "unknown" as a real member rather than modelling absence
@@ -84,8 +84,9 @@ export const CompanyIntelSchema = z.object({
   // enums are a guess assembled from public pages, and this came from someone
   // who spoke to a recruiter. The prompt states the precedence outright.
   notes: z.string().max(INTEL_LIMITS.MAX_NOTES_CHARS).optional(),
-  // How many search snippets the classification was drawn from. Zero means the
-  // enums came from the notes alone, or from nothing.
+  // How many search snippets the classification was drawn from. Always 0 in
+  // v1, which has no search — kept on the schema so a stored item's shape
+  // does not change under whatever reads it.
   sourceCount: z.number().int().min(0),
   createdAt: z.iso.datetime(),
 });

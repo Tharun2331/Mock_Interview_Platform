@@ -1,7 +1,5 @@
 import {
-  afterAll,
   afterEach,
-  beforeAll,
   beforeEach,
   describe,
   expect,
@@ -20,15 +18,6 @@ import {
   setStructuredFailure,
   setStructuredReplies,
 } from "../helpers/bedrockStub";
-import { resetSsmStub } from "../helpers/ssmStub";
-import {
-  installSearchStub,
-  resetSearchStub,
-  restoreSearchStub,
-  setSearchEmpty,
-  setSearchResults,
-  setSearchThrows,
-} from "../helpers/searchStub";
 import type { MountedApp } from "../helpers/testApp";
 
 const { companyIntelRouter } = await import("../../routes/companyIntel");
@@ -61,10 +50,6 @@ const INPUTS = {
   resumeKey: "resumes/user-1/resume.pdf",
 };
 
-const SNIPPETS = [
-  { title: "Acme interview guide", content: "Pairing on a real bug, no whiteboard." },
-];
-
 const ErrorBody = z.object({
   message: z.string().optional(),
   error: z.string().optional(),
@@ -90,19 +75,14 @@ async function postIntel(url: string, body: unknown) {
 }
 
 const BODY = { sessionId: SESSION_ID, companyName: "Acme Systems" };
-
-beforeAll(installSearchStub);
-afterAll(() => {
-  restoreSearchStub();
-  ddb.restore();
-});
+const BODY_WITH_NOTES = {
+  ...BODY,
+  companyNotes: "Pairing on a real bug, no whiteboard.",
+};
 
 beforeEach(() => {
   ddb.reset();
   resetStructuredStub();
-  resetSsmStub();
-  resetSearchStub();
-  setSearchResults(SNIPPETS, SNIPPETS);
   setStructuredReplies([
     { style: "practical", focus: "infrastructure", seniority: "senior" },
   ]);
@@ -121,7 +101,7 @@ describe("POST /api/v1/company", () => {
     sessionFound();
     const { url } = await start();
 
-    const response = await postIntel(url, BODY);
+    const response = await postIntel(url, BODY_WITH_NOTES);
     const intel = CompanyIntelSchema.parse(await response.json());
 
     expect(response.status).toBe(200);
@@ -133,7 +113,7 @@ describe("POST /api/v1/company", () => {
     sessionFound();
     const { url } = await start();
 
-    await postIntel(url, BODY);
+    await postIntel(url, BODY_WITH_NOTES);
 
     const item = ddb.commandCalls(PutCommand)[0]?.args[0].input.Item;
     expect(item?.PK).toBe(sessionPk(SESSION_ID));
@@ -186,9 +166,8 @@ describe("POST /api/v1/company", () => {
 
 // The spec's requirement, at the route level: none of these may fail a request.
 describe("a reading that found nothing", () => {
-  it("still returns 200 when search found nothing", async () => {
+  it("still returns 200 when the candidate gave no notes", async () => {
     sessionFound();
-    setSearchEmpty();
     const { url } = await start();
 
     const response = await postIntel(url, BODY);
@@ -197,28 +176,16 @@ describe("a reading that found nothing", () => {
     expect(CompanyIntelSchema.parse(await response.json()).style).toBe("unknown");
   });
 
-  // 200, not 502. An all-unknown result is a successful run of an agent whose
-  // honest answer is often "the internet does not say", and a failure status
-  // would invite a client to retry a search that returns the same nothing.
-  it("still returns 200 when the search API throws", async () => {
-    sessionFound();
-    setSearchThrows(new Error("ECONNREFUSED"));
-    const { url } = await start();
-
-    expect((await postIntel(url, BODY)).status).toBe(200);
-  });
-
   it("still returns 200 when the model fails", async () => {
     sessionFound();
     setStructuredFailure(new Error("chain exhausted"));
     const { url } = await start();
 
-    expect((await postIntel(url, BODY)).status).toBe(200);
+    expect((await postIntel(url, BODY_WITH_NOTES)).status).toBe(200);
   });
 
   it("stores the all-unknown reading rather than nothing", async () => {
     sessionFound();
-    setSearchEmpty();
     const { url } = await start();
 
     await postIntel(url, BODY);
