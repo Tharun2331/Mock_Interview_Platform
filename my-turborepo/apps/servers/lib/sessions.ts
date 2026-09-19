@@ -771,8 +771,8 @@ export async function attachPlan(args: {
 //
 // Stored for the same reason the gap analysis is: the Mock Interview agent
 // reads it on every stream, renewals happen roughly every six minutes, and
-// re-running a web search plus a classification each time would multiply a
-// per-session cost by the length of the interview.
+// re-running a classification each time would multiply a per-session cost by
+// the length of the interview.
 export async function putCompanyIntel(args: {
   intel: CompanyIntel;
 }): Promise<void> {

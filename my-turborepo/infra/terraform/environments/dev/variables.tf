@@ -19,9 +19,3 @@ variable "google_client_secret" {
   description = "Google OAuth client secret for the Cognito Google identity provider"
   sensitive   = true
 }
-
-variable "tavily_api_key" {
-  type        = string
-  description = "Tavily API key for company intel"
-  sensitive   = true
-}

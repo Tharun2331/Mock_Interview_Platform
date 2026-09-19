@@ -57,8 +57,3 @@ variable "cognito_user_pool_arn" {
   type        = string
   description = "ARN of the Cognito user pool the server may delete users from. Wired through the module output rather than reconstructed, so a pool replacement cannot leave this policy pointing at one that no longer exists."
 }
-
-variable "tavily_api_key_parameter_arn" {
-  type        = string
-  description = "ARN of the SSM parameter holding the Tavily search API key, from the ssm module. The ARN only — the value is never read by Terraform."
-}

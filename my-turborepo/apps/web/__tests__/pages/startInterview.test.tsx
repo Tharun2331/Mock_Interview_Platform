@@ -295,7 +295,7 @@ describe("the company fields", () => {
     ).toBeDefined();
   });
 
-  it("say the candidate's own notes outrank what is found online", () => {
+  it("says the candidate's own notes are what shapes the tone", () => {
     renderPage();
     pasteJd();
     fireEvent.change(screen.getByLabelText(MESSAGES.START_COMPANY_LABEL), {

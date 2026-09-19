@@ -3,7 +3,7 @@
 > and public on GitHub — deliberately, as a record of how the build progressed.
 > The `.claude.local.md` entry in `.gitignore` is a different file and does not
 > match this one. Write nothing here you would not publish.
-> Updated as work progresses. Last updated: 2026-09-18
+> Updated as work progresses. Last updated: 2026-09-18 (Tavily removed)
 
 ---
 
@@ -391,15 +391,9 @@ did before they existed.
 
 - [x] `agents/gap.ts` — buckets each requirement strong/weak/none against the
       candidate's material, via Bedrock **Tool Use** rather than prompt-for-JSON
-- [x] `agents/companyIntel.ts` — two Tavily searches, then an enum
-      classification of style / focus / seniority
+- [x] `agents/companyIntel.ts` — an enum classification of style / focus /
+      seniority, from the candidate's own notes
 - [x] `routes/gap.ts`, `routes/companyIntel.ts`, both Cognito-protected
-- [x] `lib/tavily.ts` — the **only non-AWS call in the service**. Search is
-      retrieval, not inference, so Bedrock remains the only inference path. What
-      leaves the VPC is a company name and two fixed phrases — never the resume,
-      the transcript or a user id, and the module takes a company name and
-      nothing else so it *cannot* leak candidate material
-- [x] `lib/ssm.ts` — the Tavily key, read from Parameter Store at point of use
 
 **The Gap agent needed a deterministic repair pass, and that is the lesson.**
 Ministral returned eight of twelve requirements as `strong` including ones whose
@@ -410,9 +404,21 @@ restatements, keeping the weaker bucket — a false `none` costs a question the
 candidate answers well, a false `strong` costs the gap the interview existed to
 find. **Do not replace it with more prompt instructions.**
 
-Company Intel **never throws**. Search down, search empty, key missing, model
-refusing — every path returns the all-unknown reading, and an all-unknown
-reading renders nothing in the prompt.
+Company Intel **never throws**. No notes, model refusing — every path returns
+the all-unknown reading, and an all-unknown reading renders nothing in the
+prompt.
+
+**Tavily search was removed (2026-09-18), and so was `lib/ssm.ts`.** It was
+the only non-AWS outbound call in the service, which meant it was also the
+only reason a deployed ECS task would ever need private-subnet egress through
+a NAT Gateway — GitHub scraping and every Bedrock/DynamoDB/SSM call still need
+one unless Phase 7 runs ECS in the public subnets instead, which is the
+actual path to $0 NAT cost (SG still locks inbound to the ALB). `lib/ssm.ts`
+had exactly one caller and is gone with it; the IAM module's `ssm:GetParameter`
+and `kms:Decrypt` grants went with it too, on the same "unused permission on a
+live role is a standing liability" reasoning applied to `transcribe`/`polly`
+in `infra/terraform/CLAUDE.md`. Company Intel now classifies from
+`companyNotes` alone — `sourceCount` stays on the schema and is always 0.
 
 ---
 

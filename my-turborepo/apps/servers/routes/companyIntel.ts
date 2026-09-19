@@ -12,7 +12,8 @@ import { loadPlannerInputs, putCompanyIntel } from "../lib/sessions";
 
 export const companyIntelRouter = Router();
 
-// Researches the company and stores the result, swallowing every failure.
+// Classifies what the candidate already told us about the company and stores
+// the result, swallowing every failure.
 //
 // Exists so the plan route can trigger it without taking on its failure modes,
 // exactly as `analyseGap` does. The agent itself already degrades rather than
@@ -94,9 +95,8 @@ companyIntelRouter.post("/", async (req, res) => {
     await putCompanyIntel({ intel });
 
     // 200 even when everything came back unknown. That is a successful run of
-    // an agent whose honest answer is often "the internet does not say", and
-    // reporting it as a failure would invite a client to retry a search that
-    // will return the same nothing.
+    // an agent whose honest answer is often "the candidate gave us nothing to
+    // go on", and reporting it as a failure would invite a pointless retry.
     res.json(intel);
   } catch (error) {
     if (error instanceof SessionAccessError) {
@@ -109,9 +109,9 @@ companyIntelRouter.post("/", async (req, res) => {
       return;
     }
 
-    // No 502 branch, unlike /gap. The agent cannot fail on the model or the
-    // search — both degrade to unknown inside it — so anything reaching here
-    // is ours: the session read or the write.
+    // No 502 branch, unlike /gap. The agent cannot fail on the model — it
+    // degrades to unknown inside it — so anything reaching here is ours: the
+    // session read or the write.
     if (error instanceof ServiceError) {
       console.error(`[intel] ${error.message}`);
       res.status(500).json({ message: MESSAGES.SESSION_UNAVAILABLE });

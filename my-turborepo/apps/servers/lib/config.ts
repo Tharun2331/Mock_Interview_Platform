@@ -130,25 +130,6 @@ export const config = {
   // Without a timeout a hung upstream holds the request open indefinitely and
   // requests pile up behind it.
   githubTimeoutMs:        Number(env("GITHUB_TIMEOUT_MS", "5000")),
-  // The NAME of the SSM parameter holding the Tavily key — a path, never the
-  // key. Named for what it is after `TAVILY_API_KEY_PARAM` was misread as "the
-  // parameter that holds the key" three times running, which is a naming bug
-  // rather than a reading one. In production this is the only source.
-  tavilySsmParameterName: env("TAVILY_SSM_PARAMETER_NAME", ""),
-  // A direct key, for local development only.
-  //
-  // Gated twice over, exactly like interviewTestMode: the variable is only read
-  // outside production, and ignored there even if something sets it. `bun run
-  // start` sets NODE_ENV=production, so a deployed task cannot fall back to an
-  // environment key by environment alone — someone would have to change this
-  // file. That keeps the spec's rule ("API key from SSM, never a .env file")
-  // true where it matters while letting a laptop skip the round trip.
-  tavilyApiKey:           isProduction() ? "" : env("TAVILY_API_KEY", "").trim(),
-  tavilyApiBase:          env("TAVILY_API_BASE", "https://api.tavily.com"),
-  // Shorter than the GitHub timeout on purpose. This sits in front of a
-  // candidate waiting on a plan, and everything it produces is optional — a
-  // slow answer is worth less here than a fast absence.
-  tavilyTimeoutMs:        Number(env("TAVILY_TIMEOUT_MS", "4000")),
   // The GitHub call is unauthenticated (60 req/hr per IP), so an unthrottled
   // route burns the shared quota for every user at once.
   rateLimitWindowMs:      Number(env("RATE_LIMIT_WINDOW_MS", "60000")),

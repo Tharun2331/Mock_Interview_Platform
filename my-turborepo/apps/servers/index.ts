@@ -41,9 +41,8 @@ app.use("/api/v1/sessions", AuthMiddleware, apiRateLimiter, sessionsRouter);
 // Cognito-protected and rate limited like the rest: it runs a Bedrock call, so
 // it is among the more expensive things an authenticated caller can trigger.
 app.use("/api/v1/gap", AuthMiddleware, apiRateLimiter, gapRouter);
-// Same protection as /gap, and it needs it more: this is the one route that
-// reaches a non-AWS service, so an unauthenticated caller here would be
-// spending someone else's Tavily quota as well as Bedrock tokens.
+// Same protection as /gap: it runs a Bedrock call, so an unauthenticated
+// caller here would be spending someone else's tokens.
 app.use("/api/v1/company", AuthMiddleware, apiRateLimiter, companyIntelRouter);
 // Reads only this candidate's own history, proven by the token rather than by
 // anything in the request — there is no id in the path to get wrong.

@@ -1,7 +1,6 @@
 import {
   afterAll,
   afterEach,
-  beforeAll,
   beforeEach,
   describe,
   expect,
@@ -50,15 +49,6 @@ import {
   setStructuredReplies,
   structuredCallCount,
 } from "../helpers/bedrockStub";
-import { resetSsmStub } from "../helpers/ssmStub";
-import {
-  installSearchStub,
-  resetSearchStub,
-  restoreSearchStub,
-  searchQueries,
-  setSearchEmpty,
-  setSearchThrows,
-} from "../helpers/searchStub";
 
 const { planRouter } = await import("../../routes/plan");
 const { MESSAGES } = await import("../../lib/messages");
@@ -150,15 +140,7 @@ afterEach(async () => {
   }
 });
 
-// Installed for the whole file rather than one describe: the intel trigger is
-// fire-and-forget, so a search started by one test can still be in flight when
-// the next begins, and an uninstalled stub would let that one out to the real
-// internet. The stub delegates everything not aimed at Tavily to the real
-// fetch, so this file's own requests to its Express server are untouched.
-beforeAll(installSearchStub);
-
 afterAll(() => {
-  restoreSearchStub();
   ddb.restore();
 });
 
@@ -441,21 +423,23 @@ describe("the gap trigger", () => {
 // spec's rule and not an accident: no posting means no Gap agent AND no
 // Company Intel, so a session cannot end up shaped by a company's reputation
 // with nothing to aim it at.
+//
+// Whether researchCompany ran is observed through the DynamoDB write it makes
+// (SK === SORT_KEY.INTEL), not through a Bedrock call count: the Gap agent in
+// the same request also calls converseStructured, so a shared counter cannot
+// tell the two apart.
 describe("the company intel trigger", () => {
-  // The queries actually sent are a far better observable than a model call
-  // count — the classification is skipped entirely when search finds nothing,
-  // so counting Bedrock calls would report "did not run" for a run that did.
-  beforeEach(() => {
-    resetSearchStub();
-    resetSsmStub();
-    setSearchEmpty();
-  });
-
   function readyToPlan() {
     sessionFound();
     ddb.on(GetCommand).resolves({});
     ddb.on(PutCommand).resolves({});
     ddb.on(UpdateCommand).resolves({});
+  }
+
+  function intelWasStored(): boolean {
+    return ddb
+      .commandCalls(PutCommand)
+      .some((call) => call.args[0].input.Item?.SK === SORT_KEY.INTEL);
   }
 
   it("researches the company when both a posting and a name are present", async () => {
@@ -466,15 +450,16 @@ describe("the company intel trigger", () => {
       ...BODY,
       jobDescription: "We need Kubernetes experience.",
       companyName: "Acme Systems",
+      companyNotes: "Pairing on a real bug, no whiteboard.",
     });
 
     expect(response.status).toBe(200);
     await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(searchQueries()).toHaveLength(2);
+    expect(intelWasStored()).toBe(true);
   });
 
   // The amendment's rule, and the one most worth pinning: a company name with
-  // no posting must not reach the search at all.
+  // no posting must not run Company Intel at all.
   it("does not research when a company name arrives without a posting", async () => {
     readyToPlan();
     const { url } = await start();
@@ -483,7 +468,7 @@ describe("the company intel trigger", () => {
 
     expect(response.status).toBe(200);
     await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(searchQueries()).toHaveLength(0);
+    expect(intelWasStored()).toBe(false);
   });
 
   it("does not research when a posting arrives without a company name", async () => {
@@ -497,20 +482,22 @@ describe("the company intel trigger", () => {
     });
 
     await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(searchQueries()).toHaveLength(0);
+    expect(intelWasStored()).toBe(false);
   });
 
   // Same treatment as the gap trigger: the plan is what the candidate is
-  // waiting for, and this is the most optional thing in the product.
-  it("returns the plan even when the research fails outright", async () => {
+  // waiting for, and this is the most optional thing in the product. The only
+  // failure mode left, with no external search, is the classification call.
+  it("returns the plan even when the classification fails outright", async () => {
     readyToPlan();
-    setSearchThrows(new Error("ECONNREFUSED"));
+    setStructuredFailure(new Error("chain exhausted"));
     const { url } = await start();
 
     const response = await postPlan(url, {
       ...BODY,
       jobDescription: "We need Kubernetes experience.",
       companyName: "Acme Systems",
+      companyNotes: "Pairing on a real bug, no whiteboard.",
     });
 
     expect(response.status).toBe(200);
@@ -527,10 +514,11 @@ describe("the company intel trigger", () => {
       ...BODY,
       jobDescription: "We need Kubernetes experience.",
       companyName: "Acme Systems",
+      companyNotes: "Pairing on a real bug, no whiteboard.",
     });
 
-    // Fire-and-forget: the response must not wait on a web search plus a
-    // classification, which together are the slowest thing in this route.
+    // Fire-and-forget: the response must not wait on the classification call,
+    // the slowest thing in this route.
     expect(Date.now() - started).toBeLessThan(1_000);
     await new Promise((resolve) => setTimeout(resolve, 60));
   });
