@@ -118,6 +118,29 @@ export function isInterruptionSentinel(content: string): boolean {
   }
 }
 
+// Refuses an upgrade.
+//
+// **The status line does not reach the client under Bun, and that is a runtime
+// limitation rather than a bug here.** Measured by reading the raw bytes back
+// off a hand-written handshake: a minimal `server.on("upgrade", (_, socket) =>
+// socket.end("HTTP/1.1 401 ..."))` delivers nothing either. Bun's `node:http`
+// fires the upgrade event but does not flush writes made to the raw socket, so
+// every refusal — expired token, missing session id, missing subprotocol —
+// arrives at the browser as a dropped connection carrying no status.
+//
+// `end()` rather than the original `write()` + `destroy()` regardless: destroy
+// discards anything still buffered, so that pair is racy wherever it DOES work.
+// This costs nothing and is correct under Node, which is what a future move off
+// Bun's http shim would restore.
+//
+// The consequence worth knowing: the client cannot currently distinguish "your
+// session expired, sign in again" from "the network dropped". Closing that gap
+// needs a different channel — a pre-flight HTTP call before the upgrade, or a
+// close frame after accepting it — not a different write here.
+function refuse(socket: Duplex): void {
+  socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+}
+
 type ToolCall = { toolName: string; toolUseId: string; content: string };
 
 // Tool input arrives as a JSON string the model generated, so it can be
@@ -775,8 +798,7 @@ export function attachInterviewSocket(server: Server): WebSocketServer {
     );
 
     if (sessionId === null || bearer === undefined) {
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
+      refuse(socket);
       return;
     }
 
@@ -789,10 +811,7 @@ export function attachInterviewSocket(server: Server): WebSocketServer {
           void handleConnection(ws, payload.sub, sessionId);
         });
       })
-      .catch(() => {
-        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-        socket.destroy();
-      });
+      .catch(() => refuse(socket));
   });
 
   // Liveness. A half-open socket — laptop lid closed, network dropped — never

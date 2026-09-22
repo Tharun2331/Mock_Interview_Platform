@@ -3,7 +3,7 @@
 > and public on GitHub — deliberately, as a record of how the build progressed.
 > The `.claude.local.md` entry in `.gitignore` is a different file and does not
 > match this one. Write nothing here you would not publish.
-> Updated as work progresses. Last updated: 2026-09-18 (Tavily removed)
+> Updated as work progresses. Last updated: 2026-09-22 (voice loop under test)
 
 ---
 
@@ -43,7 +43,7 @@ ECS, so nothing runs outside a laptop. That is the whole of what remains.
 | 5.5 — Gap + Company Intel agents | ✅ Complete — not in the original plan |
 | 6 — Coach | ✅ Complete **without RAG**, deliberately — see the phase below |
 | 7 — Deploy + CI/CD + Observability | 🔸 ~40% — CI gates every PR; no ECS, no CD, no alarms, prod empty |
-| Testing (cross-cutting) | 🟢 976 tests: 726 backend, 153 web, 97 shared. Backend 89.1% funcs / 90.2% lines |
+| Testing (cross-cutting) | 🟢 1044 tests: 794 backend, 153 web, 97 shared. Backend 93.6% funcs / 94.2% lines |
 
 **Next highest-leverage step: the `ecs` module.** It is the only thing between
 this and a URL somebody else can open, and it blocks every other Phase 7 item.
@@ -57,27 +57,6 @@ invalidated lazily at plan time. Account erasure exists end to end. Full
 reasoning in [ADR-0007](docs/adr/0007-user-scoped-redacted-candidate-material.md);
 the Redis drop is finally recorded in
 [ADR-0006](docs/adr/0006-drop-redis-dynamodb-alone.md).
-
-| Phase | Status |
-|-------|--------|
-| 1 — Foundation + Planner | ✅ Complete |
-| 2 — Resume + Auth + Database | ✅ Complete |
-| 3 — WebSocket + Speech | ✅ Complete (Redis dropped — see below) |
-| 4 — Sonic end-to-end | ✅ Complete — `result.tsx` is real and reachable |
-| 4.5 — Profile, PII redaction, erasure | ✅ Complete |
-| 5 — Evaluator + SQS | 🟢 ~90% — agent, queue, worker, completion detection all live in dev. Only the `ecs` module is missing |
-| 6 — Coach + RAG | ⬜ Not started — the last piece of product value |
-| 7 — Deploy + CI/CD | 🔸 ~45% — CI runs on every PR; CloudFront/S3/SSM/DynamoDB/SQS/IAM modules exist; no ECS |
-| Testing (cross-cutting) | 🟢 468 tests; backend 81.7% funcs / 87.9% lines. `lib/sonic.ts` + `routes/interview.ts` still deferred |
-
-**Next highest-leverage step:** Phase 6, the Coach. It is the last piece of
-product value left — everything before it now works and is visible. Hang its
-trigger on the existing `attribute_not_exists(averages)` election in
-`finalizeIfComplete` rather than inventing a second signal; that write is
-already once-only, which is the whole reason `completedCount` was rejected.
-
-The `ecs` module is the only thing left in Phase 5, and it is deploy work
-rather than product work — it belongs with Phase 7.
 
 ---
 
@@ -499,8 +478,11 @@ sweep, so a cache added without a line there outlives the account it belongs to
 ### Terraform
 - [x] `modules/` — `cloudfront`, `cognito`, `dynamodb`, `iam`, `s3`, `sqs`,
       `ssm`, `vpc`. All applied to dev
-- [x] `ssm` carries the Tavily key; the server role has `ssm:GetParameter`
-      scoped to that one parameter ARN plus `kms:Decrypt` narrowed by ViaService
+- [x] ~~`ssm` carries the Tavily key; the server role has `ssm:GetParameter`
+      plus `kms:Decrypt`~~ — **all three removed with Tavily.** `ssm` still
+      carries the Google OAuth pair and the table name, but nothing in the
+      application reads Parameter Store at runtime any more, so the server
+      role's read and decrypt grants went with `lib/ssm.ts`
 - [ ] **`ecs` module — cluster, API service, Spot worker service.** The blocker:
       nothing else in this phase can land without it, and nothing runs outside a
       laptop until it does
@@ -823,15 +805,83 @@ Cases worth knowing:
 - [ ] **Mount-time wiring.** `testApp.ts` mounts routers without the
       `helmet` / `cors` / `AuthMiddleware` / `apiRateLimiter` chain that
       `index.ts` wraps them in. Handler behaviour is covered; the wiring is not
-- [ ] `lib/sonic.ts` (735 lines) and `routes/interview.ts` (530) — the largest
-      untested surface, and genuinely hard: long-lived bidirectional streams and
-      renewal past the ~8-minute cap. Deliberately deferred until after Phase 5
-- [ ] `lib/s3.ts` (19%), `lib/resume.ts` (13%), `lib/erasure.ts` (42%),
-      `lib/cognitoAdmin.ts` (33%)
+- [x] ~~`lib/sonic.ts` and `routes/interview.ts`~~ — **done (2026-09-22).**
+      `lib/sonic.ts` 0 → **100% lines**, `routes/interview.ts` 0 → **90.25%**.
+      Backend overall 89.1 → **93.57% funcs / 94.16% lines**. See the pass below
+- [ ] What is left in `routes/interview.ts` is genuinely time-bound: the three
+      nudge timers and the hard stop fire 17+ minutes in, and the heartbeat
+      sweep every 30s. Exercising those needs injectable offsets the way
+      `SonicConversation` takes `renewAfterMs` — `nudgeSchedule` is already pure
+      and tested directly, so what is missing is only that the route arms it
+- [ ] `lib/s3.ts` (45%), `lib/resume.ts` (13%), `lib/erasure.ts`,
+      `lib/cognitoAdmin.ts` (76%)
 - [ ] `routes/profile.ts` is at 68% — the resume upload path is the gap
 - [ ] `routes/preInterview.ts`
 - [ ] The resume upload state machine in the UI (`ResumeField`)
 - [ ] `packages/shared/src/schemas/auth.ts`
+
+### Pass 5 ✅ — the voice loop (1044 tests total)
+
+**Mocked at `BedrockRuntimeClient`, never at `lib/sonic`.** That is the
+mock.module rule applied to the hardest case in the repo: `routes/interview.ts`
+drives a real `SonicConversation`, which speaks the real protocol into a fake
+transport. Stubbing the module would have deleted the renewal ordering, the
+closing sequence and the whole event dispatch from the suite while appearing to
+cover them. `__tests__/helpers/sonicStream.ts` is plain helpers over whatever
+the test's own `mockClient` captured — it registers no module mock.
+
+- `__tests__/lib/sonicSession.test.ts` (34) — the handshake order, history
+  replay, backpressure, the closing sequence, inbound dispatch
+- `__tests__/lib/sonicConversation.test.ts` (15) — renewal
+- `__tests__/routes/interviewSocket.test.ts` (34) — a real WebSocket against a
+  real `http.Server`, over the real ExchangeBuffer and tool dispatcher
+
+Cases worth knowing:
+- **A renewal must not report a close.** The old stream is closed BEFORE
+  `renewing` drops; reversed, its `onClose` fires while the flag is already
+  false and the route treats a routine handover as the interview ending,
+  killing every session at its first renewal
+- History replays the kickoff as the opening USER turn — Sonic rejects a
+  history whose first message is from the assistant, which is why every
+  renewal failed before it existed
+- The closing sequence (`contentEnd`/`promptEnd`/`sessionEnd`) travels through
+  the queue BEFORE it closes, or Sonic answers "The following prompts were not
+  closed"
+- A courtesy sign-off is recorded to DynamoDB but never enqueued for scoring,
+  and the rollup's `questionCount` is the answers actually enqueued — not the
+  plan's
+- The barge-in sentinel never reaches the client as a transcript
+
+**Three things this pass found, none of them in the new tests:**
+
+1. **`INTERVIEW_TEST_MODE` leaked from `.env` into the whole suite.**
+   `setup.ts` pinned the table, bucket and pool but not this, so
+   `effectiveTargetMinutes` returned 6 on a developer's machine and the plan's
+   own 20 in CI — the `ready` event, the nudge timetable and every phase
+   boundary differed by machine. Now pinned to the production shape. **This is
+   the second time an unpinned variable has done this; the rule is that
+   `setup.ts` must name every variable `lib/config.ts` reads, not just the ones
+   that throw when missing.**
+2. **The 401 on a refused upgrade never reaches the client, and cannot.**
+   Measured by reading raw bytes off a hand-written handshake: Bun's
+   `node:http` fires the upgrade event but does not flush writes to the raw
+   socket, so a minimal `socket.end("HTTP/1.1 401 ...")` delivers nothing
+   either. Not a bug in this code — but the consequence is real, and the client
+   cannot tell "your session expired" from "the network dropped". Closing it
+   needs a pre-flight HTTP call or a close frame after accepting, not a
+   different write. `refuse()` now centralises it and says so.
+3. **`SonicConversation` never reschedules after a skipped renewal.** If the
+   `renewing` guard returns early the chain stops permanently. Unreachable in
+   production — renewals are 6.5 minutes apart and a close takes 300ms — but it
+   is why the renewal-chain test cannot use the smallest interval that runs
+   fast.
+
+**`@aws-sdk/client-bedrock-runtime` was bumped 3.1083 → 3.1138** to land this.
+It pinned `@smithy/types@^4.16.0` while the DynamoDB packages were on `4.17.2`,
+and `mockClient(BedrockRuntimeClient)` produced the same structural type errors
+CLAUDE.md documents for `lib-dynamodb` — type-only, so `bun test` passed and CI
+would have failed. The root `overrides` entry could not help until the bump made
+`4.17.2` satisfy every consumer.
 
 ---
 

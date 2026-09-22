@@ -51,8 +51,10 @@ infra/terraform/
 └── modules/
     ├── cloudfront/
     ├── cognito/
+    ├── dynamodb/
     ├── iam/
     ├── s3/
+    ├── sqs/
     ├── ssm/
     └── vpc/
 ```
@@ -63,14 +65,15 @@ state file**. `terraform` commands run from inside one of them, never from
 
 ### Not yet built
 
-`dynamodb`, `elasticache`, `sqs`, `alb`, `ecs` (or `compute`), `bedrock`,
-`cloudwatch`. Scaffold as new modules following the conventions below rather
-than dropping loose resources into an environment root.
+`alb`, `ecs` (or `compute`), `cloudwatch`. Scaffold as new modules following
+the conventions below rather than dropping loose resources into an environment
+root. There is deliberately **no `elasticache`** —
+see [ADR-0006](../../docs/adr/0006-drop-redis-dynamodb-alone.md).
 
-The `bedrock` module covers the Knowledge Base and its data source for the
-Coach agent. Model invocation itself is not a Terraform resource — nothing
-provisions Nova 2 Sonic or Llama. What Terraform owns is the IAM that permits
-the call and the SSM parameters carrying the model IDs.
+A `bedrock` module is also unbuilt and, as of the Coach landing without RAG,
+unplanned: it was only ever going to carry the Knowledge Base, and there is no
+Knowledge Base. Model invocation is not a Terraform resource in any case —
+what Terraform owns is the IAM permitting the call.
 
 ### Why `global` exists
 
