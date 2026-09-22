@@ -75,11 +75,11 @@ Planning documents describe these in present tense. They are **not on
   `@shared/*`). It is the source of truth for every wire shape and every stored
   item shape.
 - `infra/terraform/` — **exists on `dev`**, with
-  `modules/{cloudfront,cognito,iam,s3,ssm,vpc}` and
+  `modules/{cloudfront,cognito,dynamodb,iam,s3,sqs,ssm,vpc}` and
   `environments/{global,dev,prod}`. Not yet merged to `master`. Modules for
-  `sqs`, `alb`, `ecs`, `bedrock`, and `cloudwatch` do not exist on either
-  branch. `dynamodb` now does. There is deliberately **no `elasticache`
-  module** — see [ADR-0006](docs/adr/0006-drop-redis-dynamodb-alone.md).
+  `alb`, `ecs`, `bedrock`, and `cloudwatch` do not exist on either branch.
+  There is deliberately **no `elasticache` module** —
+  see [ADR-0006](docs/adr/0006-drop-redis-dynamodb-alone.md).
 - Any `@aws-sdk/*` package. Note that `@aws-sdk/client-bedrock-runtime` alone
   is not sufficient for the voice loop — Nova 2 Sonic's bidirectional stream
   needs `NodeHttp2Handler` from `@smithy/node-http-handler` as well.
@@ -94,12 +94,30 @@ Planning documents describe these in present tense. They are **not on
     the singleton instance. The root `package.json` pins
     `"overrides": { "@smithy/types": "4.17.2" }` for it — without that, one
     `mockClient()` call produces type errors while `bun test` still passes.
+    **That override only works while every `@aws-sdk/*` package accepts
+    4.17.2.** `client-bedrock-runtime` sat on `^4.16.0` and reintroduced the
+    same type errors the moment it was mocked; it was bumped to realign. When
+    adding or upgrading an AWS SDK, check it does not drag `@smithy/types`
+    away from the pinned version — the failure is type-only, so `bun test`
+    stays green and CI is what breaks.
+  - **The voice loop is mocked at `BedrockRuntimeClient`, never by replacing
+    `lib/sonic`.** `routes/interview.ts` drives a real `SonicConversation`, so
+    a module stub would delete the renewal ordering, the closing sequence and
+    the event dispatch from the suite while appearing to cover them.
+    `__tests__/helpers/sonicStream.ts` fakes both directions of the stream and
+    registers no module mock.
   - `apps/web` tests use happy-dom + React Testing Library. `AudioWorklet` and
     `AudioContext` do not exist there; stub the boundary and inject events.
   - Each app has a `bunfig.toml` `[test] preload`, because `lib/config.ts`
     reads env at module scope and throws. **`apps/servers/__tests__/setup.ts`
     must assign with `=`, never `??=`** — Bun auto-loads `apps/servers/.env`,
     and falling back to it points tests at the real dev table and bucket.
+    **It must also name every variable `lib/config.ts` reads, not just the ones
+    that throw when missing.** `INTERVIEW_TEST_MODE` was unpinned and leaked in
+    from a developer's `.env`, so `effectiveTargetMinutes` returned 6 locally
+    and the plan's own 20 in CI — the `ready` event, the nudge timetable and
+    every phase boundary differed by machine. That is the second variable to do
+    this; an absent one is silent by construction.
 - Husky, lint-staged, Prettier config, `tsconfig.base.json` genuinely do not
   exist. Note `turbo run lint` is wired at the root but **no workspace defines
   a `lint` script**, so it reports success while checking nothing.
@@ -244,8 +262,16 @@ pinning the region — it is narrower than Transcribe and Polly were.
 
 ## Secrets
 
-Production secrets come from SSM Parameter Store, read at boot. No `.env` in
-production. Local `.env` files are gitignored and never committed.
+Production secrets come from SSM Parameter Store. No `.env` in production.
+Local `.env` files are gitignored and never committed.
+
+**Nothing in the application currently reads SSM at runtime.** `lib/ssm.ts`
+existed for exactly one caller — the Tavily key — and went with it when search
+was removed. The Google OAuth secret still lives in Parameter Store, but
+Cognito consumes it directly rather than the server fetching it. So this rule
+is a standing policy for the next runtime secret, not a description of live
+code: if you add one, add the reader back rather than reaching for `.env`.
+The `ssm` module and its IAM grant are the place to wire it.
 
 ## Cost
 
