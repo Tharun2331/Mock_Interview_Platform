@@ -4,3 +4,9 @@
 # Deliberately a test-only fix rather than making config lazy — boot-time
 # failure on missing config is the behaviour production wants.
 preload = ["./__tests__/setup.ts"]
+
+# Coverage counts the test files themselves unless told not to, and forty-odd
+# files sitting at 100% drag the average up by about four points — enough that
+# the reported figure flattered the suite rather than describing it. With this,
+# `bun test --coverage` reports what is actually covered of the SOURCE.
+coverageSkipTestFiles = true
