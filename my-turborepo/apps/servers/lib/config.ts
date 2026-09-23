@@ -103,7 +103,7 @@ export const config = {
   port: Number(env("PORT", "8000")),
   // True only outside production AND only when explicitly asked for.
   interviewTestMode:
-    !isProduction() && env("INTERVIEW_TEST_MODE", "") === "true",
+    !isProduction() && env("INTERVIEW_TEST_MODE", "") === "false",
   interviewTestTargetMinutes: testTargetMinutes(),
   corsOrigins: csvList(
     "CORS_ORIGIN",
