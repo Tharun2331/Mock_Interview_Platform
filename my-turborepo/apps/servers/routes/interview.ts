@@ -1,10 +1,7 @@
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
-import {
-  ExchangeBuffer,
-  type CompletedExchange,
-} from "../lib/exchangeBuffer";
+import { ExchangeBuffer, type CompletedExchange } from "../lib/exchangeBuffer";
 import { INTERVIEW, INTERVIEW_TOOL_NAMES, SONIC } from "../lib/constants";
 import { verifier } from "../lib/cognitoAuth";
 import { SessionAccessError, SessionStateError } from "../lib/errors";
@@ -166,7 +163,7 @@ function clockOf(state: InterviewState): InterviewClock {
     elapsedMinutes: Math.floor(elapsedMs / 60_000),
     remainingMinutes: Math.max(
       0,
-      Math.ceil((state.targetMinutes * 60_000 - elapsedMs) / 60_000)
+      Math.ceil((state.targetMinutes * 60_000 - elapsedMs) / 60_000),
     ),
   };
 }
@@ -189,7 +186,7 @@ function stateOf(state: InterviewState): InterviewClock & {
 } {
   const phase = interviewPhase(
     Date.now() - state.startedAt,
-    state.targetMinutes
+    state.targetMinutes,
   );
 
   return {
@@ -227,7 +224,7 @@ function runTool(call: ToolCall, state: InterviewState): unknown {
       if (input.success) {
         state.questionType = toQuestionType(
           input.data.exchangeType,
-          state.questionType
+          state.questionType,
         );
       }
       // TODO(persistence): write an ANSWER#<qId> item here. Buffered in memory
@@ -292,7 +289,7 @@ type InterviewState = {
 async function handleConnection(
   socket: WebSocket,
   userId: string,
-  sessionId: string
+  sessionId: string,
 ): Promise<void> {
   let sonic: SonicConversation | null = null;
   let closing = false;
@@ -365,20 +362,22 @@ async function handleConnection(
 
           const queued = await enqueueEvaluations({ sessionId, questionIds });
           if (queued > 0) {
-            console.log(`[interview] ${sessionId} queued ${queued} answers for scoring`);
+            console.log(
+              `[interview] ${sessionId} queued ${queued} answers for scoring`,
+            );
           }
         } catch (error) {
           console.error(
             `[interview] ${sessionId} enqueue failed, answers are recorded but unscored — ${
               error instanceof Error ? error.message : error
-            }`
+            }`,
           );
         }
       } catch (error) {
         console.error(
           `[interview] ${sessionId} close flush failed — ${
             error instanceof Error ? error.message : error
-          }`
+          }`,
         );
       }
     }
@@ -394,7 +393,10 @@ async function handleConnection(
     const meta = await startInterview({ sessionId, userId });
     const plan = meta.plan;
     if (plan === undefined) {
-      sendEvent(socket, { type: "error", message: MESSAGES.SESSION_NOT_INTERVIEWABLE });
+      sendEvent(socket, {
+        type: "error",
+        message: MESSAGES.SESSION_NOT_INTERVIEWABLE,
+      });
       socket.close();
       return;
     }
@@ -481,7 +483,7 @@ async function handleConnection(
           recorded.push(exchange.questionId);
         } else {
           console.log(
-            `[interview] ${sessionId} not scoring ${exchange.questionId} (${verdict.reason})`
+            `[interview] ${sessionId} not scoring ${exchange.questionId} (${verdict.reason})`,
           );
         }
       } catch (error) {
@@ -490,7 +492,7 @@ async function handleConnection(
         console.error(
           `[interview] ${sessionId} answer write failed — ${
             error instanceof Error ? error.message : error
-          }`
+          }`,
         );
       }
     };
@@ -536,7 +538,7 @@ async function handleConnection(
       // record of what the interviewer was actually told about the time.
       onRenew: (count) =>
         console.log(
-          `[interview] ${sessionId} stream renewed (#${count}) — ${clockOf(state).remainingMinutes}m left`
+          `[interview] ${sessionId} stream renewed (#${count}) — ${clockOf(state).remainingMinutes}m left`,
         ),
       onClose: (reason) => void shutdown(reason),
       onEvent: (event) => {
@@ -609,7 +611,7 @@ async function handleConnection(
             // and without this line an early finish is indistinguishable from
             // a timeout or a dropped socket.
             console.log(
-              `[interview] ${sessionId} toolUse ${event.toolName} ${event.content}`
+              `[interview] ${sessionId} toolUse ${event.toolName} ${event.content}`,
             );
             const result = runTool(event, state);
             sonic?.sendToolResult(event.toolUseId, result);
@@ -658,7 +660,10 @@ async function handleConnection(
 
           case "error":
             console.error(`[interview] ${sessionId} ${event.message}`);
-            sendEvent(socket, { type: "error", message: MESSAGES.INTERVIEW_FAILED });
+            sendEvent(socket, {
+              type: "error",
+              message: MESSAGES.INTERVIEW_FAILED,
+            });
             break;
         }
       },
@@ -696,7 +701,9 @@ async function handleConnection(
     // minute of each other and a minute-resolution log cannot tell them apart.
     const nudge = (stage: string, note: string) => () => {
       const elapsedSeconds = Math.round((Date.now() - state.startedAt) / 1000);
-      console.log(`[interview] ${sessionId} ${stage} — ${elapsedSeconds}s elapsed`);
+      console.log(
+        `[interview] ${sessionId} ${stage} — ${elapsedSeconds}s elapsed`,
+      );
       sonic?.kickoff(note);
     };
 
@@ -712,12 +719,12 @@ async function handleConnection(
         `wrap-up @${Math.round(schedule.wrapUpAtMs / 1000)}s, ` +
         `final call @${Math.round(schedule.finalCallAtMs / 1000)}s, ` +
         `time up @${Math.round(schedule.timeUpAtMs / 1000)}s, ` +
-        `hard stop @${Math.round(schedule.hardStopAtMs / 1000)}s`
+        `hard stop @${Math.round(schedule.hardStopAtMs / 1000)}s`,
     );
 
     const wrapUpTimer = setTimeout(
       nudge("wrap-up nudge", MESSAGES.INTERVIEW_WRAP_UP),
-      schedule.wrapUpAtMs
+      schedule.wrapUpAtMs,
     );
     // Skipped if the model already ended: a "time is up" turn arriving after a
     // warm close would reopen a finished interview.
@@ -734,7 +741,7 @@ async function handleConnection(
     }, schedule.timeUpAtMs);
     const hardStopTimer = setTimeout(
       () => void shutdown("time limit reached"),
-      schedule.hardStopAtMs
+      schedule.hardStopAtMs,
     );
     clearOnClose.push(wrapUpTimer, finalCallTimer, timeUpTimer, hardStopTimer);
 
@@ -745,7 +752,8 @@ async function handleConnection(
       }
       // The only control message the client sends today. Stopping must always
       // be reachable, so it is handled unconditionally.
-      if (data.toString() === "stop") void shutdown("candidate ended interview");
+      if (data.toString() === "stop")
+        void shutdown("candidate ended interview");
     });
 
     socket.on("close", () => void shutdown("client disconnected"));
@@ -757,7 +765,7 @@ async function handleConnection(
       sendEvent(socket, { type: "error", message: error.message });
     } else {
       console.error(
-        `[interview] ${sessionId} ${error instanceof Error ? error.message : error}`
+        `[interview] ${sessionId} ${error instanceof Error ? error.message : error}`,
       );
       sendEvent(socket, { type: "error", message: MESSAGES.INTERVIEW_FAILED });
     }
@@ -783,7 +791,10 @@ export function attachInterviewSocket(server: Server): WebSocketServer {
   const alive = new WeakSet<WebSocket>();
 
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    const url = new URL(
+      req.url ?? "/",
+      `http://${req.headers.host ?? "localhost"}`,
+    );
     if (url.pathname !== PATH) {
       socket.destroy();
       return;
@@ -794,7 +805,7 @@ export function attachInterviewSocket(server: Server): WebSocketServer {
       .split(",")
       .map((value) => value.trim());
     const bearer = protocols.find((value) =>
-      value.startsWith(AUTH_PROTOCOL_PREFIX)
+      value.startsWith(AUTH_PROTOCOL_PREFIX),
     );
 
     if (sessionId === null || bearer === undefined) {

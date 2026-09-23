@@ -26,7 +26,16 @@ export function AuthLayout({ children }: AuthLayoutProps) {
     <div className="relative h-full w-full overflow-hidden bg-background">
       {/* The bloom at rest, sized generously and sitting far behind the
           content. One hue, held still — a drifting field of colours would be a
-          second signature competing with the first. */}
+          second signature competing with the first.
+
+          This was briefly a WebGL shader orb (`@/components/ui/gradient-orb`)
+          and was reverted after looking at it. Two things settled it. The
+          shader's three base hues span 260 degrees, so its single rotation
+          uniform cannot land them all warm — tuned bright enough to see, it put
+          mint-green and periwinkle directly against the brass; tuned back far
+          enough to stop competing, it was invisible. And it cost 920 KB, very
+          nearly doubling the JS bundle, to render a haze. A radial gradient in
+          the accent does this job in no bytes at all. */}
       <div
         className="orb-atmosphere pointer-events-none absolute -left-40 -top-40 size-[36rem] opacity-70"
         style={{ "--orb-hue": "var(--cue)" } as React.CSSProperties}

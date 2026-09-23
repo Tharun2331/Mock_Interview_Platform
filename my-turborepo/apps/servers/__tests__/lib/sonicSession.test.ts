@@ -53,7 +53,7 @@ async function open(
     // Backpressure is measured on events NOBODY has pulled, so the one test
     // that asserts it must leave the queue untapped.
     tap?: boolean;
-  } = {}
+  } = {},
 ): Promise<Opened> {
   const stream = new FakeSonicStream();
   bedrock
@@ -82,12 +82,18 @@ async function open(
 
   await session.start();
 
-  const body = bedrock.commandCalls(InvokeModelWithBidirectionalStreamCommand)[0]
-    ?.args[0].input.body;
+  const body = bedrock.commandCalls(
+    InvokeModelWithBidirectionalStreamCommand,
+  )[0]?.args[0].input.body;
 
   const tap: OutboundTap =
     args.tap === false
-      ? { events: [], names: () => [], ofName: () => [], done: Promise.resolve() }
+      ? {
+          events: [],
+          names: () => [],
+          ofName: () => [],
+          done: Promise.resolve(),
+        }
       : tapOutbound(body);
 
   await settle();
@@ -152,7 +158,7 @@ describe("opening a stream", () => {
     const open_ = await open({ systemPrompt: "YOU ARE AN INTERVIEWER" });
 
     expect(open_.tap.ofName("textInput")[0]?.content).toBe(
-      "YOU ARE AN INTERVIEWER"
+      "YOU ARE AN INTERVIEWER",
     );
 
     await open_.shutdown();
@@ -172,7 +178,7 @@ describe("opening a stream", () => {
     expect(audioStart?.role).toBe("USER");
     expect(
       (audioStart?.audioInputConfiguration as { sampleRateHertz: number })
-        .sampleRateHertz
+        .sampleRateHertz,
     ).toBe(SONIC.INPUT_SAMPLE_RATE);
 
     await open_.shutdown();
@@ -184,7 +190,7 @@ describe("opening a stream", () => {
     const names = new Set(
       open_.tap.events
         .map((event) => event.payload.promptName)
-        .filter((value): value is string => typeof value === "string")
+        .filter((value): value is string => typeof value === "string"),
     );
     expect(names.size).toBe(1);
 
@@ -256,9 +262,13 @@ describe("replaying history into a renewed stream", () => {
 
     const replayed = open_.tap
       .ofName("contentStart")
-      .filter((payload) => payload.type === "TEXT" && payload.role !== "SYSTEM");
+      .filter(
+        (payload) => payload.type === "TEXT" && payload.role !== "SYSTEM",
+      );
 
-    expect(replayed.every((payload) => payload.interactive === false)).toBe(true);
+    expect(replayed.every((payload) => payload.interactive === false)).toBe(
+      true,
+    );
 
     await open_.shutdown();
   });
@@ -327,7 +337,9 @@ describe("audio in", () => {
     await settle();
 
     const audioInput = open_.tap.ofName("audioInput")[0];
-    expect(audioInput?.content).toBe(Buffer.from([1, 2, 3, 4]).toString("base64"));
+    expect(audioInput?.content).toBe(
+      Buffer.from([1, 2, 3, 4]).toString("base64"),
+    );
 
     await open_.shutdown();
   });
@@ -477,7 +489,11 @@ describe("events coming back", () => {
     const open_ = await open();
 
     open_.stream.push(
-      inbound.contentStart({ role: "USER", type: "TEXT", generationStage: "FINAL" })
+      inbound.contentStart({
+        role: "USER",
+        type: "TEXT",
+        generationStage: "FINAL",
+      }),
     );
     await settle();
 
@@ -485,9 +501,9 @@ describe("events coming back", () => {
     expect(event).toMatchObject({ role: "USER", type: "TEXT" });
     // The only signal separating a real transcript from a preview, so it is
     // forwarded verbatim for the route to read.
-    expect(String((event as { generationStage: string }).generationStage)).toContain(
-      "FINAL"
-    );
+    expect(
+      String((event as { generationStage: string }).generationStage),
+    ).toContain("FINAL");
 
     await open_.shutdown();
   });
@@ -512,7 +528,10 @@ describe("events coming back", () => {
     open_.stream.push(inbound.audioOutput("AQID"));
     await settle();
 
-    expect(open_.events).toContainEqual({ kind: "audioOutput", base64: "AQID" });
+    expect(open_.events).toContainEqual({
+      kind: "audioOutput",
+      base64: "AQID",
+    });
 
     await open_.shutdown();
   });
@@ -525,7 +544,7 @@ describe("events coming back", () => {
         toolName: "logExchange",
         toolUseId: "t-1",
         content: '{"exchangeType":"followup"}',
-      })
+      }),
     );
     await settle();
 
@@ -545,7 +564,7 @@ describe("events coming back", () => {
     const open_ = await open();
 
     open_.stream.push(
-      inbound.contentEnd({ type: "AUDIO", stopReason: "INTERRUPTED" })
+      inbound.contentEnd({ type: "AUDIO", stopReason: "INTERRUPTED" }),
     );
     await settle();
 

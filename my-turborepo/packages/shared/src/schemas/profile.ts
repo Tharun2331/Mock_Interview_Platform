@@ -107,8 +107,10 @@ export type ProfileDetailsBody = z.infer<typeof ProfileDetailsBody>;
 export const ProfileGithubBody = z.object({
   gitHub: z.preprocess(
     (value) =>
-      typeof value === "string" && value.trim().length === 0 ? undefined : value,
-    z.string().max(200).optional()
+      typeof value === "string" && value.trim().length === 0
+        ? undefined
+        : value,
+    z.string().max(200).optional(),
   ),
 });
 

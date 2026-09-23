@@ -73,7 +73,7 @@ function build(
     renewAfterMs?: number;
     getHistory?: () => readonly CompletedExchange[];
     systemPrompt?: string | (() => string);
-  } = {}
+  } = {},
 ): Built {
   const closes: string[] = [];
   const errors: string[] = [];
@@ -208,7 +208,7 @@ describe("renewing past the 8-minute ceiling", () => {
   it("replays only the most recent exchanges", async () => {
     const history: CompletedExchange[] = Array.from(
       { length: SONIC.MAX_REPLAYED_EXCHANGES + 4 },
-      (_, index) => exchange(`Question ${index}?`, `Answer ${index}.`)
+      (_, index) => exchange(`Question ${index}?`, `Answer ${index}.`),
     );
 
     const built = build({ renewAfterMs: 30, getHistory: () => history });
@@ -223,9 +223,7 @@ describe("renewing past the 8-minute ceiling", () => {
 
     // The oldest is dropped; the newest survives.
     expect(contents).not.toContain("Question 0?");
-    expect(contents).toContain(
-      `Question ${SONIC.MAX_REPLAYED_EXCHANGES + 3}?`
-    );
+    expect(contents).toContain(`Question ${SONIC.MAX_REPLAYED_EXCHANGES + 3}?`);
 
     await built.conversation.close("done");
   });
@@ -307,9 +305,9 @@ describe("a renewal that fails", () => {
 
     await settle(500);
 
-    expect(built.errors.some((message) => message.includes("renewal failed"))).toBe(
-      true
-    );
+    expect(
+      built.errors.some((message) => message.includes("renewal failed")),
+    ).toBe(true);
     expect(built.closes).toEqual([]);
 
     await built.conversation.close("done");

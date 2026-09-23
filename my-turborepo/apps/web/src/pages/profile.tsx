@@ -1,9 +1,14 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
-import { AlertTriangleIcon, RefreshCwIcon, ShieldCheckIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  RefreshCwIcon,
+  ShieldCheckIcon,
+} from "lucide-react";
 import { PROFILE_LIMITS, type ProfileView } from "@repo/shared";
 
+import { Eyebrow } from "@/components/Eyebrow";
 import { PresenceOrb } from "@/components/PresenceOrb";
 
 import { Button } from "@/components/ui/button";
@@ -12,15 +17,12 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { ResumeField } from "@/components/ResumeField";
 import { DeleteAccount } from "@/components/DeleteAccount";
-import { Separator } from "@/components/ui/separator";
 import { useProfile } from "@/lib/profile";
 import {
   saveGithub,
@@ -76,7 +78,11 @@ export function Profile() {
       <div className="flex min-h-full w-full flex-col items-center justify-center gap-4 px-4 py-20 text-center">
         <p className="font-display text-xl">{MESSAGES.PROFILE_LOAD_TITLE}</p>
         <p className="max-w-sm text-sm text-ink-subtle">{state.message}</p>
-        <Button variant="outline" className="cursor-pointer" onClick={state.reload}>
+        <Button
+          variant="outline"
+          className="cursor-pointer"
+          onClick={state.reload}
+        >
           <RefreshCwIcon aria-hidden className="size-4" />
           {MESSAGES.RETRY}
         </Button>
@@ -117,7 +123,7 @@ function ProfileForm({
   const [gitHub, setGitHub] = useState(
     existing?.githubUsername === undefined
       ? ""
-      : `https://github.com/${existing.githubUsername}`
+      : `https://github.com/${existing.githubUsername}`,
   );
   const [resume, setResume] = useState<File | null>(null);
   const [resumeError, setResumeError] = useState<string | null>(null);
@@ -138,7 +144,11 @@ function ProfileForm({
     return typeof from === "string" && from !== "/profile" ? from : "/start";
   };
 
-  const requireText = (value: string, key: string, message: string): boolean => {
+  const requireText = (
+    value: string,
+    key: string,
+    message: string,
+  ): boolean => {
     if (value.trim().length === 0) {
       setFieldErrors((prev) => ({ ...prev, [key]: message }));
       return false;
@@ -151,12 +161,11 @@ function ProfileForm({
 
     // Checked together so someone with three empty fields is told about all
     // three at once, rather than fixing one and being sent back for the next.
-    const named =
-      [
-        requireText(firstName, "firstName", MESSAGES.PROFILE_FIRST_REQUIRED),
-        requireText(lastName, "lastName", MESSAGES.PROFILE_LAST_REQUIRED),
-        requireText(username, "username", MESSAGES.PROFILE_USERNAME_REQUIRED),
-      ].every(Boolean);
+    const named = [
+      requireText(firstName, "firstName", MESSAGES.PROFILE_FIRST_REQUIRED),
+      requireText(lastName, "lastName", MESSAGES.PROFILE_LAST_REQUIRED),
+      requireText(username, "username", MESSAGES.PROFILE_USERNAME_REQUIRED),
+    ].every(Boolean);
     if (!named) return;
 
     // The resume is only mandatory the first time. A returning candidate
@@ -188,7 +197,7 @@ function ProfileForm({
             setSave(
               percent >= 100
                 ? { status: "processing" }
-                : { status: "uploading", percent }
+                : { status: "uploading", percent },
             ),
         });
         updated = result.profile;
@@ -207,7 +216,7 @@ function ProfileForm({
         // because the resume route requires a file.
         setSave({ status: "saving" });
         updated = await saveGithub(
-          gitHub.trim().length > 0 ? gitHub.trim() : null
+          gitHub.trim().length > 0 ? gitHub.trim() : null,
         );
       }
 
@@ -235,7 +244,8 @@ function ProfileForm({
       // cannot run. That path fails closed — nothing was stored — so the copy
       // must not imply the file was at fault.
       toast.error(
-        failure?.message ?? transportMessage(error, MESSAGES.PROFILE_SAVE_FAILED)
+        failure?.message ??
+          transportMessage(error, MESSAGES.PROFILE_SAVE_FAILED),
       );
     }
   };
@@ -253,13 +263,13 @@ function ProfileForm({
       <div className="flex min-h-full w-full items-center justify-center p-4 py-10">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 font-display text-2xl">
+            <h1 className="flex items-center gap-2 font-display text-3xl">
               <AlertTriangleIcon
                 aria-hidden
                 className="size-4 shrink-0 text-score-mixed"
               />
               {MESSAGES.RESUME_THIN_TITLE}
-            </CardTitle>
+            </h1>
             <CardDescription>
               {resumeThinDetail(save.characters)}
             </CardDescription>
@@ -288,178 +298,228 @@ function ProfileForm({
   }
 
   return (
-    <div className="flex min-h-full w-full items-center justify-center p-4 py-10">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <span className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-ink-faint">
+    // The settings two-column, not a form split down the middle. Every control
+    // stays in the right-hand column, so the tab path is still one line from
+    // the first name to the save button — splitting the *fields* across two
+    // columns is what breaks a form, and this does not do that. The left column
+    // is prose only, and it collapses above the fields below `lg`.
+    //
+    // What it buys: the explanations each group deserves. They used to be one
+    // CardDescription covering the whole page plus a 12px hint under one input,
+    // because a 448px card had nowhere else to put them.
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 p-6 pb-16">
+      <header className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <Eyebrow>
             {isOnboarding
               ? MESSAGES.PROFILE_EYEBROW_FIRST
               : MESSAGES.PROFILE_EYEBROW_EDIT}
-          </span>
-          <CardTitle className="font-display text-3xl">
-            {isOnboarding ? MESSAGES.PROFILE_TITLE_FIRST : MESSAGES.PROFILE_TITLE_EDIT}
-          </CardTitle>
-          <CardDescription className="leading-relaxed">
+          </Eyebrow>
+          <h1 className="font-display text-4xl leading-[1.1] sm:text-5xl text-ink">
             {isOnboarding
-              ? MESSAGES.PROFILE_DESCRIPTION_FIRST
-              : MESSAGES.PROFILE_DESCRIPTION_EDIT}
-          </CardDescription>
-        </CardHeader>
+              ? MESSAGES.PROFILE_TITLE_FIRST
+              : MESSAGES.PROFILE_TITLE_EDIT}
+          </h1>
+        </div>
+        <p className="max-w-xl text-sm leading-relaxed text-ink-muted">
+          {isOnboarding
+            ? MESSAGES.PROFILE_DESCRIPTION_FIRST
+            : MESSAGES.PROFILE_DESCRIPTION_EDIT}
+        </p>
+      </header>
 
-        <CardContent className="flex flex-col gap-6">
-          <div className="grid grid-cols-2 gap-3">
-            <NameField
-              id="firstName"
-              label={MESSAGES.PROFILE_FIRST_LABEL}
-              value={firstName}
-              error={fieldErrors.firstName}
-              disabled={isBusy}
-              onChange={setFirstName}
-            />
-            <NameField
-              id="lastName"
-              label={MESSAGES.PROFILE_LAST_LABEL}
-              value={lastName}
-              error={fieldErrors.lastName}
-              disabled={isBusy}
-              onChange={setLastName}
-            />
-          </div>
-
+      <ProfileSection
+        heading={MESSAGES.PROFILE_SECTION_IDENTITY}
+        body={MESSAGES.PROFILE_SECTION_IDENTITY_BODY}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
           <NameField
-            id="username"
-            label={MESSAGES.PROFILE_USERNAME_LABEL}
-            hint={MESSAGES.PROFILE_USERNAME_HINT}
-            value={username}
-            error={fieldErrors.username}
+            id="firstName"
+            label={MESSAGES.PROFILE_FIRST_LABEL}
+            value={firstName}
+            error={fieldErrors.firstName}
             disabled={isBusy}
-            onChange={setUsername}
+            onChange={setFirstName}
+          />
+          <NameField
+            id="lastName"
+            label={MESSAGES.PROFILE_LAST_LABEL}
+            value={lastName}
+            error={fieldErrors.lastName}
+            disabled={isBusy}
+            onChange={setLastName}
+          />
+        </div>
+
+        <NameField
+          id="username"
+          label={MESSAGES.PROFILE_USERNAME_LABEL}
+          hint={MESSAGES.PROFILE_USERNAME_HINT}
+          value={username}
+          error={fieldErrors.username}
+          disabled={isBusy}
+          onChange={setUsername}
+        />
+      </ProfileSection>
+
+      <ProfileSection
+        heading={MESSAGES.PROFILE_SECTION_MATERIAL}
+        body={MESSAGES.PROFILE_SECTION_MATERIAL_BODY}
+      >
+        <div className="flex flex-col gap-2">
+          <ResumeField
+            file={resume}
+            error={resumeError}
+            disabled={isBusy}
+            onSelect={(file) => {
+              setResume(file);
+              setResumeError(null);
+            }}
+            onReject={(message) => {
+              setResume(null);
+              setResumeError(message);
+            }}
+            onClear={() => {
+              setResume(null);
+              setResumeError(null);
+            }}
           />
 
-          <div className="flex flex-col gap-2">
-            <ResumeField
-              file={resume}
-              error={resumeError}
-              disabled={isBusy}
-              onSelect={(file) => {
-                setResume(file);
-                setResumeError(null);
-              }}
-              onReject={(message) => {
-                setResume(null);
-                setResumeError(message);
-              }}
-              onClear={() => {
-                setResume(null);
-                setResumeError(null);
-              }}
-            />
-
-            {/* A resume already on file, and no new one attached. Says so
+          {/* A resume already on file, and no new one attached. Says so
                 rather than showing an empty picker that reads as "nothing
                 saved" to someone who saved one last week. */}
-            {resume === null && existing?.hasResume === true ? (
-              <p className="text-xs text-ink-subtle">
-                {MESSAGES.PROFILE_RESUME_ON_FILE}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="github">{MESSAGES.FORM_GITHUB_LABEL}</Label>
-              <span className="rounded-full border border-hairline px-2 py-0.5 text-[0.7rem] text-ink-faint">
-                {MESSAGES.FORM_GITHUB_OPTIONAL}
-              </span>
-            </div>
-            <Input
-              id="github"
-              type="url"
-              inputMode="url"
-              autoComplete="url"
-              placeholder={MESSAGES.FORM_GITHUB_PLACEHOLDER}
-              value={gitHub}
-              disabled={isBusy}
-              aria-describedby="github-hint"
-              onChange={(e) => setGitHub(e.target.value)}
-            />
-            <p id="github-hint" className="text-xs text-ink-subtle">
-              {MESSAGES.FORM_GITHUB_HINT}
+          {resume === null && existing?.hasResume === true ? (
+            <p className="text-xs text-ink-subtle">
+              {MESSAGES.PROFILE_RESUME_ON_FILE}
             </p>
-          </div>
+          ) : null}
+        </div>
 
-          {/* The one thing a candidate handing over a resume most deserves to
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <Label htmlFor="github">{MESSAGES.FORM_GITHUB_LABEL}</Label>
+            <span className="rounded-full border border-hairline px-2 py-0.5 text-[0.7rem] text-ink-faint">
+              {MESSAGES.FORM_GITHUB_OPTIONAL}
+            </span>
+          </div>
+          <Input
+            id="github"
+            type="url"
+            inputMode="url"
+            autoComplete="url"
+            placeholder={MESSAGES.FORM_GITHUB_PLACEHOLDER}
+            value={gitHub}
+            disabled={isBusy}
+            aria-describedby="github-hint"
+            onChange={(e) => setGitHub(e.target.value)}
+          />
+          <p id="github-hint" className="text-xs text-ink-subtle">
+            {MESSAGES.FORM_GITHUB_HINT}
+          </p>
+        </div>
+
+        {/* The one thing a candidate handing over a resume most deserves to
               be told, and it is only honest because the server actually does
               it. Counts and categories only — naming the values back would
               undo the removal. */}
-          {redaction !== null ? (
-            <p
-              className="flex items-start gap-2 rounded-md border border-hairline bg-surface-2 px-3 py-2 text-xs text-ink-subtle"
-              role="status"
-            >
-              <ShieldCheckIcon
-                aria-hidden
-                className="mt-0.5 size-3.5 shrink-0 text-score-strong"
-              />
-              {redactionSummary(redaction.count)}
-            </p>
-          ) : null}
-
-          {/* Hidden during onboarding. There is nothing to delete before the
-              first save, and offering it beside the form someone is still
-              filling in makes the destructive action a peer of "Save". Once a
-              profile exists it becomes the last thing on the page, below a
-              separator, which is where it belongs and where it will not be hit
-              on the way to anything else. */}
-          {existing !== null ? (
-            <>
-              <Separator className="mt-2" />
-              <DeleteAccount onDeleted={clearProfile} />
-            </>
-          ) : null}
-        </CardContent>
-
-        <CardFooter className="mt-6 flex-col gap-3">
-          {isBusy ? (
-            <div className="w-full space-y-2" aria-live="polite">
-              <div className="flex items-center justify-between font-mono text-xs text-ink-subtle">
-                <span>
-                  {save.status === "uploading"
-                    ? MESSAGES.RESUME_PHASE_UPLOADING
-                    : save.status === "processing"
-                      ? MESSAGES.RESUME_PHASE_SCANNING
-                      : MESSAGES.PROFILE_PHASE_SAVING}
-                </span>
-                {save.status === "uploading" ? (
-                  <span className="tabular-nums">{save.percent}%</span>
-                ) : null}
-              </div>
-              <Progress
-                value={save.status === "uploading" ? save.percent : null}
-                className={
-                  save.status === "uploading"
-                    ? undefined
-                    : "animate-pulse motion-reduce:animate-none"
-                }
-              />
-            </div>
-          ) : null}
-
-          <Button
-            size="lg"
-            className="w-full cursor-pointer"
-            onClick={handleSubmit}
-            disabled={isBusy}
+        {redaction !== null ? (
+          <p
+            className="flex items-start gap-2 rounded-md border border-hairline bg-surface-2 px-3 py-2 text-xs text-ink-subtle"
+            role="status"
           >
-            {isBusy
-              ? MESSAGES.PROFILE_SUBMIT_PENDING
-              : isOnboarding
-                ? MESSAGES.PROFILE_SUBMIT_FIRST
-                : MESSAGES.PROFILE_SUBMIT_EDIT}
-          </Button>
-        </CardFooter>
-      </Card>
+            <ShieldCheckIcon
+              aria-hidden
+              className="mt-0.5 size-3.5 shrink-0 text-score-strong"
+            />
+            {redactionSummary(redaction.count)}
+          </p>
+        ) : null}
+      </ProfileSection>
+
+      {/* Save sits with the form it saves, above the account section rather
+          than below it. `mt-6` is gone — the page container owns the rhythm. */}
+      <div className="flex flex-col gap-3 border-t border-hairline pt-8">
+        {isBusy ? (
+          <div className="w-full space-y-2" aria-live="polite">
+            <div className="flex items-center justify-between font-mono text-xs text-ink-subtle">
+              <span>
+                {save.status === "uploading"
+                  ? MESSAGES.RESUME_PHASE_UPLOADING
+                  : save.status === "processing"
+                    ? MESSAGES.RESUME_PHASE_SCANNING
+                    : MESSAGES.PROFILE_PHASE_SAVING}
+              </span>
+              {save.status === "uploading" ? (
+                <span className="tabular-nums">{save.percent}%</span>
+              ) : null}
+            </div>
+            <Progress
+              value={save.status === "uploading" ? save.percent : null}
+              className={
+                save.status === "uploading"
+                  ? undefined
+                  : "animate-pulse motion-reduce:animate-none"
+              }
+            />
+          </div>
+        ) : null}
+
+        <Button
+          size="lg"
+          className="cursor-pointer self-start"
+          onClick={handleSubmit}
+          disabled={isBusy}
+        >
+          {isBusy
+            ? MESSAGES.PROFILE_SUBMIT_PENDING
+            : isOnboarding
+              ? MESSAGES.PROFILE_SUBMIT_FIRST
+              : MESSAGES.PROFILE_SUBMIT_EDIT}
+        </Button>
+      </div>
+
+      {/* Hidden during onboarding. There is nothing to delete before the first
+          save, and offering it beside the form someone is still filling in
+          makes the destructive action a peer of "Save". Once a profile exists
+          it is its own terminal section, below the save it must never be
+          mistaken for, with its own heading saying what it does. */}
+      {existing !== null ? (
+        <ProfileSection
+          heading={MESSAGES.PROFILE_SECTION_ACCOUNT}
+          body={MESSAGES.PROFILE_SECTION_ACCOUNT_BODY}
+        >
+          <DeleteAccount onDeleted={clearProfile} />
+        </ProfileSection>
+      ) : null}
     </div>
+  );
+}
+
+// One group of the settings page: prose on the left, every control on the
+// right. The two columns are a *reading* split, never a form split — nothing
+// focusable lives in the left column, so the tab path runs straight down the
+// right-hand one from the first field to the save button.
+//
+// Below `lg` it is one column with the prose above its fields, which is also
+// what the 375px case gets. The heading is a real `h3` either way, so the page
+// has an outline rather than a flat run of labels.
+function ProfileSection({
+  heading,
+  body,
+  children,
+}: {
+  heading: string;
+  body: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="grid gap-x-12 gap-y-4 border-t border-hairline pt-8 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
+      <div className="flex flex-col gap-2">
+        <Eyebrow as="h2">{heading}</Eyebrow>
+        <p className="text-xs leading-relaxed text-ink-subtle">{body}</p>
+      </div>
+      <div className="flex flex-col gap-4">{children}</div>
+    </section>
   );
 }
 
@@ -493,7 +553,9 @@ function NameField({
         disabled={disabled}
         maxLength={PROFILE_LIMITS.MAX_NAME}
         aria-invalid={error !== undefined}
-        aria-describedby={error !== undefined || hint !== undefined ? describedBy : undefined}
+        aria-describedby={
+          error !== undefined || hint !== undefined ? describedBy : undefined
+        }
         onChange={(e) => onChange(e.target.value)}
       />
       {error !== undefined || hint !== undefined ? (

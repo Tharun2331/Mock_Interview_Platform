@@ -83,7 +83,7 @@ export class InterviewerVoice {
     const buffer = context.createBuffer(
       AUDIO.CHANNELS,
       samples.length,
-      AUDIO.OUTPUT_SAMPLE_RATE
+      AUDIO.OUTPUT_SAMPLE_RATE,
     );
     const channel = buffer.getChannelData(0);
     for (let i = 0; i < samples.length; i += 1) {
@@ -101,7 +101,7 @@ export class InterviewerVoice {
     // past. After that each chunk starts exactly where the previous one ended.
     const startAt = Math.max(
       context.currentTime + AUDIO.PLAYBACK_LEAD_S,
-      this.playheadAt
+      this.playheadAt,
     );
     source.start(startAt);
     this.playheadAt = startAt + buffer.duration;

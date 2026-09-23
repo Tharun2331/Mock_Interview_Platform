@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { ScoreDimension, SessionHistoryItem } from "@repo/shared";
 
+import { Eyebrow } from "@/components/Eyebrow";
 import { PresenceOrb } from "@/components/PresenceOrb";
 import { ScoreTrend } from "@/components/ScoreTrend";
 import { Button } from "@/components/ui/button";
@@ -63,11 +64,15 @@ function SessionCard({ session }: { session: SessionHistoryItem }) {
       <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
         <span className="text-ink-subtle">
           {MESSAGES.HISTORY_STRENGTH}:{" "}
-          <span className="text-ink">{dimensionLabel(session.topStrength)}</span>
+          <span className="text-ink">
+            {dimensionLabel(session.topStrength)}
+          </span>
         </span>
         <span className="text-ink-subtle">
           {MESSAGES.HISTORY_WEAKNESS}:{" "}
-          <span className="text-ink">{dimensionLabel(session.topWeakness)}</span>
+          <span className="text-ink">
+            {dimensionLabel(session.topWeakness)}
+          </span>
         </span>
       </div>
 
@@ -123,15 +128,19 @@ export function SessionHistory() {
     return (
       <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col items-center justify-center gap-5 p-6 text-center">
         <AlertTriangleIcon aria-hidden className="size-5 text-ink-subtle" />
-        <h2 className="font-display text-2xl text-ink">
+        <h1 className="font-display text-3xl text-ink">
           {MESSAGES.HISTORY_LOAD_FAILED}
-        </h2>
+        </h1>
         {page.message !== MESSAGES.HISTORY_LOAD_FAILED ? (
           <p className="max-w-md text-sm leading-relaxed text-ink-muted">
             {page.message}
           </p>
         ) : null}
-        <Button variant="outline" className="cursor-pointer" onClick={() => void load()}>
+        <Button
+          variant="outline"
+          className="cursor-pointer"
+          onClick={() => void load()}
+        >
           <RefreshCwIcon aria-hidden className="size-4" />
           {MESSAGES.RETRY}
         </Button>
@@ -147,13 +156,16 @@ export function SessionHistory() {
     return (
       <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col items-center justify-center gap-5 p-6 text-center">
         <TrendingUpIcon aria-hidden className="size-6 text-ink-faint" />
-        <h2 className="font-display text-2xl text-ink">
+        <h1 className="font-display text-3xl text-ink">
           {MESSAGES.HISTORY_EMPTY_TITLE}
-        </h2>
+        </h1>
         <p className="max-w-md text-sm leading-relaxed text-ink-muted">
           {MESSAGES.HISTORY_EMPTY_BODY}
         </p>
-        <Button className="cursor-pointer" onClick={() => void navigate("/start")}>
+        <Button
+          className="cursor-pointer"
+          onClick={() => void navigate("/start")}
+        >
           {MESSAGES.HISTORY_EMPTY_ACTION}
         </Button>
       </div>
@@ -163,24 +175,20 @@ export function SessionHistory() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 p-6 pb-16">
       <header className="flex flex-col gap-2">
-        <span className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-ink-faint">
-          {MESSAGES.HISTORY_TITLE}
-        </span>
-        <h2 className="font-display text-3xl text-ink">
+        <Eyebrow>{MESSAGES.HISTORY_TITLE}</Eyebrow>
+        <h1 className="font-display text-4xl leading-[1.1] sm:text-5xl text-ink">
           {MESSAGES.HISTORY_SUBTITLE(sessions.length)}
-        </h2>
+        </h1>
       </header>
 
-      <section className="flex flex-col gap-3 rounded-lg border border-border bg-surface-2 p-5">
-        <span className="text-xs uppercase tracking-wide text-ink-faint">
-          {MESSAGES.HISTORY_TREND_TITLE}
-        </span>
+      <section className="flex flex-col gap-4 rounded-lg border border-border bg-surface-2 p-5">
+        <Eyebrow as="h2">{MESSAGES.HISTORY_TREND_TITLE}</Eyebrow>
         <ScoreTrend sessions={sessions} />
       </section>
 
       {/* Also the chart's table view: every point above has a card here with its
           date, role and score in text. */}
-      <section className="flex flex-col gap-3">
+      <section className="flex flex-col gap-4">
         {sessions.map((session) => (
           <SessionCard key={session.sessionId} session={session} />
         ))}

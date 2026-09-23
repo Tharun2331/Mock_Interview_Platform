@@ -27,7 +27,10 @@ describe("aliasedProjection", () => {
   });
 
   it("maps every placeholder back to its attribute", () => {
-    const { ExpressionAttributeNames } = aliasedProjection(["role", "overallScore"]);
+    const { ExpressionAttributeNames } = aliasedProjection([
+      "role",
+      "overallScore",
+    ]);
 
     expect(ExpressionAttributeNames).toEqual({
       "#role": "role",
@@ -51,7 +54,9 @@ describe("aliasedProjection", () => {
 
     const { ProjectionExpression } = aliasedProjection(fields);
 
-    for (const token of ProjectionExpression.split(",").map((part) => part.trim())) {
+    for (const token of ProjectionExpression.split(",").map((part) =>
+      part.trim(),
+    )) {
       expect(token.startsWith("#")).toBe(true);
     }
   });
@@ -59,34 +64,39 @@ describe("aliasedProjection", () => {
   // A sample of DynamoDB's several hundred reserved words. None of them may
   // appear bare, and none of them is special-cased — they survive because
   // everything is aliased.
-  it.each(["role", "name", "status", "count", "timestamp", "depth", "type", "size"])(
-    "aliases the reserved word %s",
-    (reserved) => {
-      const { ProjectionExpression, ExpressionAttributeNames } = aliasedProjection([
-        reserved,
-      ]);
+  it.each([
+    "role",
+    "name",
+    "status",
+    "count",
+    "timestamp",
+    "depth",
+    "type",
+    "size",
+  ])("aliases the reserved word %s", (reserved) => {
+    const { ProjectionExpression, ExpressionAttributeNames } =
+      aliasedProjection([reserved]);
 
-      expect(ProjectionExpression).toBe(`#${reserved}`);
-      expect(ExpressionAttributeNames[`#${reserved}`]).toBe(reserved);
-    }
-  );
+    expect(ProjectionExpression).toBe(`#${reserved}`);
+    expect(ExpressionAttributeNames[`#${reserved}`]).toBe(reserved);
+  });
 
   it("declares a placeholder for every name it uses", () => {
-    const { ProjectionExpression, ExpressionAttributeNames } = aliasedProjection([
-      "role",
-      "type",
-      "questionCount",
-    ]);
+    const { ProjectionExpression, ExpressionAttributeNames } =
+      aliasedProjection(["role", "type", "questionCount"]);
 
     // An expression referencing a placeholder with no declaration is the other
     // way this request fails, and it fails at runtime rather than at compile.
-    for (const token of ProjectionExpression.split(",").map((part) => part.trim())) {
+    for (const token of ProjectionExpression.split(",").map((part) =>
+      part.trim(),
+    )) {
       expect(ExpressionAttributeNames).toHaveProperty(token);
     }
   });
 
   it("returns an empty expression for an empty field list", () => {
-    const { ProjectionExpression, ExpressionAttributeNames } = aliasedProjection([]);
+    const { ProjectionExpression, ExpressionAttributeNames } =
+      aliasedProjection([]);
 
     expect(ProjectionExpression).toBe("");
     expect(ExpressionAttributeNames).toEqual({});

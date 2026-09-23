@@ -19,23 +19,24 @@ import {
   structuredCallCount,
 } from "../helpers/bedrockStub";
 
-const { runCoachAgent, analyseHistory, groupByTopic } = await import(
-  "../../agents/coach"
-);
+const { runCoachAgent, analyseHistory, groupByTopic, stripInlineMarkdown } =
+  await import("../../agents/coach");
 
 // The agent now returns { report, prose, generated } so a caller can cache the
 // prose it produced. Almost every test here is about the report, so they go
 // through this rather than destructuring in forty places. The cache tests at the
 // bottom call runCoachAgent directly.
 const reportFor = async (
-  input: Parameters<typeof runCoachAgent>[0]
+  input: Parameters<typeof runCoachAgent>[0],
 ): Promise<CoachReport> => (await runCoachAgent(input)).report;
 
 let clock = 0;
 
 /** One finished interview. `completedAt` advances by default so a list built
  *  without explicit dates is still in a defined order. */
-function session(overrides: Partial<UserSessionSummary> = {}): UserSessionSummary {
+function session(
+  overrides: Partial<UserSessionSummary> = {},
+): UserSessionSummary {
   clock += 1;
   return {
     type: "user_session_summary",
@@ -77,10 +78,10 @@ const PROSE = {
 function itemFor(
   report: CoachReport,
   topic: string,
-  track: RoadmapTrack
+  track: RoadmapTrack,
 ): RoadmapItem | undefined {
   return report.roadmap.find(
-    (item) => item.topic === topic && item.track === track
+    (item) => item.topic === topic && item.track === track,
   );
 }
 
@@ -162,7 +163,9 @@ describe("the two-track roadmap", () => {
       ],
     });
 
-    expect(itemFor(report, "Backend Engineer", "communication")?.avgScore).toBe(2);
+    expect(itemFor(report, "Backend Engineer", "communication")?.avgScore).toBe(
+      2,
+    );
   });
 
   it("scores the technical track on correctness and depth", async () => {
@@ -186,19 +189,23 @@ describe("the two-track roadmap", () => {
       ],
     });
 
-    for (const item of report.roadmap.filter((row) => row.track === "technical")) {
+    for (const item of report.roadmap.filter(
+      (row) => row.track === "technical",
+    )) {
       expect(item.confidence).toBe("tentative");
     }
   });
 
   it("marks communication confident when clarity was actually recorded", async () => {
     const report = await reportFor({
-      summaries: [session({ averages: { correctness: 5, clarity: 5, depth: 5 } })],
+      summaries: [
+        session({ averages: { correctness: 5, clarity: 5, depth: 5 } }),
+      ],
     });
 
-    expect(itemFor(report, "Backend Engineer", "communication")?.confidence).toBe(
-      "confident"
-    );
+    expect(
+      itemFor(report, "Backend Engineer", "communication")?.confidence,
+    ).toBe("confident");
   });
 
   // Rows written before averages were carried. Falling back to the overall
@@ -206,18 +213,20 @@ describe("the two-track roadmap", () => {
   it("drops communication to tentative when no clarity was recorded", async () => {
     const report = await reportFor({ summaries: [session()] });
 
-    expect(itemFor(report, "Backend Engineer", "communication")?.confidence).toBe(
-      "tentative"
-    );
+    expect(
+      itemFor(report, "Backend Engineer", "communication")?.confidence,
+    ).toBe("tentative");
   });
 
   it("keeps the two tracks' focus points separate", async () => {
     const report = await reportFor({ summaries: [session()] });
 
     expect(
-      itemFor(report, "Backend Engineer", "communication")?.focusPoints
+      itemFor(report, "Backend Engineer", "communication")?.focusPoints,
     ).toEqual(["Name the tradeoff before the solution."]);
-    expect(itemFor(report, "Backend Engineer", "technical")?.focusPoints).toEqual([
+    expect(
+      itemFor(report, "Backend Engineer", "technical")?.focusPoints,
+    ).toEqual([
       "Read up on consistent hashing.",
       "Revise queue delivery guarantees.",
     ]);
@@ -261,7 +270,7 @@ describe("roadmap priority ordering", () => {
     });
 
     expect(first.roadmap.map((item) => `${item.topic}/${item.track}`)).toEqual(
-      second.roadmap.map((item) => `${item.topic}/${item.track}`)
+      second.roadmap.map((item) => `${item.topic}/${item.track}`),
     );
   });
 
@@ -272,7 +281,7 @@ describe("roadmap priority ordering", () => {
     }
 
     expect(analyseHistory(summaries).roadmap.length).toBeLessThanOrEqual(
-      COACH_LIMITS.MAX_ROADMAP_ITEMS
+      COACH_LIMITS.MAX_ROADMAP_ITEMS,
     );
   });
 });
@@ -317,8 +326,14 @@ describe("trend calculation across sessions", () => {
   // The query returns newest-first because that is what the history list wants.
   // A chart drawn in that order reads improvement as decline.
   it("orders the score history oldest first regardless of input order", async () => {
-    const older = session({ completedAt: "2026-09-01T10:00:00.000Z", overallScore: 3 });
-    const newer = session({ completedAt: "2026-09-20T10:00:00.000Z", overallScore: 8 });
+    const older = session({
+      completedAt: "2026-09-01T10:00:00.000Z",
+      overallScore: 3,
+    });
+    const newer = session({
+      completedAt: "2026-09-20T10:00:00.000Z",
+      overallScore: 8,
+    });
 
     const report = await reportFor({ summaries: [newer, older] });
     const history = report.trends[0]?.scoreHistory ?? [];
@@ -357,7 +372,9 @@ describe("trend calculation across sessions", () => {
       ],
     });
 
-    expect(report.trends.map((trend) => trend.topic)).toEqual(["Backend Engineer"]);
+    expect(report.trends.map((trend) => trend.topic)).toEqual([
+      "Backend Engineer",
+    ]);
     expect(report.roadmap.map((item) => item.topic)).toContain("Data Engineer");
   });
 });
@@ -388,7 +405,9 @@ describe("the session narratives", () => {
     });
 
     const call = lastStructuredCall() as { prompt: string };
-    expect(call.prompt.indexOf("NEWEST")).toBeLessThan(call.prompt.indexOf("OLDEST"));
+    expect(call.prompt.indexOf("NEWEST")).toBeLessThan(
+      call.prompt.indexOf("OLDEST"),
+    );
   });
 
   // Said explicitly rather than omitted. An absent section reads to a model as
@@ -428,9 +447,9 @@ describe("what the model is allowed to contribute", () => {
 
     const report = await reportFor({ summaries: [session(), session()] });
 
-    expect(report.roadmap.every((item) => item.topic === "Backend Engineer")).toBe(
-      true
-    );
+    expect(
+      report.roadmap.every((item) => item.topic === "Backend Engineer"),
+    ).toBe(true);
     expect(JSON.stringify(report)).not.toContain("Invented.");
   });
 
@@ -452,7 +471,7 @@ describe("what the model is allowed to contribute", () => {
 
     for (const item of report.roadmap) {
       expect(item.focusPoints.length).toBeLessThanOrEqual(
-        COACH_LIMITS.MAX_FOCUS_POINTS
+        COACH_LIMITS.MAX_FOCUS_POINTS,
       );
     }
   });
@@ -462,7 +481,9 @@ describe("what the model is allowed to contribute", () => {
 
     const report = await reportFor({ summaries: [session(), session()] });
 
-    expect(itemFor(report, "Backend Engineer", "technical")?.focusPoints).toHaveLength(2);
+    expect(
+      itemFor(report, "Backend Engineer", "technical")?.focusPoints,
+    ).toHaveLength(2);
   });
 });
 
@@ -529,7 +550,9 @@ describe("sessions with no recorded role", () => {
   });
 
   it("gives them a readable label", async () => {
-    const report = await reportFor({ summaries: [session({ role: undefined })] });
+    const report = await reportFor({
+      summaries: [session({ role: undefined })],
+    });
 
     expect(report.roadmap[0]?.topic).toBe("General practice");
   });
@@ -596,7 +619,10 @@ describe("runCoachAgent prose reuse", () => {
     const { prose } = await runCoachAgent({ summaries: two() });
     const before = structuredCallCount();
 
-    const second = await runCoachAgent({ summaries: two(), cachedProse: prose });
+    const second = await runCoachAgent({
+      summaries: two(),
+      cachedProse: prose,
+    });
 
     expect(structuredCallCount()).toBe(before);
     expect(second.generated).toBe(false);
@@ -633,7 +659,9 @@ describe("runCoachAgent prose reuse", () => {
     // a permanently numbers-only report — it would look fresh forever.
     setStructuredFailure(new Error("throttled"));
 
-    const { report, prose, generated } = await runCoachAgent({ summaries: two() });
+    const { report, prose, generated } = await runCoachAgent({
+      summaries: two(),
+    });
 
     expect(generated).toBe(true);
     expect(prose).toBeNull();
@@ -668,7 +696,7 @@ describe("runCoachAgent prose reuse", () => {
     });
 
     expect(report.roadmap.map((item) => item.topic)).not.toContain(
-      "A Role They Stopped Practising"
+      "A Role They Stopped Practising",
     );
     for (const item of report.roadmap) expect(item.focusPoints).toEqual([]);
   });
@@ -679,5 +707,62 @@ describe("runCoachAgent prose reuse", () => {
     await runCoachAgent({ summaries: two(), cachedProse: null });
 
     expect(structuredCallCount()).toBe(before + 1);
+  });
+});
+
+// The model emits markdown emphasis despite the prompt asking for plain
+// sentences, and the coach page renders text rather than markdown — so "*why*"
+// reached a reader with its asterisks on. These pin the line between formatting
+// and content, because the cheap over-eager fix corrupts the one kind of advice
+// this product exists to give.
+describe("stripInlineMarkdown", () => {
+  it("unwraps the emphasis the model actually emitted", () => {
+    expect(
+      stripInlineMarkdown(
+        "Start by explaining *why* a decision was made before *how*.",
+      ),
+    ).toBe("Start by explaining why a decision was made before how.");
+  });
+
+  it("unwraps bold, underscore emphasis and backtick code", () => {
+    expect(stripInlineMarkdown("Name the **tradeoff** first.")).toBe(
+      "Name the tradeoff first.",
+    );
+    expect(stripInlineMarkdown("Say _what_ it does.")).toBe(
+      "Say what it does.",
+    );
+    expect(stripInlineMarkdown("Mention `useMemo` by name.")).toBe(
+      "Mention useMemo by name.",
+    );
+  });
+
+  it("leaves arithmetic and identifiers alone", () => {
+    // The whole reason the strip is narrow. A greedy version eats the asterisk
+    // in a complexity bound and the underscores in a parameter name, which is
+    // worse than the formatting it was fixing.
+    const complexity = "Explain why the loop is O(n*m) rather than O(n).";
+    expect(stripInlineMarkdown(complexity)).toBe(complexity);
+
+    const identifier = "Set max_tokens and top_p deliberately.";
+    expect(stripInlineMarkdown(identifier)).toBe(identifier);
+  });
+
+  it("leaves an unpaired marker where it is", () => {
+    // A lone asterisk is not emphasis, and removing it would silently edit a
+    // sentence rather than unwrap one.
+    const unpaired = "Multiply by * to scale.";
+    expect(stripInlineMarkdown(unpaired)).toBe(unpaired);
+  });
+
+  it("does not span a line break", () => {
+    // Emphasis does not run across lines; a marker at the end of one line and
+    // the start of the next is two unpaired markers, not a pair.
+    const across = "First *point\nSecond* point";
+    expect(stripInlineMarkdown(across)).toBe(across);
+  });
+
+  it("returns plain prose untouched", () => {
+    const plain = "Structure and order, naming the point before the detail.";
+    expect(stripInlineMarkdown(plain)).toBe(plain);
   });
 });

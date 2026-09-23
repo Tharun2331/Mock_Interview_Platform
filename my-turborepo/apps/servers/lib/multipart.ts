@@ -44,7 +44,7 @@ export function isMultipart(req: ExpressRequest): boolean {
 // record. The boundary lives in content-type, so dropping headers here would
 // break parsing.
 function toHeaderRecord(
-  headers: ExpressRequest["headers"]
+  headers: ExpressRequest["headers"],
 ): Record<string, string> {
   const record: Record<string, string> = {};
 
@@ -80,7 +80,7 @@ function assertDeclaredSize(req: ExpressRequest, maxBytes: number): void {
 // application/json and ignores multipart entirely.
 function capStream(
   source: ReadableStream<Uint8Array>,
-  maxBytes: number
+  maxBytes: number,
 ): ReadableStream<Uint8Array> {
   let seen = 0;
 
@@ -94,7 +94,7 @@ function capStream(
         }
         controller.enqueue(chunk);
       },
-    })
+    }),
   );
 }
 
@@ -103,7 +103,7 @@ function capStream(
 // multipart parser instead of taking on a parsing dependency.
 export async function readMultipart(
   req: ExpressRequest,
-  maxBytes: number = UPLOAD.MAX_RESUME_BYTES
+  maxBytes: number = UPLOAD.MAX_RESUME_BYTES,
 ): Promise<MultipartForm> {
   // Budget for the whole body, which carries framing on top of the file.
   const bodyBudget = maxBytes + UPLOAD.BODY_OVERHEAD_BYTES;
@@ -112,7 +112,7 @@ export async function readMultipart(
 
   const body = capStream(
     Readable.toWeb(req) as unknown as ReadableStream<Uint8Array>,
-    bodyBudget
+    bodyBudget,
   );
 
   const webRequest = new Request("http://internal/upload", {
@@ -147,7 +147,7 @@ export type UploadedPdf = {
 // application/pdf just as readily as a real PDF does.
 export async function readPdf(
   form: MultipartForm,
-  field: string
+  field: string,
 ): Promise<UploadedPdf> {
   const value = form.get(field);
 
@@ -164,7 +164,7 @@ export async function readPdf(
 
   const bytes = new Uint8Array(await value.arrayBuffer());
   const header = new TextDecoder().decode(
-    bytes.slice(0, UPLOAD.PDF_MAGIC.length)
+    bytes.slice(0, UPLOAD.PDF_MAGIC.length),
   );
 
   if (header !== UPLOAD.PDF_MAGIC) {
@@ -176,7 +176,7 @@ export async function readPdf(
 
 export function readTextField(
   form: MultipartForm,
-  field: string
+  field: string,
 ): string | undefined {
   const value = form.get(field);
   return typeof value === "string" && value.length > 0 ? value : undefined;

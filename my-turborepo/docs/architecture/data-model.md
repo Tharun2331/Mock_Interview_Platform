@@ -20,8 +20,8 @@ hardcoded, and never derived from `NODE_ENV`.
 
 ### Key schema
 
-| Attribute | Type   | Role         |
-| --------- | ------ | ------------ |
+| Attribute | Type   | Role          |
+| --------- | ------ | ------------- |
 | `PK`      | String | Partition key |
 | `SK`      | String | Sort key      |
 
@@ -32,20 +32,20 @@ Every row has three owners: something that **writes** it, something that
 expires it on its own. A blank cell in either of the last two columns is a leak,
 not an omission.
 
-| PK | SK | `type` | Written by | Deleted by | TTL |
-| --- | --- | --- | --- | --- | --- |
-| `SESSION#<sid>` | `META` | `session_meta` | `createSession` | `deleteSessionData` | ✅ |
-| `SESSION#<sid>` | `INPUTS` | `session_inputs` | `createSession` | `deleteSessionData` | ✅ |
-| `SESSION#<sid>` | `ANSWER#<qId>` | `session_answer` | `recordAnswer` | `deleteSessionData` | ✅ |
-| `SESSION#<sid>` | `EVAL#<qId>` | `session_evaluation` | Evaluator worker *(P5)* | `deleteSessionData` | ✅ |
-| `SESSION#<sid>` | `SUMMARY` | `session_eval_summary` | Evaluator worker *(P5)* | `deleteSessionData` | ✅ |
-| `SESSION#<sid>` | `COACH` | `session_coach` | Coach agent *(P6)* | `deleteSessionData` | ✅ |
-| `USER#<uid>` | `SESSION#<sid>` | `user_session_ref` | `createSession` | **`deleteUserSessionRefs`** | ✅ |
-| `USER#<uid>` | `PROFILE` | `user_profile` | `saveProfileDetails`, `saveResumeAndRepos` | `deleteProfileItems` | ❌ |
-| `USER#<uid>` | `PLAN` | `cached_plan` | `putCachedPlan` | `deleteProfileItems` | ❌ |
+| PK              | SK              | `type`                 | Written by                                 | Deleted by                  | TTL |
+| --------------- | --------------- | ---------------------- | ------------------------------------------ | --------------------------- | --- |
+| `SESSION#<sid>` | `META`          | `session_meta`         | `createSession`                            | `deleteSessionData`         | ✅  |
+| `SESSION#<sid>` | `INPUTS`        | `session_inputs`       | `createSession`                            | `deleteSessionData`         | ✅  |
+| `SESSION#<sid>` | `ANSWER#<qId>`  | `session_answer`       | `recordAnswer`                             | `deleteSessionData`         | ✅  |
+| `SESSION#<sid>` | `EVAL#<qId>`    | `session_evaluation`   | Evaluator worker _(P5)_                    | `deleteSessionData`         | ✅  |
+| `SESSION#<sid>` | `SUMMARY`       | `session_eval_summary` | Evaluator worker _(P5)_                    | `deleteSessionData`         | ✅  |
+| `SESSION#<sid>` | `COACH`         | `session_coach`        | Coach agent _(P6)_                         | `deleteSessionData`         | ✅  |
+| `USER#<uid>`    | `SESSION#<sid>` | `user_session_ref`     | `createSession`                            | **`deleteUserSessionRefs`** | ✅  |
+| `USER#<uid>`    | `PROFILE`       | `user_profile`         | `saveProfileDetails`, `saveResumeAndRepos` | `deleteProfileItems`        | ❌  |
+| `USER#<uid>`    | `PLAN`          | `cached_plan`          | `putCachedPlan`                            | `deleteProfileItems`        | ❌  |
 
 **The bolded row is why this table exists.** `USER#<uid>/SESSION#<sid>` refs live
-in the *user's* partition while describing a *session*, so `deleteSessionData`
+in the _user's_ partition while describing a _session_, so `deleteSessionData`
 never saw them and `deleteProfileItems` did not own them. They survived every
 erasure — invisibly, because nothing reads a ref whose session is gone. That is
 the shape of every bug this table is meant to prevent: a denormalised copy with
@@ -205,18 +205,18 @@ generatedAt      string   ISO 8601
 
 ### Access patterns
 
-| # | Need                        | Operation                                            |
-| - | --------------------------- | ---------------------------------------------------- |
-| 1 | Whole session               | `Query PK = SESSION#<sid>`                            |
-| 2 | Session metadata only       | `GetItem PK = SESSION#<sid>, SK = META`               |
-| 2b| Owner + Planner inputs      | `BatchGetItem` on `SK = META` and `SK = INPUTS`       |
-| 3 | Transcript in order         | `Query PK = SESSION#<sid>, SK begins_with ANSWER#`    |
-| 4 | All evaluations             | `Query PK = SESSION#<sid>, SK begins_with EVAL#`      |
-| 5 | User's session history      | `Query PK = USER#<uid>, SK begins_with SESSION#`      |
-| 6 | Completion progress         | count of pattern 4 — see below                        |
-| 7 | Score rollup                | `GetItem PK = SESSION#<sid>, SK = SUMMARY`            |
-| 8 | Candidate profile           | `GetItem PK = USER#<uid>, SK = PROFILE`               |
-| 9 | Cached plan                 | `GetItem PK = USER#<uid>, SK = PLAN`                  |
+| #   | Need                   | Operation                                          |
+| --- | ---------------------- | -------------------------------------------------- |
+| 1   | Whole session          | `Query PK = SESSION#<sid>`                         |
+| 2   | Session metadata only  | `GetItem PK = SESSION#<sid>, SK = META`            |
+| 2b  | Owner + Planner inputs | `BatchGetItem` on `SK = META` and `SK = INPUTS`    |
+| 3   | Transcript in order    | `Query PK = SESSION#<sid>, SK begins_with ANSWER#` |
+| 4   | All evaluations        | `Query PK = SESSION#<sid>, SK begins_with EVAL#`   |
+| 5   | User's session history | `Query PK = USER#<uid>, SK begins_with SESSION#`   |
+| 6   | Completion progress    | count of pattern 4 — see below                     |
+| 7   | Score rollup           | `GetItem PK = SESSION#<sid>, SK = SUMMARY`         |
+| 8   | Candidate profile      | `GetItem PK = USER#<uid>, SK = PROFILE`            |
+| 9   | Cached plan            | `GetItem PK = USER#<uid>, SK = PLAN`               |
 
 ### The GSI in overview §6 is not needed
 
@@ -274,14 +274,14 @@ was ever provisioned — see
 
 Where the state this section used to describe actually lives:
 
-| Was going to be in Redis | Actually lives in |
-| --- | --- |
-| `session:<sid>:state` — question index, turn count | The `SonicConversation` object, in the task's memory, for the life of the stream |
-| Partial transcripts | `lib/exchangeBuffer.ts`, merged in memory and written to DynamoDB once an exchange completes |
-| Sonic prompt / content identifiers | The same session object; meaningless once the stream closes |
-| Session wall-clock start | The interview clock in `routes/interview.ts`, which enforces the hard stop in code |
-| `ratelimit:<uid>:<minute>` | **Nowhere durable.** `lib/rateLimit.ts` is an in-memory store, so the budget is per ECS task — the one genuinely unresolved consequence. Options are in ADR-0006 |
-| `lock:session:<sid>` | A conditional update on `META`'s status, which is what stops two tabs opening two streams against one session |
+| Was going to be in Redis                           | Actually lives in                                                                                                                                                |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session:<sid>:state` — question index, turn count | The `SonicConversation` object, in the task's memory, for the life of the stream                                                                                 |
+| Partial transcripts                                | `lib/exchangeBuffer.ts`, merged in memory and written to DynamoDB once an exchange completes                                                                     |
+| Sonic prompt / content identifiers                 | The same session object; meaningless once the stream closes                                                                                                      |
+| Session wall-clock start                           | The interview clock in `routes/interview.ts`, which enforces the hard stop in code                                                                               |
+| `ratelimit:<uid>:<minute>`                         | **Nowhere durable.** `lib/rateLimit.ts` is an in-memory store, so the budget is per ECS task — the one genuinely unresolved consequence. Options are in ADR-0006 |
+| `lock:session:<sid>`                               | A conditional update on `META`'s status, which is what stops two tabs opening two streams against one session                                                    |
 
 The one rule from this section worth keeping, because it now applies to the
 in-memory state instead: **if losing a value would break the product, it goes to
@@ -316,7 +316,7 @@ unusable one.
 
 **The stored PDF keeps its PII, deliberately.** The candidate uploaded it
 knowingly, it is the archive a parser change is re-run against, and it is theirs
-to download. Redaction protects the *inference* boundary — the redacted text on
+to download. Redaction protects the _inference_ boundary — the redacted text on
 the profile item is the only form any model sees. The stable key is also what
 makes erasure a single `DeleteObject` with no `s3:ListBucket`, so the server
 never gains the ability to enumerate what other candidates uploaded.

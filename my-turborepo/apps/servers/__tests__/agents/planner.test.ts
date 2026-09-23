@@ -15,8 +15,16 @@ const { BedrockError } = await import("../../lib/errors");
 
 const VALID_PLAN: PlanResponse = {
   focusAreas: [
-    { area: "Kafka", evidence: "order-service uses consumers", source: "github" },
-    { area: "Postgres", evidence: "order-service persists state", source: "github" },
+    {
+      area: "Kafka",
+      evidence: "order-service uses consumers",
+      source: "github",
+    },
+    {
+      area: "Postgres",
+      evidence: "order-service persists state",
+      source: "github",
+    },
   ],
   questionMix: { behavioural: 3, technical: 5, roleSpecific: 2 },
   startingDifficulty: "mid",
@@ -24,7 +32,11 @@ const VALID_PLAN: PlanResponse = {
   reasoning: "single-service distributed work",
 };
 
-function repo(name: string, starCount: number, description: string | null = null) {
+function repo(
+  name: string,
+  starCount: number,
+  description: string | null = null,
+) {
   return { description, name, fullName: `u/${name}`, starCount };
 }
 
@@ -53,9 +65,11 @@ describe("extracting the model's JSON", () => {
   });
 
   it("survives commentary before and after", async () => {
-    setModelReply(`Here is the plan you asked for:\n${JSON.stringify(
-      VALID_PLAN
-    )}\nLet me know if you need changes.`);
+    setModelReply(
+      `Here is the plan you asked for:\n${JSON.stringify(
+        VALID_PLAN,
+      )}\nLet me know if you need changes.`,
+    );
 
     expect(await plan()).toEqual(VALID_PLAN);
   });
@@ -93,16 +107,20 @@ describe("extracting the model's JSON", () => {
 // second "model output" schema that can drift from what the client expects.
 describe("validating the generation", () => {
   it("rejects a plan whose question mix totals zero", async () => {
-    setModelReply(JSON.stringify({
-      ...VALID_PLAN,
-      questionMix: { behavioural: 0, technical: 0, roleSpecific: 0 },
-    }));
+    setModelReply(
+      JSON.stringify({
+        ...VALID_PLAN,
+        questionMix: { behavioural: 0, technical: 0, roleSpecific: 0 },
+      }),
+    );
 
     await expect(plan()).rejects.toThrow(BedrockError);
   });
 
   it("rejects a plan with too few focus areas", async () => {
-    setModelReply(JSON.stringify({ ...VALID_PLAN, focusAreas: [VALID_PLAN.focusAreas[0]] }));
+    setModelReply(
+      JSON.stringify({ ...VALID_PLAN, focusAreas: [VALID_PLAN.focusAreas[0]] }),
+    );
 
     await expect(plan()).rejects.toThrow(BedrockError);
   });
@@ -114,7 +132,9 @@ describe("validating the generation", () => {
   });
 
   it("rejects an invented difficulty", async () => {
-    setModelReply(JSON.stringify({ ...VALID_PLAN, startingDifficulty: "staff" }));
+    setModelReply(
+      JSON.stringify({ ...VALID_PLAN, startingDifficulty: "staff" }),
+    );
 
     await expect(plan()).rejects.toThrow(BedrockError);
   });
@@ -142,8 +162,9 @@ describe("rendering repositories into the prompt", () => {
   });
 
   it("caps the list at the prompt budget", async () => {
-    const many = Array.from({ length: PROMPT.MAX_REPOS + 10 }, (_unused, index) =>
-      repo(`repo-${index}`, index)
+    const many = Array.from(
+      { length: PROMPT.MAX_REPOS + 10 },
+      (_unused, index) => repo(`repo-${index}`, index),
     );
 
     await plan({ repos: many });
@@ -155,8 +176,9 @@ describe("rendering repositories into the prompt", () => {
   });
 
   it("drops the least-starred repos when capping, not the most", async () => {
-    const many = Array.from({ length: PROMPT.MAX_REPOS + 5 }, (_unused, index) =>
-      repo(`repo-${index}`, index)
+    const many = Array.from(
+      { length: PROMPT.MAX_REPOS + 5 },
+      (_unused, index) => repo(`repo-${index}`, index),
     );
 
     await plan({ repos: many });
@@ -171,7 +193,9 @@ describe("rendering repositories into the prompt", () => {
     await plan({ repos: [repo("verbose", 10, "x".repeat(400))] });
 
     const line =
-      (lastConverseCall()?.prompt ?? "").split("\n").find((l) => l.startsWith("- verbose")) ?? "";
+      (lastConverseCall()?.prompt ?? "")
+        .split("\n")
+        .find((l) => l.startsWith("- verbose")) ?? "";
     expect(line.length).toBeLessThan(400);
     expect(line).toContain("x".repeat(PROMPT.MAX_REPO_DESCRIPTION_CHARS));
   });
@@ -180,14 +204,18 @@ describe("rendering repositories into the prompt", () => {
     await plan({ repos: [repo("bare", 5, null)] });
 
     const line =
-      (lastConverseCall()?.prompt ?? "").split("\n").find((l) => l.startsWith("- bare")) ?? "";
+      (lastConverseCall()?.prompt ?? "")
+        .split("\n")
+        .find((l) => l.startsWith("- bare")) ?? "";
     expect(line).toBe("- bare (5★)");
   });
 
   it("says so plainly when there are no repositories", async () => {
     await plan({ repos: [] });
 
-    expect(lastConverseCall()?.prompt).toContain("No public repositories provided.");
+    expect(lastConverseCall()?.prompt).toContain(
+      "No public repositories provided.",
+    );
   });
 });
 
@@ -195,7 +223,9 @@ describe("building the prompt", () => {
   it("always states the target role", async () => {
     await plan({ targetRole: "Platform Engineer" });
 
-    expect(lastConverseCall()?.prompt).toContain("Target role: Platform Engineer");
+    expect(lastConverseCall()?.prompt).toContain(
+      "Target role: Platform Engineer",
+    );
   });
 
   // A plan built from GitHub alone is worse but valid.
@@ -226,11 +256,13 @@ describe("building the prompt", () => {
     await plan();
 
     expect(lastConverseCall()?.exampleTurns).toHaveLength(1);
-    expect(lastConverseCall()?.exampleTurns?.[0]?.user).toContain("Target role:");
+    expect(lastConverseCall()?.exampleTurns?.[0]?.user).toContain(
+      "Target role:",
+    );
     // The exemplar's assistant turn must itself be valid JSON, or it teaches
     // the model the wrong shape.
     const exemplar: unknown = JSON.parse(
-      lastConverseCall()?.exampleTurns?.[0]?.assistant ?? "null"
+      lastConverseCall()?.exampleTurns?.[0]?.assistant ?? "null",
     );
     expect(exemplar).not.toBeNull();
   });

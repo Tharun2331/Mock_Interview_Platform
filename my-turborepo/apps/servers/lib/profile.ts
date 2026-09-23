@@ -59,7 +59,7 @@ const NOT_DELETING = "attribute_not_exists(#status) OR #status <> :deleting";
 
 function readFailure(error: unknown, message: string): ServiceError {
   return new ServiceError(
-    `${message} — ${error instanceof Error ? error.message : "unknown"}`
+    `${message} — ${error instanceof Error ? error.message : "unknown"}`,
   );
 }
 
@@ -82,7 +82,7 @@ export async function getProfile(args: {
         // consistent read here would intermittently bounce them back into
         // onboarding they have just completed.
         ConsistentRead: true,
-      })
+      }),
     );
   } catch (error) {
     throw readFailure(error, MESSAGES.PROFILE_READ_FAILED);
@@ -145,7 +145,7 @@ export async function saveProfileDetails(args: {
           ":zero": 0,
         },
         ReturnValues: "ALL_NEW",
-      })
+      }),
     );
   } catch (error) {
     if (error instanceof ConditionalCheckFailedException) {
@@ -235,7 +235,7 @@ export async function saveResumeAndRepos(args: {
         ExpressionAttributeNames: { "#status": "status", "#type": "type" },
         ExpressionAttributeValues: values,
         ReturnValues: "ALL_NEW",
-      })
+      }),
     );
   } catch (error) {
     if (error instanceof ConditionalCheckFailedException) {
@@ -276,7 +276,7 @@ export async function markProfileDeleting(args: {
           ":deleting": "deleting",
           ":now": new Date().toISOString(),
         },
-      })
+      }),
     );
   } catch (error) {
     if (error instanceof ConditionalCheckFailedException) return false;
@@ -376,7 +376,7 @@ export async function saveGithubRepos(args: {
         ExpressionAttributeNames: { "#status": "status", "#type": "type" },
         ExpressionAttributeValues: values,
         ReturnValues: "ALL_NEW",
-      })
+      }),
     );
   } catch (error) {
     if (error instanceof ConditionalCheckFailedException) {
@@ -406,7 +406,7 @@ export async function getCachedPlan(args: {
         TableName,
         Key: cachedPlanKey(args.userId),
         ConsistentRead: true,
-      })
+      }),
     );
   } catch (error) {
     throw readFailure(error, MESSAGES.PLAN_CACHE_READ_FAILED);
@@ -443,7 +443,7 @@ export async function putCachedPlan(args: {
           profileVersion: args.profileVersion,
           generatedAt: new Date().toISOString(),
         },
-      })
+      }),
     );
   } catch (error) {
     throw readFailure(error, MESSAGES.PLAN_CACHE_SAVE_FAILED);
@@ -478,7 +478,7 @@ export async function getCachedCoach(args: {
         // must not be missed by an eventually-consistent read — that pays for a
         // second generation to produce the same prose.
         ConsistentRead: true,
-      })
+      }),
     );
   } catch (error) {
     throw readFailure(error, MESSAGES.COACH_CACHE_READ_FAILED);
@@ -513,7 +513,7 @@ export async function putCachedCoach(args: {
           stamp: args.stamp,
           generatedAt: new Date().toISOString(),
         },
-      })
+      }),
     );
   } catch (error) {
     throw readFailure(error, MESSAGES.COACH_CACHE_SAVE_FAILED);

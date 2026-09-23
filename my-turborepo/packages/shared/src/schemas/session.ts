@@ -257,7 +257,9 @@ export type SessionAnswer = z.infer<typeof SessionAnswerSchema>;
 
 // SESSION#<sid> / EVAL#<qId>
 export const SessionEvaluationSchema = z.object({
-  type: z.literal(ITEM_TYPE.SESSION_EVALUATION).default(ITEM_TYPE.SESSION_EVALUATION),
+  type: z
+    .literal(ITEM_TYPE.SESSION_EVALUATION)
+    .default(ITEM_TYPE.SESSION_EVALUATION),
   expiresAt: SessionTtlSchema,
   questionId: z.string().min(1),
   correctness: z.number().min(0).max(10),
@@ -293,7 +295,9 @@ export type SessionEvaluation = z.infer<typeof SessionEvaluationSchema>;
 // `Query ... begins_with EVAL#` instead, which is exact by construction and
 // also removes a hot single-item write from every evaluation.
 export const SessionEvalSummarySchema = z.object({
-  type: z.literal(ITEM_TYPE.SESSION_EVAL_SUMMARY).default(ITEM_TYPE.SESSION_EVAL_SUMMARY),
+  type: z
+    .literal(ITEM_TYPE.SESSION_EVAL_SUMMARY)
+    .default(ITEM_TYPE.SESSION_EVAL_SUMMARY),
   expiresAt: SessionTtlSchema,
   questionCount: z.number().int().min(0),
   averages: z
@@ -335,7 +339,9 @@ export type SessionCoach = z.infer<typeof SessionCoachSchema>;
 // needs live status. That is a rare read traded for an inconsistency that would
 // otherwise be invisible until a candidate saw a stale label.
 export const UserSessionRefSchema = z.object({
-  type: z.literal(ITEM_TYPE.USER_SESSION_REF).default(ITEM_TYPE.USER_SESSION_REF),
+  type: z
+    .literal(ITEM_TYPE.USER_SESSION_REF)
+    .default(ITEM_TYPE.USER_SESSION_REF),
   expiresAt: SessionTtlSchema,
   sessionId: z.string().min(1),
   userId: z.string().min(1),

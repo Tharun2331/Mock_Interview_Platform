@@ -20,7 +20,12 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import { SendMessageBatchCommand, SQSClient } from "@aws-sdk/client-sqs";
 import { mockClient } from "aws-sdk-client-mock";
-import { ITEM_TYPE, SORT_KEY, sessionPk, type PlanResponse } from "@repo/shared";
+import {
+  ITEM_TYPE,
+  SORT_KEY,
+  sessionPk,
+  type PlanResponse,
+} from "@repo/shared";
 import WebSocket from "ws";
 import { INTERVIEW_TOOL_NAMES } from "../../lib/constants";
 import {
@@ -54,7 +59,11 @@ const TABLE = "prepilot-sessions-test";
 const PLAN: PlanResponse = {
   focusAreas: [
     { area: "Kafka", evidence: "order-service consumers", source: "github" },
-    { area: "Postgres", evidence: "order-service persistence", source: "github" },
+    {
+      area: "Postgres",
+      evidence: "order-service persistence",
+      source: "github",
+    },
   ],
   questionMix: { behavioural: 2, technical: 3, roleSpecific: 1 },
   startingDifficulty: "mid",
@@ -131,8 +140,8 @@ afterEach(async () => {
           // A socket rejected at the handshake never opens, so it never fires
           // 'close' either.
           setTimeout(resolve, 300);
-        })
-    )
+        }),
+    ),
   );
 
   // Long enough for the route's shutdown to finish awaiting sonic.close().
@@ -181,7 +190,7 @@ async function listen(): Promise<number> {
  */
 function rawUpgrade(
   port: number,
-  options: { path?: string; query?: string; protocol?: string | null }
+  options: { path?: string; query?: string; protocol?: string | null },
 ): Promise<string> {
   const path = options.path ?? "/api/v1/interview";
   const query =
@@ -202,7 +211,7 @@ function rawUpgrade(
           ...(protocol === null ? [] : [`Sec-WebSocket-Protocol: ${protocol}`]),
           "",
           "",
-        ].join("\r\n")
+        ].join("\r\n"),
       );
     });
 
@@ -236,7 +245,7 @@ function connect(
     path?: string;
     sessionId?: string | null;
     protocol?: string | null;
-  } = {}
+  } = {},
 ): Connected {
   const path = options.path ?? "/api/v1/interview";
   const sessionId =
@@ -268,7 +277,7 @@ function connect(
       await settle(10);
     }
     throw new Error(
-      `never saw "${type}"; saw ${JSON.stringify(events.map((e) => e.type))}`
+      `never saw "${type}"; saw ${JSON.stringify(events.map((e) => e.type))}`,
     );
   };
 
@@ -287,8 +296,9 @@ async function startInterviewSocket(): Promise<
   const stream = sonicStreams[0];
   if (stream === undefined) throw new Error("no Sonic stream was opened");
 
-  const body = bedrock.commandCalls(InvokeModelWithBidirectionalStreamCommand)[0]
-    ?.args[0].input.body;
+  const body = bedrock.commandCalls(
+    InvokeModelWithBidirectionalStreamCommand,
+  )[0]?.args[0].input.body;
 
   return { ...client, stream, outbound: tapOutbound(body) };
 }
@@ -298,7 +308,7 @@ async function startInterviewSocket(): Promise<
  *  ends its turn — which is the boundary that closes the first exchange. */
 async function playExchange(
   stream: FakeSonicStream,
-  args: { question: string; answer: string; nextQuestion?: string }
+  args: { question: string; answer: string; nextQuestion?: string },
 ): Promise<void> {
   stream.push(inbound.contentStart({ role: "ASSISTANT", type: "TEXT" }));
   stream.push(inbound.textOutput(args.question));
@@ -306,7 +316,11 @@ async function playExchange(
   await settle();
 
   stream.push(
-    inbound.contentStart({ role: "USER", type: "TEXT", generationStage: "FINAL" })
+    inbound.contentStart({
+      role: "USER",
+      type: "TEXT",
+      generationStage: "FINAL",
+    }),
   );
   stream.push(inbound.textOutput(args.answer));
   await settle();
@@ -427,7 +441,9 @@ describe("audio", () => {
   it("sends Sonic's audio back as a binary frame, decoded", async () => {
     const client = await startInterviewSocket();
 
-    client.stream.push(inbound.audioOutput(Buffer.from([9, 8, 7]).toString("base64")));
+    client.stream.push(
+      inbound.audioOutput(Buffer.from([9, 8, 7]).toString("base64")),
+    );
     await settle(50);
 
     expect(client.binary).toHaveLength(1);
@@ -439,7 +455,9 @@ describe("transcripts", () => {
   it("forwards assistant text with the role from the preceding contentStart", async () => {
     const client = await startInterviewSocket();
 
-    client.stream.push(inbound.contentStart({ role: "ASSISTANT", type: "TEXT" }));
+    client.stream.push(
+      inbound.contentStart({ role: "ASSISTANT", type: "TEXT" }),
+    );
     client.stream.push(inbound.textOutput("Tell me about Kafka."));
     await settle(50);
 
@@ -458,20 +476,30 @@ describe("transcripts", () => {
     const client = await startInterviewSocket();
 
     client.stream.push(
-      inbound.contentStart({ role: "USER", type: "TEXT", generationStage: "FINAL" })
+      inbound.contentStart({
+        role: "USER",
+        type: "TEXT",
+        generationStage: "FINAL",
+      }),
     );
     await settle(50);
 
-    expect(client.events.some((e) => e.type === "candidateFinished")).toBe(true);
+    expect(client.events.some((e) => e.type === "candidateFinished")).toBe(
+      true,
+    );
   });
 
   it("announces that the interviewer has started on its audio block", async () => {
     const client = await startInterviewSocket();
 
-    client.stream.push(inbound.contentStart({ role: "ASSISTANT", type: "AUDIO" }));
+    client.stream.push(
+      inbound.contentStart({ role: "ASSISTANT", type: "AUDIO" }),
+    );
     await settle(50);
 
-    expect(client.events.some((e) => e.type === "interviewerStarted")).toBe(true);
+    expect(client.events.some((e) => e.type === "interviewerStarted")).toBe(
+      true,
+    );
   });
 
   // Sonic reports a barge-in by emitting `{"interrupted":true}` as an assistant
@@ -480,7 +508,9 @@ describe("transcripts", () => {
   it("never shows the barge-in sentinel as speech", async () => {
     const client = await startInterviewSocket();
 
-    client.stream.push(inbound.contentStart({ role: "ASSISTANT", type: "TEXT" }));
+    client.stream.push(
+      inbound.contentStart({ role: "ASSISTANT", type: "TEXT" }),
+    );
     client.stream.push(inbound.textOutput('{"interrupted":true}'));
     await settle(50);
 
@@ -491,7 +521,7 @@ describe("transcripts", () => {
     const client = await startInterviewSocket();
 
     client.stream.push(
-      inbound.contentEnd({ type: "AUDIO", stopReason: "INTERRUPTED" })
+      inbound.contentEnd({ type: "AUDIO", stopReason: "INTERRUPTED" }),
     );
     await settle(50);
 
@@ -504,7 +534,9 @@ describe("transcripts", () => {
   it("does not report a turn ending when only a text block closed", async () => {
     const client = await startInterviewSocket();
 
-    client.stream.push(inbound.contentEnd({ type: "TEXT", stopReason: "END_TURN" }));
+    client.stream.push(
+      inbound.contentEnd({ type: "TEXT", stopReason: "END_TURN" }),
+    );
     await settle(50);
 
     expect(client.events.some((e) => e.type === "turnEnded")).toBe(false);
@@ -513,7 +545,9 @@ describe("transcripts", () => {
   it("reports a turn ending when the interviewer's audio closes", async () => {
     const client = await startInterviewSocket();
 
-    client.stream.push(inbound.contentEnd({ type: "AUDIO", stopReason: "END_TURN" }));
+    client.stream.push(
+      inbound.contentEnd({ type: "AUDIO", stopReason: "END_TURN" }),
+    );
     await settle(50);
 
     expect(client.events.some((e) => e.type === "turnEnded")).toBe(true);
@@ -526,17 +560,20 @@ describe("the tools the interviewer calls", () => {
   async function callTool(
     client: Awaited<ReturnType<typeof startInterviewSocket>>,
     toolName: string,
-    content = "{}"
+    content = "{}",
   ): Promise<Record<string, unknown>> {
     const before = client.outbound.ofName("toolResult").length;
     client.stream.push(
-      inbound.toolUse({ toolName, toolUseId: `t-${toolName}`, content })
+      inbound.toolUse({ toolName, toolUseId: `t-${toolName}`, content }),
     );
     await settle(60);
 
     const results = client.outbound.ofName("toolResult");
     const latest = results[before];
-    return JSON.parse(String(latest?.content ?? "{}")) as Record<string, unknown>;
+    return JSON.parse(String(latest?.content ?? "{}")) as Record<
+      string,
+      unknown
+    >;
   }
 
   it("answers logExchange with the live clock and phase", async () => {
@@ -550,7 +587,7 @@ describe("the tools the interviewer calls", () => {
         exchangeType: "opening",
         answerDepth: "solid",
         moveToNextFocusArea: false,
-      })
+      }),
     );
 
     // The clock rides on this result rather than only on getSessionState,
@@ -572,7 +609,10 @@ describe("the tools the interviewer calls", () => {
   it("answers getSessionState without logging an exchange", async () => {
     const client = await startInterviewSocket();
 
-    const result = await callTool(client, INTERVIEW_TOOL_NAMES.GET_SESSION_STATE);
+    const result = await callTool(
+      client,
+      INTERVIEW_TOOL_NAMES.GET_SESSION_STATE,
+    );
 
     expect(result.exchangesLogged).toBe(0);
     expect(result.phase).toBe("core");
@@ -599,7 +639,7 @@ describe("the tools the interviewer calls", () => {
     await callTool(
       client,
       INTERVIEW_TOOL_NAMES.END_INTERVIEW,
-      JSON.stringify({ reason: "scopeCovered" })
+      JSON.stringify({ reason: "scopeCovered" }),
     );
     client.stream.push(inbound.completionEnd("END_TURN"));
 
@@ -651,7 +691,7 @@ describe("recording the conversation", () => {
           answerDepth: "solid",
           moveToNextFocusArea: false,
         }),
-      })
+      }),
     );
     await settle(30);
 
@@ -679,7 +719,7 @@ describe("recording the conversation", () => {
           answerDepth: "solid",
           moveToNextFocusArea: false,
         }),
-      })
+      }),
     );
     await settle(30);
 
@@ -688,7 +728,7 @@ describe("recording the conversation", () => {
         toolName: INTERVIEW_TOOL_NAMES.LOG_EXCHANGE,
         toolUseId: "t-2",
         content: "{truncated mid-gener",
-      })
+      }),
     );
     await settle(30);
 
@@ -731,14 +771,24 @@ describe("ending the interview", () => {
   it("flushes the exchange in progress before closing", async () => {
     const client = await startInterviewSocket();
 
-    client.stream.push(inbound.contentStart({ role: "ASSISTANT", type: "TEXT" }));
+    client.stream.push(
+      inbound.contentStart({ role: "ASSISTANT", type: "TEXT" }),
+    );
     client.stream.push(inbound.textOutput("What broke in production?"));
-    client.stream.push(inbound.contentEnd({ type: "AUDIO", stopReason: "END_TURN" }));
+    client.stream.push(
+      inbound.contentEnd({ type: "AUDIO", stopReason: "END_TURN" }),
+    );
     await settle();
     client.stream.push(
-      inbound.contentStart({ role: "USER", type: "TEXT", generationStage: "FINAL" })
+      inbound.contentStart({
+        role: "USER",
+        type: "TEXT",
+        generationStage: "FINAL",
+      }),
     );
-    client.stream.push(inbound.textOutput("A consumer lag alert fired at 3am."));
+    client.stream.push(
+      inbound.textOutput("A consumer lag alert fired at 3am."),
+    );
     await settle();
 
     client.socket.send("stop");
@@ -862,7 +912,9 @@ describe("ending the interview", () => {
   // step that can be retried later without the candidate repeating anything.
   it("still closes cleanly when the enqueue fails", async () => {
     const client = await startInterviewSocket();
-    sqs.on(SendMessageBatchCommand).rejects(new Error("AWS.SimpleQueueService"));
+    sqs
+      .on(SendMessageBatchCommand)
+      .rejects(new Error("AWS.SimpleQueueService"));
 
     await playExchange(client.stream, {
       question: "Tell me about Kafka.",

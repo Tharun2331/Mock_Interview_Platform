@@ -15,7 +15,9 @@ const { SessionHistory } = await import("@/pages/history");
 const { MESSAGES } = await import("@/lib/messages");
 const { MemoryRouter, Route, Routes } = await import("react-router");
 
-function session(overrides: Partial<SessionHistoryItem> = {}): SessionHistoryItem {
+function session(
+  overrides: Partial<SessionHistoryItem> = {},
+): SessionHistoryItem {
   return {
     sessionId: "01J000000000000000000001",
     completedAt: "2026-09-12T10:00:00.000Z",
@@ -36,7 +38,7 @@ function renderPage() {
         <Route path="/start" element={<p>start page</p>} />
         <Route path="/results/:sessionId" element={<p>detail page</p>} />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -44,7 +46,7 @@ async function settle() {
   await screen.findByText(
     (_content, element) => element?.tagName.toLowerCase() === "h2",
     {},
-    { timeout: 2000 }
+    { timeout: 2000 },
   );
 }
 
@@ -113,7 +115,7 @@ describe("the trend chart", () => {
     renderPage();
 
     expect(
-      await screen.findByText(MESSAGES.HISTORY_TREND_NEEDS_MORE)
+      await screen.findByText(MESSAGES.HISTORY_TREND_NEEDS_MORE),
     ).toBeDefined();
   });
 
@@ -169,7 +171,7 @@ describe("states with nothing to show", () => {
 
     expect(await screen.findByText(MESSAGES.HISTORY_LOAD_FAILED)).toBeDefined();
     expect(
-      screen.getByRole("button", { name: new RegExp(MESSAGES.RETRY, "i") })
+      screen.getByRole("button", { name: new RegExp(MESSAGES.RETRY, "i") }),
     ).toBeDefined();
   });
 });

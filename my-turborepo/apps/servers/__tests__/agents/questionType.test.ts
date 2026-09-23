@@ -34,7 +34,7 @@ describe("toQuestionType", () => {
     "falls back to technical for %s",
     (exchangeType) => {
       expect(toQuestionType(exchangeType)).toBe("technical");
-    }
+    },
   );
 });
 
@@ -72,6 +72,8 @@ describe("a follow-up", () => {
   // question does not.
   it("is reset by an explicit new category", () => {
     const afterBehavioural = toQuestionType("followup", "behavioural");
-    expect(toQuestionType("roleSpecific", afterBehavioural)).toBe("role_specific");
+    expect(toQuestionType("roleSpecific", afterBehavioural)).toBe(
+      "role_specific",
+    );
   });
 });

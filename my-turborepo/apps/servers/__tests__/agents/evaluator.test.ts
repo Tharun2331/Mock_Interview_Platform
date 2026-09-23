@@ -70,7 +70,7 @@ describe("scoring an answer", () => {
         questionId: "some-other-question",
         modelId: "a-model-that-did-not-answer",
         evaluatedAt: "1999-01-01T00:00:00.000Z",
-      })
+      }),
     );
 
     const result = await evaluate();
@@ -84,12 +84,17 @@ describe("scoring an answer", () => {
 
   it("accepts the full 0-10 band at both ends", async () => {
     setModelReply(
-      JSON.stringify({ ...VALID_SCORES, correctness: 0, clarity: 0, depth: 0 })
+      JSON.stringify({ ...VALID_SCORES, correctness: 0, clarity: 0, depth: 0 }),
     );
     await expect(evaluate()).resolves.toBeDefined();
 
     setModelReply(
-      JSON.stringify({ ...VALID_SCORES, correctness: 10, clarity: 10, depth: 10 })
+      JSON.stringify({
+        ...VALID_SCORES,
+        correctness: 10,
+        clarity: 10,
+        depth: 10,
+      }),
     );
     await expect(evaluate()).resolves.toBeDefined();
   });
@@ -154,7 +159,9 @@ describe("rejecting an unusable generation", () => {
 
   it("survives a markdown fence and surrounding prose", async () => {
     setModelReply(
-      "Here are the scores:\n```json\n" + JSON.stringify(VALID_SCORES) + "\n```\nHope that helps."
+      "Here are the scores:\n```json\n" +
+        JSON.stringify(VALID_SCORES) +
+        "\n```\nHope that helps.",
     );
 
     expect((await evaluate()).correctness).toBe(7);
@@ -255,7 +262,7 @@ describe("the system prompt", () => {
     await evaluate();
 
     expect(lastConverseCall()?.system).toContain(
-      String(EVALUATION_LIMITS.MAX_RATIONALE_CHARS)
+      String(EVALUATION_LIMITS.MAX_RATIONALE_CHARS),
     );
   });
 
@@ -271,7 +278,11 @@ describe("the system prompt", () => {
     expect(exemplar).not.toBeNull();
     // The exemplar deliberately scores a fluent but unspecific answer mid-range
     // on depth, to demonstrate that fluency is not depth.
-    if (exemplar !== null && typeof exemplar === "object" && "depth" in exemplar) {
+    if (
+      exemplar !== null &&
+      typeof exemplar === "object" &&
+      "depth" in exemplar
+    ) {
       expect(Number(exemplar.depth)).toBeLessThan(6);
     }
   });

@@ -12,7 +12,8 @@ describe("evidence that names an absence", () => {
   it("demotes a 'strong' whose evidence says the thing was not mentioned", () => {
     const [repaired] = repairRequirements([
       {
-        requirement: "Familiarity with build tools such as Webpack, Rspack, or Vite.",
+        requirement:
+          "Familiarity with build tools such as Webpack, Rspack, or Vite.",
         bucket: "strong",
         evidence:
           "Webpack, Rspack, or Vite not explicitly mentioned, but strong DevOps experience.",
@@ -76,7 +77,8 @@ describe("a requirement emitted twice", () => {
         evidence: "Next.js experience in projects and resume.",
       },
       {
-        requirement: "Familiarity with build tools such as Webpack, Rspack, or Vite.",
+        requirement:
+          "Familiarity with build tools such as Webpack, Rspack, or Vite.",
         bucket: "none",
         evidence: "No explicit mention of Webpack, Rspack, or Vite in resume.",
       },
@@ -96,7 +98,8 @@ describe("a requirement emitted twice", () => {
         evidence: "3 years of web development, React, TypeScript, and Jest.",
       },
       {
-        requirement: "Solid understanding of JavaScript, CSS, DOM, and HTTP protocol.",
+        requirement:
+          "Solid understanding of JavaScript, CSS, DOM, and HTTP protocol.",
         bucket: "none",
         evidence: "No explicit mention of HTTP protocol or DOM manipulation.",
       },
@@ -117,20 +120,22 @@ describe("a requirement emitted twice", () => {
         evidence: "Next.js experience.",
       },
       {
-        requirement: "Familiarity with build tools such as Webpack, Rspack, or Vite.",
+        requirement:
+          "Familiarity with build tools such as Webpack, Rspack, or Vite.",
         bucket: "none",
         evidence: "Not named in the resume.",
       },
     ]);
 
     expect(repaired?.requirement).toBe(
-      "Familiarity with build tools such as Webpack, Rspack, or Vite."
+      "Familiarity with build tools such as Webpack, Rspack, or Vite.",
     );
   });
 
   it("collapses the pair whichever order they arrive in", () => {
     const short: GapRequirement = {
-      requirement: "Solid understanding of JavaScript, CSS, DOM, and HTTP protocol.",
+      requirement:
+        "Solid understanding of JavaScript, CSS, DOM, and HTTP protocol.",
       bucket: "none",
       evidence: "No explicit mention of HTTP protocol.",
     };
@@ -151,7 +156,11 @@ describe("requirements that only look alike", () => {
   // "experience with react native", and those are two different requirements.
   it("keeps two short requirements where one is a substring of the other", () => {
     const repaired = repairRequirements([
-      { requirement: "Experience with React", bucket: "strong", evidence: "3 years" },
+      {
+        requirement: "Experience with React",
+        bucket: "strong",
+        evidence: "3 years",
+      },
       {
         requirement: "Experience with React Native",
         bucket: "weak",
@@ -165,7 +174,8 @@ describe("requirements that only look alike", () => {
   it("keeps requirements that merely share vocabulary", () => {
     const repaired = repairRequirements([
       {
-        requirement: "Solid understanding of CSS and responsive layout systems.",
+        requirement:
+          "Solid understanding of CSS and responsive layout systems.",
         bucket: "weak",
         evidence: "Tailwind in two projects.",
       },
@@ -182,8 +192,16 @@ describe("requirements that only look alike", () => {
   it("leaves a clean analysis untouched", () => {
     const items: GapRequirement[] = [
       { requirement: "Kubernetes", bucket: "none", evidence: "not mentioned" },
-      { requirement: "Kafka", bucket: "strong", evidence: "order-service consumers" },
-      { requirement: "Terraform", bucket: "weak", evidence: "cloud work, no IaC named" },
+      {
+        requirement: "Kafka",
+        bucket: "strong",
+        evidence: "order-service consumers",
+      },
+      {
+        requirement: "Terraform",
+        bucket: "weak",
+        evidence: "cloud work, no IaC named",
+      },
     ];
 
     // The Terraform note says "no IaC named" — an absence, so it earns the

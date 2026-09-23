@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   AlertTriangleIcon,
+  CompassIcon,
   MinusIcon,
   RefreshCwIcon,
-  SparklesIcon,
   TrendingDownIcon,
   TrendingUpIcon,
 } from "lucide-react";
@@ -15,6 +15,7 @@ import type {
   Trend,
 } from "@repo/shared";
 
+import { Eyebrow } from "@/components/Eyebrow";
 import { PresenceOrb } from "@/components/PresenceOrb";
 import { TrendSparkline } from "@/components/TrendSparkline";
 import { Button } from "@/components/ui/button";
@@ -67,7 +68,9 @@ function DirectionChip({ direction }: { direction: Trend["direction"] }) {
   const { icon: Icon, label, className } = DIRECTION[direction];
 
   return (
-    <span className={`flex items-center gap-1.5 text-xs font-medium ${className}`}>
+    <span
+      className={`flex items-center gap-1.5 text-xs font-medium ${className}`}
+    >
       <Icon aria-hidden className="size-3.5 shrink-0" />
       {label}
     </span>
@@ -85,12 +88,13 @@ function DirectionChip({ direction }: { direction: Trend["direction"] }) {
 // their performance rather than about our certainty.
 function ConfidenceBadge({ confidence }: { confidence: CoachConfidence }) {
   return (
-    <span
-      className="rounded border border-hairline px-1.5 py-0.5 font-mono text-[0.65rem] uppercase tracking-[0.1em] text-ink-faint"
+    <Eyebrow
+      size="sm"
+      variant="chip"
       title={MESSAGES.COACH_CONFIDENCE_ANCHOR[confidence]}
     >
       {MESSAGES.COACH_CONFIDENCE_LABEL[confidence]}
-    </span>
+    </Eyebrow>
   );
 }
 
@@ -160,9 +164,9 @@ export function Coach() {
     return (
       <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col items-center justify-center gap-5 p-6 text-center">
         <AlertTriangleIcon aria-hidden className="size-5 text-ink-subtle" />
-        <h2 className="font-display text-2xl text-ink">
+        <h1 className="font-display text-3xl text-ink">
           {MESSAGES.COACH_LOAD_FAILED}
-        </h2>
+        </h1>
         {page.message !== MESSAGES.COACH_LOAD_FAILED ? (
           <p className="max-w-md text-sm leading-relaxed text-ink-muted">
             {page.message}
@@ -187,14 +191,19 @@ export function Coach() {
   if (roadmap.length === 0) {
     return (
       <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col items-center justify-center gap-5 p-6 text-center">
-        <SparklesIcon aria-hidden className="size-6 text-ink-faint" />
-        <h2 className="font-display text-2xl text-ink">
+        {/* The same compass the nav uses for this page, not sparkles — see the
+            note in Header.tsx. */}
+        <CompassIcon aria-hidden className="size-6 text-ink-faint" />
+        <h1 className="font-display text-3xl text-ink">
           {MESSAGES.COACH_EMPTY_TITLE}
-        </h2>
+        </h1>
         <p className="max-w-md text-sm leading-relaxed text-ink-muted">
           {MESSAGES.COACH_EMPTY_BODY}
         </p>
-        <Button className="cursor-pointer" onClick={() => void navigate("/start")}>
+        <Button
+          className="cursor-pointer"
+          onClick={() => void navigate("/start")}
+        >
           {MESSAGES.COACH_EMPTY_ACTION}
         </Button>
       </div>
@@ -203,22 +212,20 @@ export function Coach() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 p-6 pb-16">
-      <header className="flex flex-col gap-2">
-        <span className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-ink-faint">
-          {MESSAGES.COACH_TITLE}
-        </span>
-        <h2 className="font-display text-3xl text-ink">
-          {MESSAGES.COACH_SUBTITLE}
-        </h2>
+      <header className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <Eyebrow>{MESSAGES.COACH_TITLE}</Eyebrow>
+          <h1 className="font-display text-4xl leading-[1.1] sm:text-5xl text-ink">
+            {MESSAGES.COACH_SUBTITLE}
+          </h1>
+        </div>
         <p className="max-w-xl text-sm leading-relaxed text-ink-muted">
           {MESSAGES.COACH_INTRO}
         </p>
       </header>
 
       <section className="flex flex-col gap-4">
-        <span className="text-xs uppercase tracking-wide text-ink-faint">
-          {MESSAGES.COACH_TRENDS_TITLE}
-        </span>
+        <Eyebrow as="h2">{MESSAGES.COACH_TRENDS_TITLE}</Eyebrow>
 
         {/* A roadmap with no trends means every topic has exactly one
             interview. Said plainly and as a next step, rather than rendering
@@ -237,7 +244,9 @@ export function Coach() {
             >
               <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
                 <div className="flex flex-col gap-1">
-                  <h3 className="text-sm font-medium text-ink">{trend.topic}</h3>
+                  <h3 className="text-sm font-medium text-ink">
+                    {trend.topic}
+                  </h3>
                   <div className="flex items-center gap-3">
                     <DirectionChip direction={trend.direction} />
                     <span className="font-mono text-xs tabular-nums text-ink-faint">
@@ -245,7 +254,10 @@ export function Coach() {
                     </span>
                   </div>
                 </div>
-                <TrendSparkline topic={trend.topic} points={trend.scoreHistory} />
+                <TrendSparkline
+                  topic={trend.topic}
+                  points={trend.scoreHistory}
+                />
               </div>
               <p className="text-sm leading-relaxed text-ink-muted">
                 {trend.summary}
@@ -256,9 +268,7 @@ export function Coach() {
       </section>
 
       <section className="flex flex-col gap-4">
-        <span className="text-xs uppercase tracking-wide text-ink-faint">
-          {MESSAGES.COACH_ROADMAP_TITLE}
-        </span>
+        <Eyebrow as="h2">{MESSAGES.COACH_ROADMAP_TITLE}</Eyebrow>
 
         {/* An ordered list because the order is the content — priority 1 is
             where to start. A screen reader gets that from <ol> without the
@@ -280,7 +290,9 @@ export function Coach() {
                     {String(item.priority).padStart(2, "0")}
                   </span>
                   <div className="flex flex-col gap-0.5">
-                    <h3 className="text-sm font-medium text-ink">{item.topic}</h3>
+                    <h3 className="text-sm font-medium text-ink">
+                      {item.topic}
+                    </h3>
                     <span className="text-xs text-ink-subtle">
                       {MESSAGES.COACH_ROADMAP_AVERAGE}{" "}
                       <span className="font-mono tabular-nums text-ink-muted">
@@ -295,7 +307,10 @@ export function Coach() {
               {item.focusPoints.length > 0 ? (
                 <ul className="flex flex-col gap-2 border-l border-hairline pl-4">
                   {item.focusPoints.map((point) => (
-                    <li key={point} className="text-sm leading-relaxed text-ink">
+                    <li
+                      key={point}
+                      className="text-sm leading-relaxed text-ink"
+                    >
                       {point}
                     </li>
                   ))}

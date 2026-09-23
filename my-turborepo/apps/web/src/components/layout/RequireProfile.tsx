@@ -60,7 +60,9 @@ export function RequireProfile() {
     //
     // The attempted path is carried so the profile page can send them onward to
     // where they were actually going once they finish.
-    return <Navigate to="/profile" replace state={{ from: location.pathname }} />;
+    return (
+      <Navigate to="/profile" replace state={{ from: location.pathname }} />
+    );
   }
 
   return <Outlet />;

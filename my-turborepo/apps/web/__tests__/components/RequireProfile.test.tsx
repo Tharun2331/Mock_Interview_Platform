@@ -25,7 +25,7 @@ function renderGuard(from = "/start") {
         </Route>
         <Route path="/profile" element={<p>onboarding page</p>} />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -105,8 +105,9 @@ describe("RequireProfile", () => {
 
       expect(screen.getByText(MESSAGES.PROFILE_LOAD_TITLE)).toBeDefined();
       expect(screen.getByText("Network unreachable")).toBeDefined();
-      expect(screen.getByRole("button", { name: new RegExp(MESSAGES.RETRY, "i") }))
-        .toBeDefined();
+      expect(
+        screen.getByRole("button", { name: new RegExp(MESSAGES.RETRY, "i") }),
+      ).toBeDefined();
     });
 
     it("refetches when retry is pressed", () => {

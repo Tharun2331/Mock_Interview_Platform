@@ -10,7 +10,7 @@ const requireBuildEnv = (key: string): string => {
   if (!value) {
     throw new Error(
       `Missing required build-time variable: ${key}. ` +
-        `Mirror it from the Terraform cognito module outputs before building.`
+        `Mirror it from the Terraform cognito module outputs before building.`,
     );
   }
   return value;
@@ -20,9 +20,15 @@ const requireBuildEnv = (key: string): string => {
 // leaves the previous dist/ intact instead of deleting it and then failing.
 const define = {
   "process.env.NODE_ENV": JSON.stringify("production"),
-  "process.env.BUN_PUBLIC_REGION": JSON.stringify(requireBuildEnv("BUN_PUBLIC_REGION")),
-  "process.env.BUN_PUBLIC_COGNITO_USER_POOL_ID": JSON.stringify(requireBuildEnv("BUN_PUBLIC_COGNITO_USER_POOL_ID")),
-  "process.env.BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID": JSON.stringify(requireBuildEnv("BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID")),
+  "process.env.BUN_PUBLIC_REGION": JSON.stringify(
+    requireBuildEnv("BUN_PUBLIC_REGION"),
+  ),
+  "process.env.BUN_PUBLIC_COGNITO_USER_POOL_ID": JSON.stringify(
+    requireBuildEnv("BUN_PUBLIC_COGNITO_USER_POOL_ID"),
+  ),
+  "process.env.BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID": JSON.stringify(
+    requireBuildEnv("BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID"),
+  ),
 };
 
 const outdir = path.join(process.cwd(), "dist");
@@ -41,5 +47,7 @@ const result = await Bun.build({
 });
 
 for (const output of result.outputs) {
-  console.log(` ${path.relative(process.cwd(), output.path)}  ${(output.size / 1024).toFixed(1)} KB`);
+  console.log(
+    ` ${path.relative(process.cwd(), output.path)}  ${(output.size / 1024).toFixed(1)} KB`,
+  );
 }

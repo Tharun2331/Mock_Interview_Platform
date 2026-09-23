@@ -4,12 +4,12 @@
 import "./index.css";
 import { Profile } from "./pages/profile";
 import { StartInterview } from "./pages/startInterview";
-import { BrowserRouter, Routes, Route, Navigate  } from "react-router";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router";
 import { Result } from "./pages/result";
 import { SessionHistory } from "./pages/history";
 import { Coach } from "./pages/coach";
 import { Interview } from "./pages/interview";
-import {Signup} from "./pages/signup";
+import { Signup } from "./pages/signup";
 import { SignIn } from "./pages/signin";
 import { Confirm } from "./pages/confirm";
 import { Callback } from "./pages/callback";
@@ -22,9 +22,7 @@ import { RequireProfile } from "./components/layout/RequireProfile";
 import { AuthProvider } from "./lib/auth";
 import { ProfileProvider } from "./lib/profile";
 
-
 export function App() {
-
   return (
     // Defaults to the operating system's setting and only overrides it once
     // someone picks a side. `disableTransitionOnChange` stops every colour
@@ -36,77 +34,77 @@ export function App() {
       enableSystem
       disableTransitionOnChange
     >
-    <BrowserRouter>
-    <AuthProvider>
-    <Routes>
-    <Route path="/" element={<Navigate to="/signup" replace />} />
+      <BrowserRouter>
+        <AuthProvider>
+          <Routes>
+            <Route path="/" element={<Navigate to="/signup" replace />} />
 
-    {/* Signed-in users are bounced to /form so they never see a sign-in form
+            {/* Signed-in users are bounced to /form so they never see a sign-in form
         they cannot use — clicking Google here throws UserAlreadyAuthenticated. */}
-    <Route element={<RedirectIfAuthenticated />}>
-      <Route path="/signup" element={<Signup />} />
-      <Route path="/signin" element={<SignIn />} />
-    </Route>
+            <Route element={<RedirectIfAuthenticated />}>
+              <Route path="/signup" element={<Signup />} />
+              <Route path="/signin" element={<SignIn />} />
+            </Route>
 
-    {/* Deliberately unguarded: /confirm completes sign-in via autoSignIn() and
+            {/* Deliberately unguarded: /confirm completes sign-in via autoSignIn() and
         must stay reachable to verify a code, and /callback must stay mounted to
         finish the hosted-UI code exchange. */}
-    <Route path="/confirm" element={<Confirm />} />
-    <Route path="/callback" element={<Callback />} />
+            <Route path="/confirm" element={<Confirm />} />
+            <Route path="/callback" element={<Callback />} />
 
-    {/* ProfileProvider sits inside RequireAuth, not outside it: there is no
+            {/* ProfileProvider sits inside RequireAuth, not outside it: there is no
         profile to fetch until we know who is asking, and mounting it above the
         auth guard would fire a 401 on every signed-out page load. */}
-    <Route element={<RequireAuth />}>
-      <Route
-        element={
-          <ProfileProvider>
-            <AppShell />
-          </ProfileProvider>
-        }
-      >
-        {/* Outside RequireProfile — this is where that guard sends people, so
+            <Route element={<RequireAuth />}>
+              <Route
+                element={
+                  <ProfileProvider>
+                    <AppShell />
+                  </ProfileProvider>
+                }
+              >
+                {/* Outside RequireProfile — this is where that guard sends people, so
             it cannot sit behind it. It stays reachable from the nav for edits
             once onboarding is done. */}
-        <Route path="/profile" element={<Profile />} />
+                <Route path="/profile" element={<Profile />} />
 
-        {/* Everything that needs the candidate's material. RequireProfile
+                {/* Everything that needs the candidate's material. RequireProfile
             bounces an unfinished profile to /profile and remembers where it
             was headed. */}
-        <Route element={<RequireProfile />}>
-          <Route path="/start" element={<StartInterview />} />
-          <Route path="/interview" element={<Interview />} />
-          {/* Feedback is worth returning to, so the session lives in the path
+                <Route element={<RequireProfile />}>
+                  <Route path="/start" element={<StartInterview />} />
+                  <Route path="/interview" element={<Interview />} />
+                  {/* Feedback is worth returning to, so the session lives in the path
               rather than in router state — a reload or a bookmark still
               resolves to the right interview. */}
-          <Route path="/results/:sessionId" element={<Result />} />
-          {/* Reached with no session named. Renders its own explanation rather
+                  <Route path="/results/:sessionId" element={<Result />} />
+                  {/* Reached with no session named. Renders its own explanation rather
               than falling through to the catch-all, which would bounce someone
               to signup for what is really a missing parameter. */}
-          <Route path="/results" element={<Result />} />
-          {/* Every finished interview. Sits inside RequireProfile with the
+                  <Route path="/results" element={<Result />} />
+                  {/* Every finished interview. Sits inside RequireProfile with the
               rest of the interview flow — there is nothing to list until a
               candidate has onboarded. */}
-          <Route path="/history" element={<SessionHistory />} />
-          {/* No session id: the coach reads every finished interview, so
+                  <Route path="/history" element={<SessionHistory />} />
+                  {/* No session id: the coach reads every finished interview, so
               there is nothing in the path that could name the wrong one. */}
-          <Route path="/coach" element={<Coach />} />
-        </Route>
-      </Route>
-    </Route>
+                  <Route path="/coach" element={<Coach />} />
+                </Route>
+              </Route>
+            </Route>
 
-    {/* The setup form split into /profile and /start. Kept as a redirect
+            {/* The setup form split into /profile and /start. Kept as a redirect
         rather than deleted so an open tab or a bookmark lands somewhere real
         instead of being laundered through the catch-all to the signup page. */}
-    <Route path="/form" element={<Navigate to="/start" replace />} />
-    {/* Unknown paths resolve at "/" instead of being laundered through the
+            <Route path="/form" element={<Navigate to="/start" replace />} />
+            {/* Unknown paths resolve at "/" instead of being laundered through the
         protected tree, so an unauthenticated 404 no longer presents as a
         failed auth check. "/" then routes by session state. */}
-    <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-    <AppToaster />
-    </AuthProvider>
-    </BrowserRouter>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+          <AppToaster />
+        </AuthProvider>
+      </BrowserRouter>
     </ThemeProvider>
   );
 }

@@ -30,9 +30,14 @@ for (const modelId of config.bedrockTextModelIds) {
     const response = await client.send(
       new ConverseCommand({
         modelId,
-        messages: [{ role: "user", content: [{ text: "Reply with the single word: ok" }] }],
+        messages: [
+          {
+            role: "user",
+            content: [{ text: "Reply with the single word: ok" }],
+          },
+        ],
         inferenceConfig: { maxTokens: 16, temperature: 0 },
-      })
+      }),
     );
 
     const text = response.output?.message?.content
@@ -45,7 +50,7 @@ for (const modelId of config.bedrockTextModelIds) {
     console.log(
       `FAIL  ${Date.now() - startedAt}ms  ${modelId}  -> ${
         error instanceof Error ? `${error.name}: ${error.message}` : "unknown"
-      }`
+      }`,
     );
   }
 }

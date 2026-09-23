@@ -14,7 +14,7 @@ import { corruptPdf, minimalPdf } from "../helpers/pdf";
 describe("reading a resume", () => {
   it("extracts the text", async () => {
     const parsed = await parseResume(
-      minimalPdf("Tharun Sekar backend engineer Kafka Postgres")
+      minimalPdf("Tharun Sekar backend engineer Kafka Postgres"),
     );
 
     expect(parsed.text).toBe("Tharun Sekar backend engineer Kafka Postgres");
@@ -96,7 +96,7 @@ describe("a document that cannot be read", () => {
 
   it("uses copy the candidate can act on", async () => {
     await expect(parseResume(corruptPdf())).rejects.toThrow(
-      MESSAGES.RESUME_PARSE_FAILED
+      MESSAGES.RESUME_PARSE_FAILED,
     );
   });
 
@@ -108,7 +108,7 @@ describe("a document that cannot be read", () => {
 
   it("rejects an empty upload", async () => {
     await expect(parseResume(new Uint8Array(0))).rejects.toThrow(
-      ResumeParseError
+      ResumeParseError,
     );
   });
 });

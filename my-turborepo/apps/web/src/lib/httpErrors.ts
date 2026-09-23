@@ -27,7 +27,9 @@ export function isTimeout(error: unknown): boolean {
 // this is a dropped connection, a backend that is not running, or CORS.
 export function isUnreachable(error: unknown): boolean {
   return (
-    axios.isAxiosError(error) && error.response === undefined && !isTimeout(error)
+    axios.isAxiosError(error) &&
+    error.response === undefined &&
+    !isTimeout(error)
   );
 }
 

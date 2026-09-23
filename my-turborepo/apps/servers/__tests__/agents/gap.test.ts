@@ -22,9 +22,21 @@ const INPUT = {
 
 const REQUIREMENTS = [
   { requirement: "React", bucket: "strong", evidence: "three years at EY" },
-  { requirement: "Kafka", bucket: "strong", evidence: "order-service consumers" },
-  { requirement: "Terraform", bucket: "weak", evidence: "cloud work, no Terraform named" },
-  { requirement: "Kubernetes", bucket: "none", evidence: "not mentioned anywhere" },
+  {
+    requirement: "Kafka",
+    bucket: "strong",
+    evidence: "order-service consumers",
+  },
+  {
+    requirement: "Terraform",
+    bucket: "weak",
+    evidence: "cloud work, no Terraform named",
+  },
+  {
+    requirement: "Kubernetes",
+    bucket: "none",
+    evidence: "not mentioned anywhere",
+  },
 ];
 
 beforeEach(() => {
@@ -69,7 +81,7 @@ describe("bucketing", () => {
     // reads as an absence and demotes, so there are two `none`s by the time
     // this runs and their order is not the assertion.
     const missing = analysis.requirements.find(
-      (i) => i.requirement === "Kubernetes"
+      (i) => i.requirement === "Kubernetes",
     );
     expect(missing?.bucket).toBe("none");
     expect(missing?.evidence).toBe("not mentioned anywhere");
@@ -101,9 +113,11 @@ describe("bucketing", () => {
       {
         requirements: [
           {
-            requirement: "Familiarity with build tools such as Webpack or Vite.",
+            requirement:
+              "Familiarity with build tools such as Webpack or Vite.",
             bucket: "strong",
-            evidence: "Vite not explicitly mentioned, but Docker and CI/CD experience.",
+            evidence:
+              "Vite not explicitly mentioned, but Docker and CI/CD experience.",
           },
         ],
       },
@@ -126,13 +140,17 @@ describe("bucketing", () => {
 // object rather than a failed request.
 describe("the text fallback", () => {
   it("parses a fenced JSON reply", async () => {
-    setStructuredTextReplies(["```json\n" + JSON.stringify({ requirements: REQUIREMENTS }) + "\n```"]);
+    setStructuredTextReplies([
+      "```json\n" + JSON.stringify({ requirements: REQUIREMENTS }) + "\n```",
+    ]);
 
     expect((await runGapAgent(INPUT)).requirements).toHaveLength(4);
   });
 
   it("parses a reply wrapped in commentary", async () => {
-    setStructuredTextReplies([`Here is the analysis:\n${JSON.stringify({ requirements: REQUIREMENTS })}\nHope that helps.`]);
+    setStructuredTextReplies([
+      `Here is the analysis:\n${JSON.stringify({ requirements: REQUIREMENTS })}\nHope that helps.`,
+    ]);
 
     expect((await runGapAgent(INPUT)).requirements).toHaveLength(4);
   });
@@ -172,14 +190,20 @@ describe("handling an unusable generation", () => {
     const invalid = [
       { requirement: "React", bucket: "excellent", evidence: "three years" },
     ];
-    setStructuredReplies([{ requirements: invalid }, { requirements: invalid }]);
+    setStructuredReplies([
+      { requirements: invalid },
+      { requirements: invalid },
+    ]);
 
     await expect(runGapAgent(INPUT)).rejects.toThrow(/bucket/);
   });
 
   it("rejects a requirement with no evidence note", async () => {
     const invalid = [{ requirement: "React", bucket: "strong", evidence: "" }];
-    setStructuredReplies([{ requirements: invalid }, { requirements: invalid }]);
+    setStructuredReplies([
+      { requirements: invalid },
+      { requirements: invalid },
+    ]);
 
     await expect(runGapAgent(INPUT)).rejects.toThrow(BedrockError);
   });
@@ -193,9 +217,12 @@ describe("handling an unusable generation", () => {
         requirement: `Requirement ${index}`,
         bucket: "none" as const,
         evidence: "not mentioned",
-      })
+      }),
     );
-    setStructuredReplies([{ requirements: tooMany }, { requirements: tooMany }]);
+    setStructuredReplies([
+      { requirements: tooMany },
+      { requirements: tooMany },
+    ]);
 
     await expect(runGapAgent(INPUT)).rejects.toThrow(BedrockError);
   });

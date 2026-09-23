@@ -28,16 +28,16 @@ describe("closing acknowledgements", () => {
   it("still scores an answer that opens with thanks", () => {
     expect(
       isScoreableAnswer(
-        "thanks so the way i would approach that is to wrap both writes in a transaction so either both land or neither does"
-      )
+        "thanks so the way i would approach that is to wrap both writes in a transaction so either both land or neither does",
+      ),
     ).toBe(true);
   });
 
   it("still scores an answer that ends with thanks", () => {
     expect(
       isScoreableAnswer(
-        "i used redux for the shared state and memoized the dropdown with react memo thank you"
-      )
+        "i used redux for the shared state and memoized the dropdown with react memo thank you",
+      ),
     ).toBe(true);
   });
 });
@@ -82,8 +82,8 @@ describe("requests to hear the question again", () => {
   it("scores an answer that asks about one part while answering another", () => {
     expect(
       isScoreableAnswer(
-        "could you repeat the second part but on the first one what i did was wrap the consumer in a retry with exponential backoff so a transient failure did not drop the message"
-      )
+        "could you repeat the second part but on the first one what i did was wrap the consumer in a retry with exponential backoff so a transient failure did not drop the message",
+      ),
     ).toBe(true);
   });
 });

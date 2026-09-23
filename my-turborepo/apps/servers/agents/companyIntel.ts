@@ -68,13 +68,18 @@ const SYSTEM_PROMPT = [
 ].join("\n");
 
 function buildPrompt(company: string, notes: string): string {
-  return [`COMPANY: ${company}`, "", "WHAT THE CANDIDATE ALREADY KNOWS", notes].join(
-    "\n"
-  );
+  return [
+    `COMPANY: ${company}`,
+    "",
+    "WHAT THE CANDIDATE ALREADY KNOWS",
+    notes,
+  ].join("\n");
 }
 
 function toCandidateObject(value: unknown): unknown {
-  return typeof value === "string" ? extractJsonObject(value, "CompanyIntel") : value;
+  return typeof value === "string"
+    ? extractJsonObject(value, "CompanyIntel")
+    : value;
 }
 
 // Everything the model touches, in one place that cannot throw. One attempt,
@@ -83,7 +88,7 @@ function toCandidateObject(value: unknown): unknown {
 // upgrade "unknown" to "mixed" is not worth a candidate's wait or the tokens.
 async function classify(
   company: string,
-  notes: string
+  notes: string,
 ): Promise<CompanyClassification> {
   // Nothing to read. Skip the model entirely rather than asking it to
   // classify a blank note — that is a paid call whose only honest answer is
@@ -95,25 +100,26 @@ async function classify(
       system: SYSTEM_PROMPT,
       prompt: buildPrompt(company, notes),
       toolName: "record_company_style",
-      toolDescription: "Record the company's interview style, focus, and seniority bar.",
+      toolDescription:
+        "Record the company's interview style, focus, and seniority bar.",
       inputSchema: INTEL_TOOL_SCHEMA,
     });
 
     const parsed = CompanyClassificationSchema.safeParse(
-      toCandidateObject(result.value)
+      toCandidateObject(result.value),
     );
     if (parsed.success) return parsed.data;
 
     console.warn(
       `[intel] classification did not validate, falling back to unknown — ${parsed.error.issues
         .map((issue) => issue.message)
-        .join("; ")}`
+        .join("; ")}`,
     );
   } catch (error) {
     console.warn(
       `[intel] classification failed, falling back to unknown — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 
@@ -128,10 +134,12 @@ async function classify(
  * everything upstream failed it is simply the all-unknown one.
  */
 export async function runCompanyIntelAgent(
-  input: CompanyIntelInput
+  input: CompanyIntelInput,
 ): Promise<CompanyIntel> {
   const company = input.company.trim().slice(0, INTEL_LIMITS.MAX_COMPANY_CHARS);
-  const notes = (input.notes ?? "").trim().slice(0, INTEL_LIMITS.MAX_NOTES_CHARS);
+  const notes = (input.notes ?? "")
+    .trim()
+    .slice(0, INTEL_LIMITS.MAX_NOTES_CHARS);
 
   const classification = await classify(company, notes);
 

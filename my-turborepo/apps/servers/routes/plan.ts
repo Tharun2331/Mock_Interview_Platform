@@ -23,7 +23,10 @@ export const planRouter = Router();
 planRouter.post("/", async (req, res) => {
   const parsed = PlanRequestSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ message: MESSAGES.INVALID_PLAN_BODY, errors: parsed.error.flatten() });
+    res.status(400).json({
+      message: MESSAGES.INVALID_PLAN_BODY,
+      errors: parsed.error.flatten(),
+    });
     return;
   }
 
@@ -41,7 +44,9 @@ planRouter.post("/", async (req, res) => {
   // from a slow one, on the server as well as on the client.
   const startedAt = Date.now();
   const stage = (name: string): void => {
-    console.log(`[plan] ${parsed.data.sessionId} ${name} +${Date.now() - startedAt}ms`);
+    console.log(
+      `[plan] ${parsed.data.sessionId} ${name} +${Date.now() - startedAt}ms`,
+    );
   };
 
   try {
@@ -79,7 +84,7 @@ planRouter.post("/", async (req, res) => {
         console.warn(
           `[plan] cache read failed, planning fresh — ${
             error instanceof Error ? error.message : "unknown"
-          }`
+          }`,
         );
       }
 
@@ -124,7 +129,7 @@ planRouter.post("/", async (req, res) => {
           console.warn(
             `[plan] cache write failed — ${
               error instanceof Error ? error.message : "unknown"
-            }`
+            }`,
           );
         }
       }
@@ -213,13 +218,8 @@ planRouter.post("/", async (req, res) => {
     console.error(
       error instanceof BedrockError
         ? `[plan] ${error.message} (models tried: ${error.modelsTried.join(", ") || "n/a"})`
-        : error
+        : error,
     );
     res.status(502).json({ message: MESSAGES.PLAN_FAILED });
   }
 });
-
-
-
-
-

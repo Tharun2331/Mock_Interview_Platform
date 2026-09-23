@@ -67,15 +67,16 @@ export async function putResume(args: {
         Key: key,
         Body: args.bytes,
         ContentType: UPLOAD.RESUME_MIME,
-      })
+      }),
     );
     return key;
   } catch (error) {
-    if (error instanceof UploadError || error instanceof ServiceError) throw error; 
+    if (error instanceof UploadError || error instanceof ServiceError)
+      throw error;
     // The write itself failed — credentials, network, bucket policy. Again not
     // the candidate's doing, so it must not read as a problem with their file.
     throw new ServiceError(
-      `${MESSAGES.UPLOAD_STORE_FAILED} ${error instanceof Error ? error.message : ""}`.trim()
+      `${MESSAGES.UPLOAD_STORE_FAILED} ${error instanceof Error ? error.message : ""}`.trim(),
     );
   }
 }
@@ -91,12 +92,13 @@ export async function deleteResume(userId: string): Promise<void> {
 
   try {
     await s3Client.send(
-      new DeleteObjectCommand({ Bucket: requireBucket(), Key: key })
+      new DeleteObjectCommand({ Bucket: requireBucket(), Key: key }),
     );
   } catch (error) {
-    if (error instanceof UploadError || error instanceof ServiceError) throw error;
+    if (error instanceof UploadError || error instanceof ServiceError)
+      throw error;
     throw new ServiceError(
-      `${MESSAGES.RESUME_DELETE_FAILED} ${error instanceof Error ? error.message : ""}`.trim()
+      `${MESSAGES.RESUME_DELETE_FAILED} ${error instanceof Error ? error.message : ""}`.trim(),
     );
   }
 }

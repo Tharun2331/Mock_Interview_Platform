@@ -26,7 +26,7 @@ function renderShell() {
           <Route path="/start" element={<p>page content</p>} />
         </Route>
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 

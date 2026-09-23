@@ -20,6 +20,30 @@
  * nothing but a second palette to keep honest.
  */
 
+/* THE SPACING LADDER
+ *
+ * Five steps, and nothing between them. Tailwind offers every value, which is
+ * how this app ended up with eight live gap sizes — 1, 1.5, 2, 3, 4, 5, 6 and
+ * 8 — none of which meant anything in particular. Each one was plausible where
+ * it was written and the set as a whole had no rhythm, which is most of what
+ * makes a screen read as assembled rather than designed.
+ *
+ *   gap-1   4px   a label and the value directly under it
+ *   gap-2   8px   items inside one group
+ *   gap-4  16px   between fields
+ *   gap-6  24px   between groups inside a card
+ *   gap-8  32px   between sections of a page
+ *
+ * Reach for the next step rather than the one in between: `gap-3` and `gap-5`
+ * are how the ladder comes apart, because they are always defensible locally.
+ * Padding follows the same set. The three data pages are the reference — they
+ * share one page container (`gap-8 p-6 pb-16`), one header (`gap-2`) and one
+ * section (`gap-4`), so a fourth page has a spelling to copy rather than a
+ * judgement to make.
+ *
+ * Nothing enforces this. There is no ESLint in the repo and no Tailwind plugin
+ * that reads intent, so it holds only as long as it is read first. */
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

@@ -1,0 +1,8 @@
+node_modules
+dist
+.turbo
+bun.lock
+
+# Terraform has its own formatter (`terraform fmt`); Prettier does not speak HCL.
+*.tf
+*.tfvars

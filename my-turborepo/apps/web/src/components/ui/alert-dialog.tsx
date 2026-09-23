@@ -41,7 +41,7 @@ function AlertDialogOverlay({
         "data-[state=open]:animate-in data-[state=open]:fade-in-0",
         "data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
         "motion-reduce:animate-none",
-        className
+        className,
       )}
       {...props}
     />
@@ -62,7 +62,7 @@ function AlertDialogContent({
           "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
           "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           "motion-reduce:animate-none",
-          className
+          className,
         )}
         {...props}
       />
@@ -92,7 +92,7 @@ function AlertDialogFooter({
       data-slot="alert-dialog-footer"
       className={cn(
         "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
-        className
+        className,
       )}
       {...props}
     />
@@ -146,7 +146,7 @@ function AlertDialogCancel({
       className={cn(
         buttonVariants({ variant: "outline" }),
         "cursor-pointer",
-        className
+        className,
       )}
       {...props}
     />

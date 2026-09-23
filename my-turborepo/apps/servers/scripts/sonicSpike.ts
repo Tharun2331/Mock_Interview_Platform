@@ -51,7 +51,8 @@ const PLAN: PlanResponse = {
     },
     {
       area: "Monolith-to-microservices migration",
-      evidence: "resume states they led the migration and owned the on-call rotation",
+      evidence:
+        "resume states they led the migration and owned the on-call rotation",
       source: "resume",
     },
   ],
@@ -67,7 +68,7 @@ const PLAN: PlanResponse = {
 class EventQueue {
   private readonly pending: InvokeModelWithBidirectionalStreamInput[] = [];
   private readonly waiting: ((
-    value: IteratorResult<InvokeModelWithBidirectionalStreamInput>
+    value: IteratorResult<InvokeModelWithBidirectionalStreamInput>,
   ) => void)[] = [];
   private closed = false;
 
@@ -245,7 +246,8 @@ setTimeout(() => {
       textInput: {
         promptName,
         contentName: userContentName,
-        content: "[The candidate has joined and their microphone is live. Greet them and begin.]",
+        content:
+          "[The candidate has joined and their microphone is live. Greet them and begin.]",
       },
     },
   });
@@ -266,7 +268,7 @@ const response = await client.send(
   new InvokeModelWithBidirectionalStreamCommand({
     modelId: MODEL_ID,
     body: queue,
-  })
+  }),
 );
 console.log(`stream open after ${Date.now() - started}ms\n`);
 
@@ -276,7 +278,9 @@ console.log(`stream open after ${Date.now() - started}ms\n`);
 // them. The documented sequence has to go through the queue while it is open.
 function shutdown(): void {
   clearInterval(pump);
-  send({ event: { contentEnd: { promptName, contentName: audioContentName } } });
+  send({
+    event: { contentEnd: { promptName, contentName: audioContentName } },
+  });
   send({ event: { promptEnd: { promptName } } });
   send({ event: { sessionEnd: {} } });
   // Let the closing events drain before ending the iterator.
@@ -309,8 +313,8 @@ try {
         // and USER (what the candidate said) from ASSISTANT (what we say).
         console.log(
           `${at}  contentStart  role=${String(payload.role)} type=${String(
-            payload.type
-          )} stage=${String(payload.additionalModelFields ?? "-")}`
+            payload.type,
+          )} stage=${String(payload.additionalModelFields ?? "-")}`,
         );
         break;
       }
@@ -323,15 +327,15 @@ try {
       case "toolUse":
         console.log(
           `${at}  TOOL USE      ${String(payload.toolName)} ${JSON.stringify(
-            payload.content
-          )}`
+            payload.content,
+          )}`,
         );
         break;
       case "contentEnd":
         console.log(
           `${at}  contentEnd    type=${String(payload.type)} stop=${String(
-            payload.stopReason
-          )}`
+            payload.stopReason,
+          )}`,
         );
         break;
       case "completionEnd":
@@ -352,8 +356,8 @@ try {
       error,
       (_key, value: unknown) =>
         value instanceof Uint8Array ? new TextDecoder().decode(value) : value,
-      2
-    )
+      2,
+    ),
   );
   if (error instanceof Error) console.error(`${error.name}: ${error.message}`);
 } finally {
@@ -367,6 +371,7 @@ try {
 }
 
 console.log(`\n--- event counts ---`);
-for (const [kind, count] of [...seen].sort()) console.log(`  ${kind}: ${count}`);
+for (const [kind, count] of [...seen].sort())
+  console.log(`  ${kind}: ${count}`);
 console.log(`  audioOutput base64 chars: ${audioBytes}`);
 console.log(`\nstream open for ${((Date.now() - started) / 1000).toFixed(1)}s`);

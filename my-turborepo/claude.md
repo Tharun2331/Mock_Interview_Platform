@@ -15,14 +15,14 @@ The raw PDF is archived in S3; the redacted text is what the Planner reads. See
 
 ## Read before you write
 
-| If the task touches...          | Read first                                    |
-| ------------------------------- | --------------------------------------------- |
-| System design, request flow     | `docs/architecture/overview.md`               |
-| Routes, WebSocket, error shapes | `docs/architecture/api.md`                    |
-| DynamoDB keys, item ownership, S3 layout | `docs/architecture/data-model.md`   |
-| A decision that looks settled   | `docs/adr/` — check for an existing record    |
-| Any UI under the web app   | `.claude/skills/preppilot-frontend/SKILL.md`  |
-| Any `.tf` file                  | `infra/terraform/CLAUDE.md`                   |
+| If the task touches...                   | Read first                                   |
+| ---------------------------------------- | -------------------------------------------- |
+| System design, request flow              | `docs/architecture/overview.md`              |
+| Routes, WebSocket, error shapes          | `docs/architecture/api.md`                   |
+| DynamoDB keys, item ownership, S3 layout | `docs/architecture/data-model.md`            |
+| A decision that looks settled            | `docs/adr/` — check for an existing record   |
+| Any UI under the web app                 | `.claude/skills/preppilot-frontend/SKILL.md` |
+| Any `.tf` file                           | `infra/terraform/CLAUDE.md`                  |
 
 This file holds rules. The architecture document holds reasoning. Don't
 duplicate one into the other.
@@ -118,9 +118,22 @@ Planning documents describe these in present tense. They are **not on
     and the plan's own 20 in CI — the `ready` event, the nudge timetable and
     every phase boundary differed by machine. That is the second variable to do
     this; an absent one is silent by construction.
-- Husky, lint-staged, Prettier config, `tsconfig.base.json` genuinely do not
-  exist. Note `turbo run lint` is wired at the root but **no workspace defines
-  a `lint` script**, so it reports success while checking nothing.
+- Husky, lint-staged and `tsconfig.base.json` genuinely do not exist. Note
+  `turbo run lint` is wired at the root but **no workspace defines a `lint`
+  script**, so it reports success while checking nothing.
+- ~~Prettier config~~ — **`.prettierrc.json` and `.prettierignore` now exist,
+  and the repo-wide sweep has been run.** Prettier itself was always installed
+  and `format` was always a script; what was missing was a config and anyone
+  running it, so ~148 files had never been formatted and the drift was visible
+  in the JSX (stray blank lines, broken indentation in `Header.tsx`). The sweep
+  landed as its own commit, separate from the design work, because a 134-file
+  reformat mixed into a reviewable change hides both.
+  - The `format` glob is `**/*.{ts,tsx,md}`, so it reformats **markdown too** —
+    including this file, `CLAUDE.local.md`, the ADRs and the design references.
+    That is mostly table realignment and changes no content, but it is why a
+    docs-only edit can come back with a larger diff than expected. Run
+    `bun run format` before committing docs, not after.
+  - `format:check` is now safe to wire into CI, which it is not yet.
 
 **CI gates a pull request, nothing gates a commit.**
 `.github/workflows/ci.yml` runs `check-types` and `test` on every PR and push
@@ -130,13 +143,13 @@ that also breaks types or tests from reaching a branch.
 
 ### Known defects — fix, don't build around
 
-| Where                              | Problem                                                        |
-| ---------------------------------- | -------------------------------------------------------------- |
-| `apps/servers/package.json`         | `start` runs `bun src/index.ts`; entrypoint is `index.ts` at app root. Production start is broken. |
-| `apps/web/src/App.tsx`         | `page` state never updates, so `/interview` and `/results` redirect to `/form` unconditionally. |
-| `turbo.json`                        | `build.outputs` is `.next/**`, left over from `create-turbo`. Nothing emits `.next`. |
-| `apps/servers/scrappers/github.ts`  | Unused `import { password } from "bun"`; repos typed `any`. |
-| `apps/servers/index.ts`             | Returns `411` on validation failure. Should be `400`. |
+| Where                              | Problem                                                                                            |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `apps/servers/package.json`        | `start` runs `bun src/index.ts`; entrypoint is `index.ts` at app root. Production start is broken. |
+| `apps/web/src/App.tsx`             | `page` state never updates, so `/interview` and `/results` redirect to `/form` unconditionally.    |
+| `turbo.json`                       | `build.outputs` is `.next/**`, left over from `create-turbo`. Nothing emits `.next`.               |
+| `apps/servers/scrappers/github.ts` | Unused `import { password } from "bun"`; repos typed `any`.                                        |
+| `apps/servers/index.ts`            | Returns `411` on validation failure. Should be `400`.                                              |
 
 ---
 
@@ -184,6 +197,22 @@ that also breaks types or tests from reaching a branch.
 - **Run `bun run check-types` and `bun run test` before pushing.** Those are
   exactly what CI runs, so a green pair locally means a green pipeline.
 - servers dev port **8000**. web **3000**.
+- **Look at any change under `apps/web` in a real browser before calling it
+  done.** `playwright-cli` drives Chrome from the terminal — commands and
+  references in `.claude/skills/playwright-cli/SKILL.md`. Three things about it
+  are not optional:
+  - It does **not** start the app. `bun run dev` has to already be running or
+    every `goto` hits a dead port and reports a blank page as a result.
+  - Everything except the auth screens sits behind `RequireAuth` and
+    `RequireProfile`. A cold browser lands on sign-in, so load a saved storage
+    state first — otherwise the only thing you screenshot is the login form,
+    and it looks like a pass.
+  - Prefer `snapshot` over `screenshot`. The snapshot is the accessibility tree
+    written to a file on disk, which is what element refs and assertions come
+    from; a screenshot is for when the question is genuinely visual.
+
+  `playwright-cli close` when you are finished. `open` leaves a real Chrome
+  process running, not a headless one.
 
 ## web
 

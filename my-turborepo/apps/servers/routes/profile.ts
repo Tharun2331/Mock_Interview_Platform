@@ -170,8 +170,7 @@ profileRouter.put("/github", async (req, res) => {
 
     // Scraped before the write, so a profile is never left pointing at a
     // username whose repositories could not be read.
-    const repos =
-      username === null ? [] : await fetchRepos(username);
+    const repos = username === null ? [] : await fetchRepos(username);
 
     const profile = await saveGithubRepos({
       userId,
@@ -216,7 +215,7 @@ profileRouter.delete("/", async (req, res) => {
     // beyond the sub, which is what the log already keys on.
     console.log(
       `[profile] erased ${userId}: ${summary.sessionsDeleted} sessions, ` +
-        `${summary.itemsDeleted} items, profile=${summary.hadProfile}`
+        `${summary.itemsDeleted} items, profile=${summary.hadProfile}`,
     );
 
     res.status(204).end();
@@ -228,7 +227,7 @@ profileRouter.delete("/", async (req, res) => {
     console.error(
       `[profile] erasure failed for ${userId} — ${
         error instanceof Error ? error.message : error
-      }`
+      }`,
     );
     res.status(500).json({ message: MESSAGES.ACCOUNT_DELETE_FAILED });
   }

@@ -1,8 +1,5 @@
 import { Router } from "express";
-import {
-  GAP_LIMITS,
-  type PreInterviewRepo,
-} from "@repo/shared";
+import { GAP_LIMITS, type PreInterviewRepo } from "@repo/shared";
 import { z } from "zod";
 import { runGapAgent } from "../agents/gap";
 import {
@@ -33,13 +30,13 @@ export async function analyseGap(args: {
     const analysis = await runGapAgent(args);
     await putGapAnalysis({ analysis });
     console.log(
-      `[gap] ${args.sessionId} analysed ${analysis.requirements.length} requirements`
+      `[gap] ${args.sessionId} analysed ${analysis.requirements.length} requirements`,
     );
   } catch (error) {
     console.error(
       `[gap] ${args.sessionId} analysis failed, interview will run unfocused — ${
         error instanceof Error ? error.message : error
-      }`
+      }`,
     );
   }
 }

@@ -20,7 +20,9 @@ const SECONDS = (ms: number): number => ms / 1000;
 describe("effectiveTargetMinutes", () => {
   it("uses the plan's own length in production", () => {
     expect(effectiveTargetMinutes(30, PROD)).toBe(30);
-    expect(effectiveTargetMinutes(PLAN_LIMITS.MAX_TARGET_MINUTES, PROD)).toBe(40);
+    expect(effectiveTargetMinutes(PLAN_LIMITS.MAX_TARGET_MINUTES, PROD)).toBe(
+      40,
+    );
   });
 
   it("overrides the plan's length in test mode", () => {
@@ -57,7 +59,9 @@ describe("the schedule at the 6-minute test scale", () => {
   // sentence, and a sentence takes the same few seconds at any scale.
   it("hard stops at 7m00s — the target plus the unscaled grace", () => {
     expect(SECONDS(schedule.hardStopAtMs)).toBe(420);
-    expect(schedule.hardStopAtMs - 6 * 60_000).toBe(INTERVIEW.HARD_STOP_GRACE_MS);
+    expect(schedule.hardStopAtMs - 6 * 60_000).toBe(
+      INTERVIEW.HARD_STOP_GRACE_MS,
+    );
   });
 
   it("keeps the nudges in order and inside the session", () => {
@@ -84,24 +88,33 @@ describe("the schedule at the 6-minute test scale", () => {
   // the interviewer to start closing before it had asked anything. This is the
   // whole reason the offsets scale in test mode.
   it("does not reuse the fixed production offsets", () => {
-    expect(schedule.wrapUpAtMs).not.toBe(6 * 60_000 - INTERVIEW.WRAP_UP_BEFORE_MS);
+    expect(schedule.wrapUpAtMs).not.toBe(
+      6 * 60_000 - INTERVIEW.WRAP_UP_BEFORE_MS,
+    );
     expect(SECONDS(schedule.wrapUpAtMs)).toBeGreaterThan(180);
   });
 });
 
 // Production must be bit-identical to what it was before test mode existed.
 describe("production timings are unchanged", () => {
-  it.each([15, 20, 30, 40])("keeps the fixed offsets at %d minutes", (minutes) => {
-    const schedule = nudgeSchedule(minutes, PROD);
-    const targetMs = minutes * 60_000;
+  it.each([15, 20, 30, 40])(
+    "keeps the fixed offsets at %d minutes",
+    (minutes) => {
+      const schedule = nudgeSchedule(minutes, PROD);
+      const targetMs = minutes * 60_000;
 
-    expect(schedule.wrapUpAtMs).toBe(targetMs - INTERVIEW.WRAP_UP_BEFORE_MS);
-    expect(schedule.finalCallAtMs).toBe(targetMs - INTERVIEW.FINAL_CALL_BEFORE_MS);
-    // Unscaled in both modes: it is the target itself, which is when the
-    // candidate's countdown reaches zero.
-    expect(schedule.timeUpAtMs).toBe(targetMs);
-    expect(schedule.hardStopAtMs).toBe(targetMs + INTERVIEW.HARD_STOP_GRACE_MS);
-  });
+      expect(schedule.wrapUpAtMs).toBe(targetMs - INTERVIEW.WRAP_UP_BEFORE_MS);
+      expect(schedule.finalCallAtMs).toBe(
+        targetMs - INTERVIEW.FINAL_CALL_BEFORE_MS,
+      );
+      // Unscaled in both modes: it is the target itself, which is when the
+      // candidate's countdown reaches zero.
+      expect(schedule.timeUpAtMs).toBe(targetMs);
+      expect(schedule.hardStopAtMs).toBe(
+        targetMs + INTERVIEW.HARD_STOP_GRACE_MS,
+      );
+    },
+  );
 
   // Converting production to percentages would have moved this one: 12.5% of
   // 15 minutes is 1.9, not 3. Pinned so a future tidy-up cannot quietly do it.
@@ -120,7 +133,7 @@ describe("wrapUpAtRemainingMinutes", () => {
     const remainingAtNudgeMs = 30 * 60_000 - schedule.wrapUpAtMs;
 
     expect(wrapUpAtRemainingMinutes(30, PROD)).toBe(
-      remainingAtNudgeMs / 60_000
+      remainingAtNudgeMs / 60_000,
     );
   });
 

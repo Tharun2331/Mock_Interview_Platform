@@ -39,13 +39,13 @@ describe("an interview with no company intel", () => {
   it("builds a prompt without one", () => {
     expect(() => buildInterviewSystemPrompt(PLAN)).not.toThrow();
     expect(() =>
-      buildInterviewSystemPrompt(PLAN, { companyIntel: null })
+      buildInterviewSystemPrompt(PLAN, { companyIntel: null }),
     ).not.toThrow();
   });
 
   it("omits the section entirely", () => {
     expect(
-      buildInterviewSystemPrompt(PLAN, { companyIntel: null })
+      buildInterviewSystemPrompt(PLAN, { companyIntel: null }),
     ).not.toContain("TENDS TO INTERVIEW");
   });
 
@@ -63,13 +63,13 @@ describe("an interview with no company intel", () => {
 describe("an all-unknown reading", () => {
   it("renders nothing at all", () => {
     expect(
-      buildInterviewSystemPrompt(PLAN, { companyIntel: UNKNOWN })
+      buildInterviewSystemPrompt(PLAN, { companyIntel: UNKNOWN }),
     ).not.toContain("TENDS TO INTERVIEW");
   });
 
   it("does not throw", () => {
     expect(() =>
-      buildInterviewSystemPrompt(PLAN, { companyIntel: UNKNOWN })
+      buildInterviewSystemPrompt(PLAN, { companyIntel: UNKNOWN }),
     ).not.toThrow();
   });
 
@@ -87,9 +87,9 @@ describe("an all-unknown reading", () => {
 
 describe("what a reading puts in the prompt", () => {
   it("names the company", () => {
-    expect(buildInterviewSystemPrompt(PLAN, { companyIntel: intel() })).toContain(
-      "ACME SYSTEMS"
-    );
+    expect(
+      buildInterviewSystemPrompt(PLAN, { companyIntel: intel() }),
+    ).toContain("ACME SYSTEMS");
   });
 
   it.each([
@@ -98,7 +98,7 @@ describe("what a reading puts in the prompt", () => {
     ["mixed", "Mix practical and theoretical"],
   ] as const)("renders style %s", (style, expected) => {
     expect(
-      buildInterviewSystemPrompt(PLAN, { companyIntel: intel({ style }) })
+      buildInterviewSystemPrompt(PLAN, { companyIntel: intel({ style }) }),
     ).toContain(expected);
   });
 
@@ -108,7 +108,7 @@ describe("what a reading puts in the prompt", () => {
     ["mixed", "comparable weight"],
   ] as const)("renders focus %s", (focus, expected) => {
     expect(
-      buildInterviewSystemPrompt(PLAN, { companyIntel: intel({ focus }) })
+      buildInterviewSystemPrompt(PLAN, { companyIntel: intel({ focus }) }),
     ).toContain(expected);
   });
 
@@ -134,7 +134,9 @@ describe("what a reading puts in the prompt", () => {
     });
 
     expect(prompt).toContain("senior bar");
-    expect(prompt).toContain("keep calibrating difficulty to what you actually hear");
+    expect(prompt).toContain(
+      "keep calibrating difficulty to what you actually hear",
+    );
   });
 });
 
@@ -156,7 +158,7 @@ describe("the user override", () => {
     });
 
     expect(prompt.indexOf("Recruiter said two rounds.")).toBeLessThan(
-      prompt.indexOf("Lean practical")
+      prompt.indexOf("Lean practical"),
     );
   });
 });
@@ -175,9 +177,9 @@ describe("the scope limit", () => {
     "names %s as something it does not add",
     (surface) => {
       expect(
-        buildInterviewSystemPrompt(PLAN, { companyIntel: intel() })
+        buildInterviewSystemPrompt(PLAN, { companyIntel: intel() }),
       ).toContain(surface);
-    }
+    },
   );
 
   // The ordering rule. The gap budget decides WHAT gets asked; this decides
@@ -190,9 +192,9 @@ describe("the scope limit", () => {
   });
 
   it("tells the interviewer not to mention the company's process aloud", () => {
-    expect(buildInterviewSystemPrompt(PLAN, { companyIntel: intel() })).toContain(
-      "Do not mention the company's process aloud"
-    );
+    expect(
+      buildInterviewSystemPrompt(PLAN, { companyIntel: intel() }),
+    ).toContain("Do not mention the company's process aloud");
   });
 });
 
@@ -207,14 +209,18 @@ describe("intel and a gap analysis together", () => {
         type: "session_gap",
         sessionId: "01J000000000000000000000",
         requirements: [
-          { requirement: "Kubernetes", bucket: "none", evidence: "not mentioned" },
+          {
+            requirement: "Kubernetes",
+            bucket: "none",
+            evidence: "not mentioned",
+          },
         ],
         createdAt: "2026-09-16T10:00:00.000Z",
       },
     });
 
     expect(prompt.indexOf("WHAT THIS ROLE ASKS FOR")).toBeLessThan(
-      prompt.indexOf("TENDS TO INTERVIEW")
+      prompt.indexOf("TENDS TO INTERVIEW"),
     );
   });
 });

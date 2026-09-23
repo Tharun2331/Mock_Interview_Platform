@@ -52,7 +52,7 @@ function readText(blocks: ContentBlock[] | undefined): string {
 
   return blocks
     .map((block) =>
-      "text" in block && typeof block.text === "string" ? block.text : ""
+      "text" in block && typeof block.text === "string" ? block.text : "",
     )
     .join("")
     .trim();
@@ -84,7 +84,7 @@ export type ConverseResult = {
 // second, slower retry mechanism whose latency can outlive the queue's
 // visibility timeout — and a redelivered message pays for a second generation.
 export async function converseText(
-  args: ConverseTextArgs
+  args: ConverseTextArgs,
 ): Promise<ConverseResult> {
   const modelIds = config.bedrockTextModelIds;
   const failures: string[] = [];
@@ -108,7 +108,7 @@ export async function converseText(
             maxTokens: args.maxTokens ?? BEDROCK.MAX_TOKENS,
             temperature: args.temperature ?? BEDROCK.TEMPERATURE,
           },
-        })
+        }),
       );
 
       const text = readText(response.output?.message?.content);
@@ -121,7 +121,7 @@ export async function converseText(
         // healthy path stays quiet.
         if (failures.length > 0) {
           console.warn(
-            `[bedrock] answered by ${modelId} after ${failures.length} failed — ${failures.join(" | ")}`
+            `[bedrock] answered by ${modelId} after ${failures.length} failed — ${failures.join(" | ")}`,
           );
         }
         return { text, modelId };
@@ -130,14 +130,14 @@ export async function converseText(
       failures.push(`${modelId}: empty response`);
     } catch (error) {
       failures.push(
-        `${modelId}: ${error instanceof Error ? error.message : "unknown error"}`
+        `${modelId}: ${error instanceof Error ? error.message : "unknown error"}`,
       );
     }
   }
 
   throw new BedrockError(
     `All Bedrock text models failed — ${failures.join(" | ")}`,
-    modelIds
+    modelIds,
   );
 }
 
@@ -150,12 +150,7 @@ export async function converseText(
 // It is not a guarantee about the model's output. That comes from the caller's
 // Zod parse; this only constrains what is asked for.
 export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+  string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export type ToolInputSchema = { [key: string]: JsonValue };
 
@@ -193,7 +188,7 @@ export type StructuredResult = {
 // than a failed request — the fences it wraps that prose in are stripped by
 // extractJsonObject at the call site.
 export async function converseStructured(
-  args: ConverseStructuredArgs
+  args: ConverseStructuredArgs,
 ): Promise<StructuredResult> {
   const modelIds = config.bedrockTextModelIds;
   const failures: string[] = [];
@@ -224,7 +219,7 @@ export async function converseStructured(
             ],
             toolChoice: { tool: { name: args.toolName } },
           },
-        })
+        }),
       );
 
       const content = response.output?.message?.content ?? [];
@@ -244,7 +239,7 @@ export async function converseStructured(
       if (toolInput !== undefined) {
         if (failures.length > 0) {
           console.warn(
-            `[bedrock] structured answer from ${modelId} after ${failures.length} failed — ${failures.join(" | ")}`
+            `[bedrock] structured answer from ${modelId} after ${failures.length} failed — ${failures.join(" | ")}`,
           );
         }
         return { value: toolInput, modelId, via: "toolUse" };
@@ -256,7 +251,7 @@ export async function converseStructured(
       const text = readText(content);
       if (text.length > 0) {
         console.warn(
-          `[bedrock] ${modelId} ignored toolChoice and answered in text — falling back to parsing`
+          `[bedrock] ${modelId} ignored toolChoice and answered in text — falling back to parsing`,
         );
         return { value: text, modelId, via: "text" };
       }
@@ -264,13 +259,13 @@ export async function converseStructured(
       failures.push(`${modelId}: empty response`);
     } catch (error) {
       failures.push(
-        `${modelId}: ${error instanceof Error ? error.message : "unknown error"}`
+        `${modelId}: ${error instanceof Error ? error.message : "unknown error"}`,
       );
     }
   }
 
   throw new BedrockError(
     `All Bedrock text models failed — ${failures.join(" | ")}`,
-    modelIds
+    modelIds,
   );
 }

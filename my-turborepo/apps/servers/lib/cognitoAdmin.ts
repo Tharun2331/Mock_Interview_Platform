@@ -34,14 +34,14 @@ export async function deleteCognitoUser(username: string): Promise<void> {
       new AdminDeleteUserCommand({
         UserPoolId: config.cognitoUserPoolId,
         Username: username,
-      })
+      }),
     );
   } catch (error) {
     if (error instanceof UserNotFoundException) return;
     throw new ServiceError(
       `${MESSAGES.COGNITO_DELETE_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 }

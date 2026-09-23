@@ -62,7 +62,9 @@ export const TrendSchema = z.object({
   // `.min(2)` is the schema enforcing the rule above: a trend with one point
   // cannot be constructed, so "single session produces no trend" is a property
   // of the type rather than a branch someone can forget.
-  scoreHistory: z.array(TrendPointSchema).min(COACH_LIMITS.MIN_SESSIONS_FOR_TREND),
+  scoreHistory: z
+    .array(TrendPointSchema)
+    .min(COACH_LIMITS.MIN_SESSIONS_FOR_TREND),
   summary: z.string().min(1).max(COACH_LIMITS.MAX_SUMMARY_CHARS),
 });
 
@@ -197,7 +199,13 @@ export type CoachProse = z.infer<typeof CoachProseSchema>;
  * silently, because nothing else about their data changed. It is the one
  * invalidation trigger that has no signal in the data at all.
  */
-export const COACH_CACHE_VERSION = 1;
+// 2 (2026-09-23): the prompt gained a plain-text rule and the agent gained a
+// deterministic markdown strip. Every cached report written before this carries
+// literal asterisks in its prose, and nothing else about those candidates' data
+// changed — so without this bump they would keep reading "*why*" until they
+// happened to finish another interview. This is exactly the case the field
+// exists for.
+export const COACH_CACHE_VERSION = 2;
 
 /**
  * The fingerprint of the inputs a report was built from.
@@ -235,19 +243,20 @@ export type CachedCoach = z.infer<typeof CachedCoachSchema>;
 /** Derived from the rows the request already read, so the freshness check costs
  *  no extra reads — the same property that makes the plan cache free. */
 export function coachCacheStamp(
-  summaries: ReadonlyArray<{ completedAt: string; summary?: unknown }>
+  summaries: ReadonlyArray<{ completedAt: string; summary?: unknown }>,
 ): CoachCacheStamp {
   // Max rather than first: the caller's ordering is not this function's
   // business, and a reversed list must not produce a different stamp.
   const latest = summaries.reduce(
     (newest, row) => (row.completedAt > newest ? row.completedAt : newest),
-    ""
+    "",
   );
 
   return {
     rowCount: summaries.length,
     latestCompletedAt: latest,
-    summarisedCount: summaries.filter((row) => row.summary !== undefined).length,
+    summarisedCount: summaries.filter((row) => row.summary !== undefined)
+      .length,
     version: COACH_CACHE_VERSION,
   };
 }

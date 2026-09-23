@@ -47,7 +47,7 @@ export function requireTable(): string {
 export function parseItem<T>(
   schema: ZodType<T>,
   item: Record<string, unknown> | undefined,
-  context: string
+  context: string,
 ): T {
   if (item === undefined) {
     throw new ServiceError(`${MESSAGES.SESSION_ITEM_MISSING} (${context})`);
@@ -58,7 +58,7 @@ export function parseItem<T>(
     throw new ServiceError(
       `${MESSAGES.SESSION_ITEM_INVALID} (${context}) — ${parsed.error.issues
         .map((issue) => `${issue.path.join(".") || "root"}: ${issue.message}`)
-        .join("; ")}`
+        .join("; ")}`,
     );
   }
 

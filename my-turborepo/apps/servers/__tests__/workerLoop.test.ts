@@ -404,7 +404,7 @@ describe("the session summary", () => {
     ddb.on(QueryCommand).callsFake((input) => {
       const prefix = String(
         (input as { ExpressionAttributeValues?: Record<string, unknown> })
-          .ExpressionAttributeValues?.[":prefix"] ?? ""
+          .ExpressionAttributeValues?.[":prefix"] ?? "",
       );
       if (prefix.startsWith("ANSWER")) return { Items: [ANSWER] };
       return { Items: [SCORED_ROW] };
@@ -422,7 +422,7 @@ describe("the session summary", () => {
     // Written onto the history row the Coach reads, not back onto the session.
     expect(summaryWrite?.Key?.PK).toBe(userPk(USER_ID));
     expect(JSON.stringify(summaryWrite?.ExpressionAttributeValues)).toContain(
-      "Strong on delivery"
+      "Strong on delivery",
     );
     expect(deletedReceipts()).toEqual(["receipt-0"]);
   });
@@ -441,7 +441,7 @@ describe("the session summary", () => {
     // which is a different behaviour and already covered above.
     ddb.on(UpdateCommand).callsFake((input) => {
       const pk = String(
-        (input as { Key?: Record<string, unknown> }).Key?.PK ?? ""
+        (input as { Key?: Record<string, unknown> }).Key?.PK ?? "",
       );
       if (pk.startsWith("USER#")) throw new Error("history row write failed");
       return {};

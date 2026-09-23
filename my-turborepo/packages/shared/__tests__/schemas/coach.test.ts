@@ -28,7 +28,10 @@ function cached(stamp: CoachCacheStamp): CachedCoach {
 describe("coachCacheStamp", () => {
   it("counts rows, the latest date and how many carry a narrative", () => {
     expect(
-      coachCacheStamp([row("2026-01-01T00:00:00.000Z", true), row("2026-01-05T00:00:00.000Z")])
+      coachCacheStamp([
+        row("2026-01-01T00:00:00.000Z", true),
+        row("2026-01-05T00:00:00.000Z"),
+      ]),
     ).toEqual({
       rowCount: 2,
       latestCompletedAt: "2026-01-05T00:00:00.000Z",
@@ -38,7 +41,10 @@ describe("coachCacheStamp", () => {
   });
 
   it("does not depend on the order it is given", () => {
-    const rows = [row("2026-01-01T00:00:00.000Z"), row("2026-03-01T00:00:00.000Z")];
+    const rows = [
+      row("2026-01-01T00:00:00.000Z"),
+      row("2026-03-01T00:00:00.000Z"),
+    ];
 
     expect(coachCacheStamp(rows)).toEqual(coachCacheStamp([...rows].reverse()));
   });
@@ -63,7 +69,9 @@ describe("isCachedCoachFresh", () => {
   ]);
 
   it("holds when nothing about the history has changed", () => {
-    expect(isCachedCoachFresh({ cached: cached(base), stamp: base })).toBe(true);
+    expect(isCachedCoachFresh({ cached: cached(base), stamp: base })).toBe(
+      true,
+    );
   });
 
   it("invalidates when an interview finishes", () => {
@@ -73,7 +81,9 @@ describe("isCachedCoachFresh", () => {
       row("2026-03-01T00:00:00.000Z", true),
     ]);
 
-    expect(isCachedCoachFresh({ cached: cached(base), stamp: after })).toBe(false);
+    expect(isCachedCoachFresh({ cached: cached(base), stamp: after })).toBe(
+      false,
+    );
   });
 
   it("invalidates when a narrative is attached to a row already counted", () => {
@@ -94,9 +104,9 @@ describe("isCachedCoachFresh", () => {
 
     expect(attached.rowCount).toBe(summarised.rowCount);
     expect(attached.latestCompletedAt).toBe(summarised.latestCompletedAt);
-    expect(isCachedCoachFresh({ cached: cached(attached), stamp: summarised })).toBe(
-      false
-    );
+    expect(
+      isCachedCoachFresh({ cached: cached(attached), stamp: summarised }),
+    ).toBe(false);
   });
 
   it("invalidates when one row expires and another lands in the same window", () => {
@@ -108,7 +118,9 @@ describe("isCachedCoachFresh", () => {
     ]);
 
     expect(rotated.rowCount).toBe(base.rowCount);
-    expect(isCachedCoachFresh({ cached: cached(base), stamp: rotated })).toBe(false);
+    expect(isCachedCoachFresh({ cached: cached(base), stamp: rotated })).toBe(
+      false,
+    );
   });
 
   it("invalidates when a deploy bumps the version", () => {
@@ -121,9 +133,9 @@ describe("isCachedCoachFresh", () => {
     // never been a version 0 and the schema will not represent one.
     const afterDeploy = { ...base, version: base.version + 1 };
 
-    expect(isCachedCoachFresh({ cached: cached(base), stamp: afterDeploy })).toBe(
-      false
-    );
+    expect(
+      isCachedCoachFresh({ cached: cached(base), stamp: afterDeploy }),
+    ).toBe(false);
   });
 });
 
@@ -134,7 +146,7 @@ describe("CachedCoachSchema", () => {
         stamp: coachCacheStamp([]),
         prose: { topics: [] },
         generatedAt: "2026-01-01T00:00:00.000Z",
-      }).type
+      }).type,
     ).toBe("cached_coach");
   });
 
@@ -144,7 +156,7 @@ describe("CachedCoachSchema", () => {
         stamp: coachCacheStamp([]),
         prose: { topics: [{ topic: "Backend" }] },
         generatedAt: "2026-01-01T00:00:00.000Z",
-      })
+      }),
     ).toThrow();
   });
 });

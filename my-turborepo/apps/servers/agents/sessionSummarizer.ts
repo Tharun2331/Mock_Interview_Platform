@@ -54,7 +54,7 @@ export function weakestAnswers(views: EvaluationView[]): EvaluationView[] {
         // Stable: identical scores would otherwise order by whatever the query
         // happened to return, so the same session could summarise differently
         // on a re-run.
-        a.questionId.localeCompare(b.questionId)
+        a.questionId.localeCompare(b.questionId),
     )
     .slice(0, SESSION_SUMMARY_LIMITS.MAX_FLAGGED);
 }
@@ -62,10 +62,18 @@ export function weakestAnswers(views: EvaluationView[]): EvaluationView[] {
 /** How the session scored per category, for the prompt. Categories with no
  *  questions are omitted rather than reported as zero — an interview that
  *  asked nothing behavioural has no behavioural weakness. */
-export function categoryBreakdown(
-  views: EvaluationView[]
-): Array<{ category: QuestionType; asked: number; correctness: number; clarity: number; depth: number }> {
-  const categories: QuestionType[] = ["technical", "role_specific", "behavioural"];
+export function categoryBreakdown(views: EvaluationView[]): Array<{
+  category: QuestionType;
+  asked: number;
+  correctness: number;
+  clarity: number;
+  depth: number;
+}> {
+  const categories: QuestionType[] = [
+    "technical",
+    "role_specific",
+    "behavioural",
+  ];
 
   return categories
     .map((category) => {
@@ -73,7 +81,11 @@ export function categoryBreakdown(
       const mean = (pick: (view: EvaluationView) => number): number =>
         rows.length === 0
           ? 0
-          : Math.round((rows.reduce((total, row) => total + pick(row), 0) / rows.length) * 10) / 10;
+          : Math.round(
+              (rows.reduce((total, row) => total + pick(row), 0) /
+                rows.length) *
+                10,
+            ) / 10;
 
       return {
         category,
@@ -137,20 +149,22 @@ const SYSTEM_PROMPT = [
 function buildPrompt(
   role: string,
   views: EvaluationView[],
-  needRewrite: EvaluationView[]
+  needRewrite: EvaluationView[],
 ): string {
   const lines = [`Target role: ${role}`, "", "HOW EACH CATEGORY WENT"];
 
   for (const entry of categoryBreakdown(views)) {
     lines.push(
       `- ${entry.category}: ${entry.asked} asked, correctness ${entry.correctness}, ` +
-        `clarity ${entry.clarity}, depth ${entry.depth}`
+        `clarity ${entry.clarity}, depth ${entry.depth}`,
     );
   }
 
   lines.push("", "THE WEAKEST ANSWERS");
   for (const view of weakestAnswers(views)) {
-    const wanted = needRewrite.some((row) => row.questionId === view.questionId);
+    const wanted = needRewrite.some(
+      (row) => row.questionId === view.questionId,
+    );
     lines.push(
       "",
       `questionId: ${view.questionId}${wanted ? "  [NEEDS A REWRITE]" : ""}`,
@@ -159,7 +173,7 @@ function buildPrompt(
       // Last in each block, and the answer is the one field a candidate fully
       // controls — anything embedded in it trying to redirect the model reads
       // as the final word otherwise.
-      `their answer: ${view.transcript.slice(0, EVALUATION_LIMITS.MAX_TRANSCRIPT_CHARS) || "(they said nothing)"}`
+      `their answer: ${view.transcript.slice(0, EVALUATION_LIMITS.MAX_TRANSCRIPT_CHARS) || "(they said nothing)"}`,
     );
   }
 
@@ -188,7 +202,9 @@ function parseRewrites(value: unknown, allowed: Set<string>): Rewrites {
 
     rewrites.set(
       entry.questionId,
-      entry.improvedAnswer.trim().slice(0, SESSION_SUMMARY_LIMITS.MAX_ANSWER_CHARS)
+      entry.improvedAnswer
+        .trim()
+        .slice(0, SESSION_SUMMARY_LIMITS.MAX_ANSWER_CHARS),
     );
   }
 
@@ -196,7 +212,11 @@ function parseRewrites(value: unknown, allowed: Set<string>): Rewrites {
 }
 
 function summaryTextFrom(value: unknown): string {
-  if (typeof value !== "object" || value === null || !("summaryText" in value)) {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("summaryText" in value)
+  ) {
     return "";
   }
   const text = (value as { summaryText: unknown }).summaryText;
@@ -219,7 +239,7 @@ export type SessionSummarizerInput = {
  * looks written.
  */
 export async function runSessionSummarizer(
-  input: SessionSummarizerInput
+  input: SessionSummarizerInput,
 ): Promise<SessionSummary | null> {
   if (input.evaluations.length === 0) return null;
 
@@ -231,7 +251,7 @@ export async function runSessionSummarizer(
   // here is a gap — a row written before sample answers existed, or one whose
   // rewrite came back unusable.
   const needRewrite = weakest.filter(
-    (view) => (view.sampleAnswer ?? "").trim().length === 0
+    (view) => (view.sampleAnswer ?? "").trim().length === 0,
   );
 
   let summaryText = "";
@@ -255,13 +275,13 @@ export async function runSessionSummarizer(
     summaryText = summaryTextFrom(value);
     generated = parseRewrites(
       value,
-      new Set(needRewrite.map((view) => view.questionId))
+      new Set(needRewrite.map((view) => view.questionId)),
     );
   } catch (error) {
     console.warn(
       `[summarizer] generation failed, session will have no summary — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
     return null;
   }
@@ -281,10 +301,19 @@ export async function runSessionSummarizer(
     if (improved.length === 0) continue;
 
     flaggedExamples.push({
-      question: view.questionText.slice(0, SESSION_SUMMARY_LIMITS.MAX_QUESTION_CHARS),
+      question: view.questionText.slice(
+        0,
+        SESSION_SUMMARY_LIMITS.MAX_QUESTION_CHARS,
+      ),
       category: view.questionType,
-      originalAnswer: view.transcript.slice(0, SESSION_SUMMARY_LIMITS.MAX_ANSWER_CHARS),
-      improvedAnswer: improved.slice(0, SESSION_SUMMARY_LIMITS.MAX_ANSWER_CHARS),
+      originalAnswer: view.transcript.slice(
+        0,
+        SESSION_SUMMARY_LIMITS.MAX_ANSWER_CHARS,
+      ),
+      improvedAnswer: improved.slice(
+        0,
+        SESSION_SUMMARY_LIMITS.MAX_ANSWER_CHARS,
+      ),
     });
   }
 

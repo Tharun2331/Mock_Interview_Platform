@@ -31,7 +31,7 @@ describe("ExchangeBuffer", () => {
 
       expect(exchange).not.toBeNull();
       expect(exchange?.transcript).toBe(
-        "So we had a monolith. It was getting hard to deploy. We split the order flow out first. Kafka coordinated the state transitions. Postgres held the durable state."
+        "So we had a monolith. It was getting hard to deploy. We split the order flow out first. Kafka coordinated the state transitions. Postgres held the durable state.",
       );
     });
 
@@ -92,7 +92,7 @@ describe("ExchangeBuffer", () => {
       buffer.appendAnswer("Sure.");
 
       expect(buffer.take()?.questionText).toBe(
-        "Walk me through the pipeline. Start from the API boundary."
+        "Walk me through the pipeline. Start from the API boundary.",
       );
     });
 
@@ -126,7 +126,9 @@ describe("ExchangeBuffer", () => {
 
       expect(exchange).not.toBeNull();
       // Must satisfy the z.iso.datetime() on SessionAnswerSchema.
-      expect(exchange?.askedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      expect(exchange?.askedAt).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+      );
     });
   });
 
@@ -190,7 +192,9 @@ describe("ExchangeBuffer", () => {
     it("keeps a continued answer with the question it was answering", () => {
       const buffer = new ExchangeBuffer();
 
-      buffer.appendQuestion("Introduce yourself and walk me through your background.");
+      buffer.appendQuestion(
+        "Introduce yourself and walk me through your background.",
+      );
       buffer.appendAnswer("I am a full stack developer at GQ Consultancy.");
 
       // The candidate pauses. The interviewer starts the next question.
@@ -202,12 +206,12 @@ describe("ExchangeBuffer", () => {
       const exchange = buffer.take();
 
       expect(exchange?.questionText).toBe(
-        "Introduce yourself and walk me through your background."
+        "Introduce yourself and walk me through your background.",
       );
       // Both halves of the introduction, together, under the question that
       // asked for it.
       expect(exchange?.transcript).toBe(
-        "I am a full stack developer at GQ Consultancy. Prior to that I worked at Ernst and Young."
+        "I am a full stack developer at GQ Consultancy. Prior to that I worked at Ernst and Young.",
       );
     });
 
@@ -257,7 +261,7 @@ describe("ExchangeBuffer", () => {
       buffer.appendAnswer("Sure.");
 
       expect(buffer.take()?.questionText).toBe(
-        "Hello and welcome. This will take about six minutes. Introduce yourself."
+        "Hello and welcome. This will take about six minutes. Introduce yourself.",
       );
     });
   });
@@ -283,7 +287,7 @@ describe("ExchangeBuffer", () => {
 
       buffer.appendAnswer("An answer to the second.");
       expect(buffer.take()?.questionText).toBe(
-        "Let me ask about something else entirely."
+        "Let me ask about something else entirely.",
       );
     });
 

@@ -1,4 +1,11 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "bun:test";
 import {
   BatchGetCommand,
   DynamoDBDocumentClient,
@@ -67,7 +74,10 @@ function answer(questionId: string, overrides: Record<string, unknown> = {}) {
   };
 }
 
-function evaluation(questionId: string, overrides: Record<string, unknown> = {}) {
+function evaluation(
+  questionId: string,
+  overrides: Record<string, unknown> = {},
+) {
   return {
     PK: sessionPk(SESSION_ID),
     SK: evalSk(questionId),
@@ -76,7 +86,8 @@ function evaluation(questionId: string, overrides: Record<string, unknown> = {})
     correctness: 7,
     clarity: 6,
     depth: 5,
-    rationale: "You named the tradeoff but did not point at a system you built.",
+    rationale:
+      "You named the tradeoff but did not point at a system you built.",
     modelId: "mistral.ministral-3-8b-instruct",
     evaluatedAt: NOW,
     ...overrides,
@@ -92,7 +103,7 @@ function partitionHolds(args: {
   evaluations?: Record<string, unknown>[];
 }) {
   const headers = [args.meta, args.summary].filter(
-    (item): item is Record<string, unknown> => item !== undefined
+    (item): item is Record<string, unknown> => item !== undefined,
   );
   ddb.on(BatchGetCommand).resolves({ Responses: { [TABLE]: headers } });
 
@@ -183,7 +194,7 @@ describe("GET /api/v1/sessions/:sessionId/evaluation", () => {
     const { url } = await start();
 
     const body = EvaluationResponseSchema.parse(
-      await (await getEvaluation(url)).json()
+      await (await getEvaluation(url)).json(),
     );
 
     expect(body.status).toBe("evaluating");
@@ -197,14 +208,17 @@ describe("GET /api/v1/sessions/:sessionId/evaluation", () => {
   it("carries the averages and a complete status once finished", async () => {
     partitionHolds({
       meta: { ...META, status: "complete" },
-      summary: { ...SUMMARY, averages: { correctness: 7, clarity: 6, depth: 5 } },
+      summary: {
+        ...SUMMARY,
+        averages: { correctness: 7, clarity: 6, depth: 5 },
+      },
       answers: [answer(Q1), answer(Q2)],
       evaluations: [evaluation(Q1), evaluation(Q2)],
     });
     const { url } = await start();
 
     const body = EvaluationResponseSchema.parse(
-      await (await getEvaluation(url)).json()
+      await (await getEvaluation(url)).json(),
     );
 
     expect(body.status).toBe("complete");
@@ -221,7 +235,7 @@ describe("GET /api/v1/sessions/:sessionId/evaluation", () => {
     const { url } = await start();
 
     const body = EvaluationResponseSchema.parse(
-      await (await getEvaluation(url)).json()
+      await (await getEvaluation(url)).json(),
     );
 
     expect(body.evaluations.map((item) => item.questionId)).toEqual([Q1, Q2]);
@@ -239,7 +253,7 @@ describe("GET /api/v1/sessions/:sessionId/evaluation", () => {
     const { url } = await start();
 
     const body = EvaluationResponseSchema.parse(
-      await (await getEvaluation(url)).json()
+      await (await getEvaluation(url)).json(),
     );
 
     expect(body.evaluations[0]?.interrupted).toBe(true);
@@ -280,7 +294,7 @@ describe("GET /api/v1/sessions/:sessionId/evaluation", () => {
     const { url } = await start();
 
     const body = EvaluationResponseSchema.parse(
-      await (await getEvaluation(url)).json()
+      await (await getEvaluation(url)).json(),
     );
 
     expect(body.completed).toBe(0);
@@ -354,8 +368,9 @@ describe("GET /api/v1/sessions/history", () => {
     const response = await getHistory(url);
 
     expect(response.status).toBe(200);
-    expect(SessionHistoryResponseSchema.parse(await response.json()).sessions)
-      .toEqual([]);
+    expect(
+      SessionHistoryResponseSchema.parse(await response.json()).sessions,
+    ).toEqual([]);
   });
 
   it("401s a request carrying no user", async () => {
@@ -398,7 +413,7 @@ describe("access control", () => {
 
     expect(response.status).toBe(404);
     expect(ErrorBody.parse(await response.json()).message).toBe(
-      MESSAGES.SESSION_NOT_FOUND
+      MESSAGES.SESSION_NOT_FOUND,
     );
   });
 
@@ -411,12 +426,14 @@ describe("access control", () => {
 
     expect(response.status).toBe(404);
     expect(ErrorBody.parse(await response.json()).message).toBe(
-      MESSAGES.SESSION_NOT_FOUND
+      MESSAGES.SESSION_NOT_FOUND,
     );
   });
 
   it("does not leak a DynamoDB failure to the client", async () => {
-    ddb.on(BatchGetCommand).rejects(new Error("ResourceNotFoundException: table x"));
+    ddb
+      .on(BatchGetCommand)
+      .rejects(new Error("ResourceNotFoundException: table x"));
     const { url } = await start();
 
     const response = await getEvaluation(url);
@@ -425,7 +442,7 @@ describe("access control", () => {
     expect(response.status).toBe(500);
     expect(raw).not.toContain("ResourceNotFoundException");
     expect(ErrorBody.parse(JSON.parse(raw)).message).toBe(
-      MESSAGES.SESSION_UNAVAILABLE
+      MESSAGES.SESSION_UNAVAILABLE,
     );
   });
 });

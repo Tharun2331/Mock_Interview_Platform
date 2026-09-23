@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { EvaluationResponse, EvaluationView } from "@repo/shared";
 
+import { Eyebrow } from "@/components/Eyebrow";
 import { PresenceOrb } from "@/components/PresenceOrb";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -41,9 +42,17 @@ const BAND_PRESENTATION: Record<
   ScoreBand,
   { token: string; Icon: typeof CheckCircle2Icon; label: string }
 > = {
-  strong: { token: "var(--score-strong)", Icon: CheckCircle2Icon, label: "Strong" },
+  strong: {
+    token: "var(--score-strong)",
+    Icon: CheckCircle2Icon,
+    label: "Strong",
+  },
   mixed: { token: "var(--score-mixed)", Icon: CircleDotIcon, label: "Mixed" },
-  weak: { token: "var(--score-weak)", Icon: MinusCircleIcon, label: "Needs work" },
+  weak: {
+    token: "var(--score-weak)",
+    Icon: MinusCircleIcon,
+    label: "Needs work",
+  },
 };
 
 function Score({
@@ -115,11 +124,9 @@ function AnswerCard({ item, index }: { item: EvaluationView; index: number }) {
   return (
     <article className="flex flex-col gap-5 rounded-lg border border-border p-5">
       <header className="flex flex-col gap-2">
-        <span className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-ink-faint">
-          {/* Numbered because the answers genuinely are a sequence — this is
-              the order they were asked. */}
-          {String(index + 1).padStart(2, "0")}
-        </span>
+        {/* Numbered because the answers genuinely are a sequence — this is
+            the order they were asked. */}
+        <Eyebrow>{String(index + 1).padStart(2, "0")}</Eyebrow>
         <h3 className="text-base leading-snug text-ink">{item.questionText}</h3>
         {item.interrupted ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-ink-subtle">
@@ -139,22 +146,18 @@ function AnswerCard({ item, index }: { item: EvaluationView; index: number }) {
 
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
-          <span className="text-xs uppercase tracking-wide text-ink-faint">
-            {MESSAGES.RESULT_YOUR_ANSWER}
-          </span>
+          <Eyebrow>{MESSAGES.RESULT_YOUR_ANSWER}</Eyebrow>
           {/* Their own words, so the score has something to sit against. A
-              rating with no visible answer is unreadable as feedback. */}
+                rating with no visible answer is unreadable as feedback. */}
           <p className="text-sm leading-relaxed text-ink-muted">
             {item.transcript.length > 0 ? item.transcript : "—"}
           </p>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-xs uppercase tracking-wide text-ink-faint">
-            {MESSAGES.RESULT_WHAT_WOULD_HELP}
-          </span>
+          <Eyebrow>{MESSAGES.RESULT_WHAT_WOULD_HELP}</Eyebrow>
           {/* The coaching. Framed as what would have helped rather than what
-              was wrong — the candidate is already nervous. */}
+                was wrong — the candidate is already nervous. */}
           <p className="text-sm leading-relaxed text-ink">{item.rationale}</p>
         </div>
       </div>
@@ -222,7 +225,10 @@ export function Result() {
       <Interstitial
         title={MESSAGES.RESULT_MISSING_SESSION}
         action={
-          <Button className="cursor-pointer" onClick={() => void navigate("/start")}>
+          <Button
+            className="cursor-pointer"
+            onClick={() => void navigate("/start")}
+          >
             {MESSAGES.RESULT_BACK}
           </Button>
         }
@@ -248,7 +254,11 @@ export function Result() {
         title={MESSAGES.RESULT_LOAD_FAILED}
         body={page.message}
         action={
-          <Button variant="outline" className="cursor-pointer" onClick={() => void load()}>
+          <Button
+            variant="outline"
+            className="cursor-pointer"
+            onClick={() => void load()}
+          >
             <RefreshCwIcon aria-hidden className="size-4" />
             {MESSAGES.RETRY}
           </Button>
@@ -265,7 +275,10 @@ export function Result() {
         title={MESSAGES.RESULT_FAILED_TITLE}
         body={MESSAGES.RESULT_FAILED_BODY}
         action={
-          <Button className="cursor-pointer" onClick={() => void navigate("/start")}>
+          <Button
+            className="cursor-pointer"
+            onClick={() => void navigate("/start")}
+          >
             {MESSAGES.RESULT_BACK}
           </Button>
         }
@@ -281,7 +294,10 @@ export function Result() {
         title={MESSAGES.RESULT_EMPTY_TITLE}
         body={MESSAGES.RESULT_EMPTY_BODY}
         action={
-          <Button className="cursor-pointer" onClick={() => void navigate("/start")}>
+          <Button
+            className="cursor-pointer"
+            onClick={() => void navigate("/start")}
+          >
             {MESSAGES.RESULT_BACK}
           </Button>
         }
@@ -293,13 +309,15 @@ export function Result() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 p-6 pb-16">
-      <header className="flex flex-col gap-3">
-        <span className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-ink-faint">
-          {MESSAGES.RESULT_TITLE}
-        </span>
-        <h2 className="font-display text-3xl text-ink">
-          {scoring ? MESSAGES.RESULT_SCORING_TITLE : (result.role ?? MESSAGES.RESULT_TITLE)}
-        </h2>
+      <header className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <Eyebrow>{MESSAGES.RESULT_TITLE}</Eyebrow>
+          <h1 className="font-display text-4xl leading-[1.1] text-ink sm:text-5xl">
+            {scoring
+              ? MESSAGES.RESULT_SCORING_TITLE
+              : (result.role ?? MESSAGES.RESULT_TITLE)}
+          </h1>
+        </div>
 
         {scoring ? (
           <div className="flex flex-col gap-2">
@@ -310,7 +328,11 @@ export function Result() {
                 is indistinguishable from a stuck one. */}
             <div className="flex items-center gap-3">
               <Progress
-                value={result.total === 0 ? 0 : (result.completed / result.total) * 100}
+                value={
+                  result.total === 0
+                    ? 0
+                    : (result.completed / result.total) * 100
+                }
                 className="h-1.5 max-w-xs"
               />
               <span className="font-mono text-xs tabular-nums text-ink-subtle">
@@ -325,9 +347,7 @@ export function Result() {
           a summary of the cards below rather than as another card. */}
       {result.averages !== undefined ? (
         <section className="flex flex-col gap-4 rounded-lg border border-border bg-surface-2 p-5">
-          <span className="text-xs uppercase tracking-wide text-ink-faint">
-            {MESSAGES.RESULT_OVERALL}
-          </span>
+          <Eyebrow as="h2">{MESSAGES.RESULT_OVERALL}</Eyebrow>
           <ScoreRow
             correctness={result.averages.correctness}
             clarity={result.averages.clarity}
@@ -359,7 +379,10 @@ export function Result() {
           {/* The one primary button on the page. Reading this round is what the
               candidate came for; deciding what to do about it is the thing
               they leave without unless it is asked for. */}
-          <Button className="cursor-pointer" onClick={() => void navigate("/coach")}>
+          <Button
+            className="cursor-pointer"
+            onClick={() => void navigate("/coach")}
+          >
             {MESSAGES.RESULT_VIEW_COACH}
           </Button>
         </section>
@@ -400,12 +423,14 @@ function Interstitial({
   return (
     <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col items-center justify-center gap-5 p-6 text-center">
       <AlertTriangleIcon aria-hidden className="size-5 text-ink-subtle" />
-      <h2 className="font-display text-2xl text-ink">{title}</h2>
+      <h1 className="font-display text-3xl text-ink">{title}</h1>
       {/* Only when it adds something. `transportMessage` falls back to the same
           copy used as the title when it cannot classify a failure, and a screen
           that states its one sentence twice reads as a bug. */}
       {body !== undefined && body !== title ? (
-        <p className="max-w-md text-sm leading-relaxed text-ink-muted">{body}</p>
+        <p className="max-w-md text-sm leading-relaxed text-ink-muted">
+          {body}
+        </p>
       ) : null}
       {action}
     </div>

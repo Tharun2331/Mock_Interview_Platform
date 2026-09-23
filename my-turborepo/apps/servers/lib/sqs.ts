@@ -70,19 +70,19 @@ export async function enqueueEvaluations(args: {
           Id: `${start + index}`,
           MessageBody: JSON.stringify(job),
         };
-      }
+      },
     );
 
     let response;
     try {
       response = await sqsClient.send(
-        new SendMessageBatchCommand({ QueueUrl, Entries })
+        new SendMessageBatchCommand({ QueueUrl, Entries }),
       );
     } catch (error) {
       throw new ServiceError(
         `${MESSAGES.EVAL_ENQUEUE_FAILED} — ${
           error instanceof Error ? error.message : "unknown"
-        }`
+        }`,
       );
     }
 
@@ -95,7 +95,7 @@ export async function enqueueEvaluations(args: {
       throw new ServiceError(
         `${MESSAGES.EVAL_ENQUEUE_FAILED} — ${failed.length} of ${Entries.length} rejected: ${failed
           .map((entry) => `${entry.Id}:${entry.Code ?? "unknown"}`)
-          .join(", ")}`
+          .join(", ")}`,
       );
     }
 

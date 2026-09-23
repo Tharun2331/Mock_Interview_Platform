@@ -88,7 +88,7 @@ export function SignIn() {
     <AuthLayout>
       <Card className="w-full">
         <CardHeader>
-          <CardTitle className="font-display text-3xl">
+          <CardTitle className="font-display text-3xl font-normal">
             {MESSAGES.SIGNIN_TITLE}
           </CardTitle>
           <CardDescription>{MESSAGES.SIGNIN_DESCRIPTION}</CardDescription>
@@ -129,7 +129,9 @@ export function SignIn() {
                   aria-invalid={!!errors.email}
                   {...register("email")}
                 />
-                <FieldError errors={errors.email ? [errors.email] : undefined} />
+                <FieldError
+                  errors={errors.email ? [errors.email] : undefined}
+                />
               </Field>
 
               <Field data-invalid={!!errors.password}>

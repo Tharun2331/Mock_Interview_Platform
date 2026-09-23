@@ -214,7 +214,7 @@ and let a human run it.
 
 - **No secrets in `.tf` files, `.tfvars`, or variable defaults.** State is
   plaintext; anything passed to Terraform is readable in the state file.
-- Secret *values* are written to SSM Parameter Store out of band. Terraform
+- Secret _values_ are written to SSM Parameter Store out of band. Terraform
   creates the parameter and its IAM access; it does not set the value.
 - Read secrets at runtime from the application, not at plan time via
   `data "aws_ssm_parameter"` — that pulls the value into state.

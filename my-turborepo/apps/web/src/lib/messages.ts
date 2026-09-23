@@ -48,7 +48,8 @@ export const MESSAGES = {
   // Sign-in failures collapse to ONE message on purpose. Distinguishing "no such
   // user" from "wrong password" tells an attacker which emails are registered.
   AUTH_INVALID_CREDENTIALS: "Incorrect email or password.",
-  AUTH_ACCOUNT_EXISTS: "An account with this email already exists. Sign in instead.",
+  AUTH_ACCOUNT_EXISTS:
+    "An account with this email already exists. Sign in instead.",
   AUTH_CODE_INVALID: "That code is incorrect. Check it and try again.",
   AUTH_CODE_EXPIRED: "That code has expired. Request a new one.",
   AUTH_TOO_MANY_ATTEMPTS: "Too many attempts. Wait a moment and try again.",
@@ -98,7 +99,8 @@ export const MESSAGES = {
     "Your email is your account name, so a new address means signing up again. We’ll take you back with it filled in.",
   CONFIRM_EDIT_EMAIL_SUBMIT: "Continue to sign-up",
   CONFIRM_EDIT_EMAIL_CANCEL: "Cancel",
-  CONFIRM_EDIT_EMAIL_UNCHANGED: "That is already the address we sent the code to.",
+  CONFIRM_EDIT_EMAIL_UNCHANGED:
+    "That is already the address we sent the code to.",
 
   // --- Hosted-UI redirect landing ---
   CALLBACK_SIGNING_IN: "Signing you in…",
@@ -113,8 +115,7 @@ export const MESSAGES = {
   FORM_GITHUB_PLACEHOLDER: "https://github.com/your-username",
   FORM_GITHUB_REQUIRED: "Enter your GitHub profile URL to continue.",
   FORM_ROLE_LABEL: "Target role",
-  FORM_ROLE_HINT:
-    "The role you are practising for. Pick one or type your own.",
+  FORM_ROLE_HINT: "The role you are practising for. Pick one or type your own.",
   FORM_ROLE_PLACEHOLDER: "e.g. Backend Engineer",
   FORM_ROLE_REQUIRED: "Enter the role you are practising for.",
   // Matches the button through its whole flow: the thing you asked for is a
@@ -127,7 +128,8 @@ export const MESSAGES = {
   // Only for a real GitHub failure now. This used to be the catch-all for every
   // unmapped error, including the backend being unreachable — which told people
   // to re-check a URL that was perfectly valid.
-  FORM_FAILED: "We could not read that GitHub profile. Check the URL and retry.",
+  FORM_FAILED:
+    "We could not read that GitHub profile. Check the URL and retry.",
   FORM_UNREACHABLE:
     "We could not reach PrepPilot. Check your connection and try again.",
   // Distinct from FORM_UNREACHABLE. Both arrive as an axios error with no
@@ -171,8 +173,12 @@ export const MESSAGES = {
   PLAN_STAT_DURATION: "Duration",
   PLAN_STAT_FOCUSES: "Focuses",
   PLAN_FOCUS_AREAS: "Focus areas",
-  PLAN_SOURCE_GITHUB: "From your repositories",
-  PLAN_SOURCE_RESUME: "From your resume",
+  // Tags, not sentences. These label an evidence line inline, where "From your
+  // repositories" set in a mono tag would outweigh the evidence it introduces.
+  // They replaced a pair of screen-reader-only sentences that existed because
+  // the visible channel was an icon — now one short word serves both readers.
+  PLAN_SOURCE_GITHUB: "GitHub",
+  PLAN_SOURCE_RESUME: "Resume",
   PLAN_BEGIN: "Begin interview",
   PLAN_START_OVER: "Change these inputs",
   // Says plainly that the opening level is a starting point, because the
@@ -252,17 +258,30 @@ export const MESSAGES = {
   // browser while the names do not.
   MIC_BLOCKED:
     "Your microphone is blocked. Allow access from the icon in your browser's address bar, then try again.",
-  MIC_NOT_FOUND:
-    "No microphone was found. Connect one and try again.",
+  MIC_NOT_FOUND: "No microphone was found. Connect one and try again.",
   MIC_IN_USE:
     "Your microphone is in use by another app. Close it and try again.",
   MIC_FAILED: "We could not start your microphone. Try again.",
 
   // --- Interview setup chrome ---
   // An eyebrow naming where the candidate is in a three-step flow. The steps
-  // are real and sequential, which is what earns the numbering.
-  SETUP_EYEBROW: "Step 01 — Your material",
-  PLAN_EYEBROW: "Step 02 — Your plan",
+  // are real and sequential, which is what earns the numbering:
+  //
+  //   01  Your material   /profile   (PROFILE_EYEBROW_FIRST)
+  //   02  The round       /start     (START_EYEBROW)
+  //   03  Live            /interview (INTERVIEW_EYEBROW)
+  //
+  // The plan screen carries no number. It is the same `/start` route as step 02
+  // in its second phase — the *result* of that step, not another one — and
+  // numbering it 02 as well meant a candidate saw "Step 02" twice seconds
+  // apart, which reads as a bug however defensible it is. Numbering it 03 would
+  // be worse: it would push the live interview to 04 and make the count depend
+  // on whether a plan happened to render.
+  //
+  // `SETUP_EYEBROW` used to sit here as a second "Step 01 — Your material". It
+  // belonged to `form.tsx`, which was deleted in Phase 4.5, and was referenced
+  // nowhere.
+  PLAN_EYEBROW: "Your plan",
   INTERVIEW_EYEBROW: "Step 03 — Live",
 
   // --- Feedback ---
@@ -291,7 +310,8 @@ export const MESSAGES = {
   // The three dimensions, with what each one actually measures. A bare
   // "7/10 depth" teaches nothing; the subtitle is what makes it actionable.
   RESULT_DIMENSION_CORRECTNESS: "Correctness",
-  RESULT_DIMENSION_CORRECTNESS_HINT: "Was it true, and did it answer the question asked?",
+  RESULT_DIMENSION_CORRECTNESS_HINT:
+    "Was it true, and did it answer the question asked?",
   RESULT_DIMENSION_CLARITY: "Clarity",
   RESULT_DIMENSION_CLARITY_HINT: "Could a listener follow it?",
   RESULT_DIMENSION_DEPTH: "Depth",
@@ -302,7 +322,8 @@ export const MESSAGES = {
   RESULT_WHAT_WOULD_HELP: "What would have made it stronger",
   // A score on a half-heard question needs its context, or it reads as an
   // unexplained penalty.
-  RESULT_INTERRUPTED: "You answered before the question finished — scored on what you heard",
+  RESULT_INTERRUPTED:
+    "You answered before the question finished — scored on what you heard",
 
   RESULT_EMPTY_TITLE: "This interview has nothing to score",
   RESULT_EMPTY_BODY:
@@ -360,7 +381,12 @@ export const MESSAGES = {
   COACH_DIRECTION_IMPROVING: "Improving",
   COACH_DIRECTION_DECLINING: "Slipping",
   COACH_DIRECTION_FLAT: "Holding steady",
-  COACH_TREND_ALT: (topic: string, rounds: number, first: number, last: number) =>
+  COACH_TREND_ALT: (
+    topic: string,
+    rounds: number,
+    first: number,
+    last: number,
+  ) =>
     `${topic}: ${rounds} interviews, from ${first} out of 10 to ${last} out of 10.`,
   COACH_ROUNDS: (count: number) =>
     count === 1 ? "1 interview" : `${count} interviews`,
@@ -444,6 +470,20 @@ export const MESSAGES = {
   PROFILE_DESCRIPTION_EDIT:
     "Update your material here. Your next interview will be built from whatever is saved on this page.",
 
+  // Section headings and the copy beside them. The page is three groups —
+  // who you are, what the interview reads, and the account itself — and the
+  // two-column shell gives each group's explanation a column of its own
+  // instead of a 12px hint squeezed under an input.
+  PROFILE_SECTION_IDENTITY: "Identity",
+  PROFILE_SECTION_IDENTITY_BODY:
+    "How you are addressed during a round. Your display name is the one the interviewer uses out loud.",
+  PROFILE_SECTION_MATERIAL: "Material",
+  PROFILE_SECTION_MATERIAL_BODY:
+    "What every interview is built from. Personal details are stripped from your resume before it reaches the interviewer, and the original is never shown to it.",
+  PROFILE_SECTION_ACCOUNT: "Account",
+  PROFILE_SECTION_ACCOUNT_BODY:
+    "Deleting removes your resume, your repositories and every interview you have held. It cannot be undone.",
+
   PROFILE_FIRST_LABEL: "First name",
   PROFILE_LAST_LABEL: "Last name",
   PROFILE_USERNAME_LABEL: "Display name",
@@ -470,9 +510,10 @@ export const MESSAGES = {
   // Irreversible and server-side, so the copy names what goes rather than
   // saying "your data". People read "delete your account" as "remove the
   // login" and are genuinely surprised to lose their practice history.
-  DELETE_SECTION_TITLE: "Delete your account",
-  DELETE_SECTION_BODY:
-    "Remove your resume, your interviews and your sign-in. This cannot be undone.",
+  // The section heading and its warning moved to the profile page's Account
+  // rail (PROFILE_SECTION_ACCOUNT / _BODY) when that page became a two-column
+  // settings layout. Keeping them here as well put the same sentence on screen
+  // twice, so they were removed rather than left orphaned.
   DELETE_OPEN: "Delete account",
   DELETE_TITLE: "Delete your account?",
   DELETE_BODY: "This permanently removes:",

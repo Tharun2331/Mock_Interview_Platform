@@ -44,7 +44,4 @@ export const SigninSchema = z.object({
   password: z.string().min(1, "Enter your password."),
 });
 
-
 export type SignInInput = z.infer<typeof SigninSchema>;
-
-

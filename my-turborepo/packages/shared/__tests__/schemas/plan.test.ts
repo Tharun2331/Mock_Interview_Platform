@@ -30,7 +30,8 @@ function validPlan(overrides: Record<string, unknown> = {}): unknown {
     questionMix: { behavioural: 3, technical: 5, roleSpecific: 2 },
     startingDifficulty: "mid",
     targetMinutes: 30,
-    reasoning: "Repos show hands-on distributed-systems work at single-service scope.",
+    reasoning:
+      "Repos show hands-on distributed-systems work at single-service scope.",
     ...overrides,
   };
 }
@@ -44,14 +45,16 @@ describe("PlanResponseSchema", () => {
   // here. Without it this plan describes an interview with no questions.
   it("rejects an all-zero question mix that satisfies every field bound", () => {
     const parsed = PlanResponseSchema.safeParse(
-      validPlan({ questionMix: { behavioural: 0, technical: 0, roleSpecific: 0 } })
+      validPlan({
+        questionMix: { behavioural: 0, technical: 0, roleSpecific: 0 },
+      }),
     );
 
     expect(parsed.success).toBe(false);
     if (!parsed.success) {
-      expect(parsed.error.issues.some((issue) => issue.path[0] === "questionMix")).toBe(
-        true
-      );
+      expect(
+        parsed.error.issues.some((issue) => issue.path[0] === "questionMix"),
+      ).toBe(true);
     }
   });
 
@@ -60,9 +63,13 @@ describe("PlanResponseSchema", () => {
     expect(
       PlanResponseSchema.safeParse(
         validPlan({
-          questionMix: { behavioural: justUnder, technical: 0, roleSpecific: 0 },
-        })
-      ).success
+          questionMix: {
+            behavioural: justUnder,
+            technical: 0,
+            roleSpecific: 0,
+          },
+        }),
+      ).success,
     ).toBe(false);
 
     expect(
@@ -73,8 +80,8 @@ describe("PlanResponseSchema", () => {
             technical: 0,
             roleSpecific: 0,
           },
-        })
-      ).success
+        }),
+      ).success,
     ).toBe(true);
 
     expect(
@@ -85,8 +92,8 @@ describe("PlanResponseSchema", () => {
             technical: 1,
             roleSpecific: 0,
           },
-        })
-      ).success
+        }),
+      ).success,
     ).toBe(false);
   });
 
@@ -99,20 +106,26 @@ describe("PlanResponseSchema", () => {
 
     expect(
       PlanResponseSchema.safeParse(
-        validPlan({ focusAreas: Array(PLAN_LIMITS.MIN_FOCUS_AREAS - 1).fill(area) })
-      ).success
+        validPlan({
+          focusAreas: Array(PLAN_LIMITS.MIN_FOCUS_AREAS - 1).fill(area),
+        }),
+      ).success,
     ).toBe(false);
 
     expect(
       PlanResponseSchema.safeParse(
-        validPlan({ focusAreas: Array(PLAN_LIMITS.MAX_FOCUS_AREAS).fill(area) })
-      ).success
+        validPlan({
+          focusAreas: Array(PLAN_LIMITS.MAX_FOCUS_AREAS).fill(area),
+        }),
+      ).success,
     ).toBe(true);
 
     expect(
       PlanResponseSchema.safeParse(
-        validPlan({ focusAreas: Array(PLAN_LIMITS.MAX_FOCUS_AREAS + 1).fill(area) })
-      ).success
+        validPlan({
+          focusAreas: Array(PLAN_LIMITS.MAX_FOCUS_AREAS + 1).fill(area),
+        }),
+      ).success,
     ).toBe(false);
   });
 
@@ -124,10 +137,14 @@ describe("PlanResponseSchema", () => {
         validPlan({
           focusAreas: [
             { area: "Kafka", evidence: "", source: "github" },
-            { area: "Postgres", evidence: "order-service uses it", source: "github" },
+            {
+              area: "Postgres",
+              evidence: "order-service uses it",
+              source: "github",
+            },
           ],
-        })
-      ).success
+        }),
+      ).success,
     ).toBe(false);
   });
 
@@ -139,31 +156,32 @@ describe("PlanResponseSchema", () => {
             { area: "Kafka", evidence: "order-service", source: "linkedin" },
             { area: "Postgres", evidence: "order-service", source: "github" },
           ],
-        })
-      ).success
+        }),
+      ).success,
     ).toBe(false);
   });
 
   it("enforces the spoken-interview minute budget", () => {
     expect(
       PlanResponseSchema.safeParse(
-        validPlan({ targetMinutes: PLAN_LIMITS.MIN_TARGET_MINUTES - 1 })
-      ).success
+        validPlan({ targetMinutes: PLAN_LIMITS.MIN_TARGET_MINUTES - 1 }),
+      ).success,
     ).toBe(false);
     expect(
       PlanResponseSchema.safeParse(
-        validPlan({ targetMinutes: PLAN_LIMITS.MAX_TARGET_MINUTES + 1 })
-      ).success
+        validPlan({ targetMinutes: PLAN_LIMITS.MAX_TARGET_MINUTES + 1 }),
+      ).success,
     ).toBe(false);
     expect(
-      PlanResponseSchema.safeParse(validPlan({ targetMinutes: 30.5 })).success
+      PlanResponseSchema.safeParse(validPlan({ targetMinutes: 30.5 })).success,
     ).toBe(false);
   });
 
   it("rejects a difficulty outside the enum", () => {
     expect(
-      PlanResponseSchema.safeParse(validPlan({ startingDifficulty: "principal" }))
-        .success
+      PlanResponseSchema.safeParse(
+        validPlan({ startingDifficulty: "principal" }),
+      ).success,
     ).toBe(false);
   });
 });
@@ -200,10 +218,11 @@ describe("PlanRequestSchema", () => {
 
   it("rejects an empty session id or role", () => {
     expect(
-      PlanRequestSchema.safeParse({ sessionId: "", targetRole: "Backend" }).success
+      PlanRequestSchema.safeParse({ sessionId: "", targetRole: "Backend" })
+        .success,
     ).toBe(false);
     expect(
-      PlanRequestSchema.safeParse({ sessionId: "abc", targetRole: "" }).success
+      PlanRequestSchema.safeParse({ sessionId: "abc", targetRole: "" }).success,
     ).toBe(false);
   });
 
@@ -212,7 +231,7 @@ describe("PlanRequestSchema", () => {
       PlanRequestSchema.safeParse({
         sessionId: "abc",
         targetRole: "a".repeat(201),
-      }).success
+      }).success,
     ).toBe(false);
   });
 });
@@ -220,7 +239,9 @@ describe("PlanRequestSchema", () => {
 describe("PlannerInputSchema", () => {
   // A plan built from GitHub alone is worse but valid.
   it("defaults repos to an empty array and allows an absent resume", () => {
-    const parsed = PlannerInputSchema.safeParse({ targetRole: "Backend Engineer" });
+    const parsed = PlannerInputSchema.safeParse({
+      targetRole: "Backend Engineer",
+    });
 
     expect(parsed.success).toBe(true);
     if (parsed.success) {
@@ -234,17 +255,22 @@ describe("PlannerInputSchema", () => {
       PlannerInputSchema.safeParse({
         targetRole: "Backend Engineer",
         resumeText: "a".repeat(PLAN_LIMITS.MAX_RESUME_CHARS + 1),
-      }).success
+      }).success,
     ).toBe(false);
   });
 
   it("rejects more repos than the prompt budget allows", () => {
-    const repo = { description: null, name: "x", fullName: "y/x", starCount: 0 };
+    const repo = {
+      description: null,
+      name: "x",
+      fullName: "y/x",
+      starCount: 0,
+    };
     expect(
       PlannerInputSchema.safeParse({
         targetRole: "Backend Engineer",
         repos: Array(PLAN_LIMITS.MAX_REPOS + 1).fill(repo),
-      }).success
+      }).success,
     ).toBe(false);
   });
 });

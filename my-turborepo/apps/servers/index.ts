@@ -32,7 +32,12 @@ app.use(express.json({ limit: config.jsonBodyLimit }));
 // DynamoDB on one request, which is the most expensive thing an authenticated
 // caller can trigger here.
 app.use("/api/v1/profile", AuthMiddleware, apiRateLimiter, profileRouter);
-app.use("/api/v1/pre-interview", AuthMiddleware, apiRateLimiter, preInterviewRouter);
+app.use(
+  "/api/v1/pre-interview",
+  AuthMiddleware,
+  apiRateLimiter,
+  preInterviewRouter,
+);
 app.use("/api/v1/plan", AuthMiddleware, apiRateLimiter, planRouter);
 // Read paths for a finished interview. Rate limited like the rest, though this
 // one is polled while the worker drains — the limit is per authenticated user

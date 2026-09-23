@@ -28,7 +28,10 @@ import {
 
 function renderFocusAreas(plan: PlanResponse): string {
   return plan.focusAreas
-    .map((focus) => `- ${focus.area} — ${focus.evidence} (from their ${focus.source})`)
+    .map(
+      (focus) =>
+        `- ${focus.area} — ${focus.evidence} (from their ${focus.source})`,
+    )
     .join("\n");
 }
 
@@ -154,20 +157,26 @@ function renderCompanyIntel(intel: CompanyIntel): string[] {
       "The candidate was told this directly. Where it disagrees with anything",
       "below, this is what is true:",
       notes,
-      ""
+      "",
     );
   }
 
   if (intel.style === "practical") {
-    lines.push("Lean practical: what they built and debugged, not what they can recite.");
+    lines.push(
+      "Lean practical: what they built and debugged, not what they can recite.",
+    );
   } else if (intel.style === "theoretical") {
-    lines.push("Lean theoretical: reasoning and fundamentals behind the choices they made.");
+    lines.push(
+      "Lean theoretical: reasoning and fundamentals behind the choices they made.",
+    );
   } else if (intel.style === "mixed") {
     lines.push("Mix practical and theoretical roughly evenly.");
   }
 
   if (intel.focus === "product") {
-    lines.push("Weight toward product work: users, tradeoffs, and what shipped.");
+    lines.push(
+      "Weight toward product work: users, tradeoffs, and what shipped.",
+    );
   } else if (intel.focus === "infrastructure") {
     lines.push("Weight toward systems work: scale, failure, and operability.");
   } else if (intel.focus === "mixed") {
@@ -181,7 +190,7 @@ function renderCompanyIntel(intel: CompanyIntel): string[] {
   if (intel.seniority !== "unknown") {
     lines.push(
       `They interview to a ${intel.seniority} bar. Hold that standard when judging an`,
-      "answer — but keep calibrating difficulty to what you actually hear."
+      "answer — but keep calibrating difficulty to what you actually hear.",
     );
   }
 
@@ -190,7 +199,7 @@ function renderCompanyIntel(intel: CompanyIntel): string[] {
     "This is tone and emphasis inside this one round. It does not add a round, a",
     "whiteboard, or a coding exercise, and it never outranks the requirements",
     "above. Do not mention the company's process aloud.",
-    ""
+    "",
   );
 
   return lines;
@@ -211,7 +220,7 @@ function renderGapBudget(analysis: GapAnalysis): string[] {
       "Spend roughly three questions in five here. The candidate's material does",
       "not evidence these, so this is where the interview earns its keep — and",
       "where they most need to hear what they could not answer.",
-      ...probe.map((item) => `- ${item.requirement} — ${item.evidence}`)
+      ...probe.map((item) => `- ${item.requirement} — ${item.evidence}`),
     );
   }
 
@@ -221,7 +230,7 @@ function renderGapBudget(analysis: GapAnalysis): string[] {
       "Spend roughly two questions in five here, confirming rather than probing.",
       "Their material already evidences these, so ask for the specifics behind",
       "the claim rather than whether it is true.",
-      ...confirm.map((item) => `- ${item.requirement} — ${item.evidence}`)
+      ...confirm.map((item) => `- ${item.requirement} — ${item.evidence}`),
     );
   }
 
@@ -230,7 +239,7 @@ function renderGapBudget(analysis: GapAnalysis): string[] {
     "This is emphasis inside the one round, not a second round and not a script.",
     "Do not read the list aloud and do not tell them how they were bucketed —",
     "it would tell a candidate what the interview thinks of them mid-answer.",
-    ""
+    "",
   );
 
   return lines;
@@ -314,7 +323,7 @@ export type InterviewPromptOptions = {
 
 export function buildInterviewSystemPrompt(
   plan: PlanResponse,
-  options: InterviewPromptOptions = {}
+  options: InterviewPromptOptions = {},
 ): string {
   const targetMinutes = options.targetMinutes ?? plan.targetMinutes;
   const {
@@ -360,7 +369,7 @@ export function buildInterviewSystemPrompt(
     "- Never ask from a script. Generate every question in the moment, grounded",
     "  either in the session brief or in something the candidate just said.",
     "- Open each focus area with a concrete question tied to its evidence line —",
-    "  not \"tell me about X\" in the abstract, but something that could only be",
+    '  not "tell me about X" in the abstract, but something that could only be',
     "  asked of someone who actually built what the evidence describes.",
     "- After every answer, read it and decide before you speak:",
     "  - Confident, specific, technically sound: go a level harder. Press on an",
@@ -395,8 +404,8 @@ export function buildInterviewSystemPrompt(
     '    "..., and how did you ..."  /  "..., and if so, ..."',
     '    "(e.g., X, Y, or Z)"  /  "for example, did you use X or Y"',
     '    "If you could walk me through those N points"',
-    "- Never offer the candidate a menu of possible answers. Asking \"did you use",
-    "  a timeout, a retry, or something else?\" tells them what you expect and",
+    '- Never offer the candidate a menu of possible answers. Asking "did you use',
+    '  a timeout, a retry, or something else?" tells them what you expect and',
     "  turns a real question into multiple choice.",
     "- Ask, then stop talking. No context, caveats or examples after the",
     "  question — they have already started composing an answer.",
@@ -445,7 +454,7 @@ export function buildInterviewSystemPrompt(
     "",
     "ONE QUESTION PER TURN",
     "Exactly one question mark in anything you say. Not two, not a question",
-    "with a second question appended, not \"and how did you decide X?\" tacked",
+    'with a second question appended, not "and how did you decide X?" tacked',
     "onto the end. If you want to know two things, ask the first and wait — the",
     "second is your next turn, and their answer may make it unnecessary.",
     "A compound question is scored as one answer, so a candidate who addresses",
@@ -454,9 +463,9 @@ export function buildInterviewSystemPrompt(
     "room to reach.",
     "",
     "NEVER COMBINE A QUESTION WITH A SIGN-OFF",
-    "A question and a closing remark are different turns. \"...and what security",
+    'A question and a closing remark are different turns. "...and what security',
     "practices do you prioritise? Once you answer I'll wrap up. Thank you for",
-    "your time today\" is three turns spoken as one, and the candidate hears a",
+    'your time today" is three turns spoken as one, and the candidate hears a',
     "goodbye and stops talking. Ask the question, stop, and let them answer.",
     "Thank them only when you are actually closing, in a turn with no question",
     "in it at all.",
@@ -527,7 +536,7 @@ export type LogExchangeInput = z.infer<typeof LogExchangeInputSchema>;
  */
 export function toQuestionType(
   exchangeType: LogExchangeInput["exchangeType"],
-  previous: QuestionType = "technical"
+  previous: QuestionType = "technical",
 ): QuestionType {
   switch (exchangeType) {
     case "behavioural":
@@ -556,7 +565,10 @@ export type EndInterviewInput = z.infer<typeof EndInterviewInputSchema>;
 // because Bedrock has no use for the dialect URI and it is pure input tokens on
 // a prompt that is already long.
 function toToolSchema(schema: z.ZodType): string {
-  const { $schema, ...jsonSchema } = z.toJSONSchema(schema) as Record<string, unknown>;
+  const { $schema, ...jsonSchema } = z.toJSONSchema(schema) as Record<
+    string,
+    unknown
+  >;
   return JSON.stringify(jsonSchema);
 }
 

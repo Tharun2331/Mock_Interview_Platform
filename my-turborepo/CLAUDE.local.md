@@ -1,4 +1,5 @@
 # PrepPilot AI — Phase Tracker
+
 > **Tracked and pushed, despite the `.local` name.** It is committed to `dev`
 > and public on GitHub — deliberately, as a record of how the build progressed.
 > The `.claude.local.md` entry in `.gitignore` is a different file and does not
@@ -19,31 +20,31 @@ from all of them.
 Evaluator and Coach. Three more arrived with the job-description work and are
 now load-bearing:
 
-| Agent | Runs | Produces |
-|-------|------|----------|
-| Planner | once per session | focus areas, question mix, difficulty, length |
-| Gap | once per session, if a posting was pasted | each requirement bucketed strong/weak/none |
-| Company Intel | once per session, if a company was named too | interview style, focus, seniority bar |
-| Mock Interview | the live Sonic stream | the interview itself |
-| Evaluator | once per ANSWER | correctness/clarity/depth + a rewrite of weak answers |
-| Session Summarizer | once per completed session | what the whole round showed, per category |
-| Coach | on GET /coach | trends per topic, two-track roadmap |
+| Agent              | Runs                                         | Produces                                              |
+| ------------------ | -------------------------------------------- | ----------------------------------------------------- |
+| Planner            | once per session                             | focus areas, question mix, difficulty, length         |
+| Gap                | once per session, if a posting was pasted    | each requirement bucketed strong/weak/none            |
+| Company Intel      | once per session, if a company was named too | interview style, focus, seniority bar                 |
+| Mock Interview     | the live Sonic stream                        | the interview itself                                  |
+| Evaluator          | once per ANSWER                              | correctness/clarity/depth + a rewrite of weak answers |
+| Session Summarizer | once per completed session                   | what the whole round showed, per category             |
+| Coach              | on GET /coach                                | trends per topic, two-track roadmap                   |
 
 **The one thing that has never been deployed is the application.** There is no
 ECS, so nothing runs outside a laptop. That is the whole of what remains.
 
-| Phase | Status |
-|-------|--------|
-| 1 — Foundation + Planner | ✅ Complete |
-| 2 — Resume + Auth + Database | ✅ Complete |
-| 3 — WebSocket + Speech | ✅ Complete (Redis dropped — see below) |
-| 4 — Sonic end-to-end | ✅ Complete |
-| 4.5 — Profile, PII redaction, erasure | ✅ Complete |
-| 5 — Evaluator + SQS | ✅ Complete — the `ecs` module moved to Phase 7, where it belongs |
-| 5.5 — Gap + Company Intel agents | ✅ Complete — not in the original plan |
-| 6 — Coach | ✅ Complete **without RAG**, deliberately — see the phase below |
-| 7 — Deploy + CI/CD + Observability | 🔸 ~40% — CI gates every PR; no ECS, no CD, no alarms, prod empty |
-| Testing (cross-cutting) | 🟢 1107 tests: 857 backend, 153 web, 97 shared. Backend 93.1% funcs / 95.3% lines (source only) |
+| Phase                                 | Status                                                                                          |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| 1 — Foundation + Planner              | ✅ Complete                                                                                     |
+| 2 — Resume + Auth + Database          | ✅ Complete                                                                                     |
+| 3 — WebSocket + Speech                | ✅ Complete (Redis dropped — see below)                                                         |
+| 4 — Sonic end-to-end                  | ✅ Complete                                                                                     |
+| 4.5 — Profile, PII redaction, erasure | ✅ Complete                                                                                     |
+| 5 — Evaluator + SQS                   | ✅ Complete — the `ecs` module moved to Phase 7, where it belongs                               |
+| 5.5 — Gap + Company Intel agents      | ✅ Complete — not in the original plan                                                          |
+| 6 — Coach                             | ✅ Complete **without RAG**, deliberately — see the phase below                                 |
+| 7 — Deploy + CI/CD + Observability    | 🔸 ~40% — CI gates every PR; no ECS, no CD, no alarms, prod empty                               |
+| Testing (cross-cutting)               | 🟢 1107 tests: 857 backend, 153 web, 97 shared. Backend 93.1% funcs / 95.3% lines (source only) |
 
 **Next highest-leverage step: the `ecs` module.** It is the only thing between
 this and a URL somebody else can open, and it blocks every other Phase 7 item.
@@ -63,6 +64,7 @@ the Redis drop is finally recorded in
 ## Phase 1 — Foundation + Planner Agent ✅
 
 ### Backend
+
 - [x] Turborepo monorepo scaffold (`apps/servers`, `apps/web`, `packages/shared`)
 - [x] `packages/shared` — auth, `preInterview`, `plan` and `session` schemas
 - [x] `lib/bedrock.ts` — `BedrockRuntimeClient` singleton + `converseText()` fallback helper
@@ -72,11 +74,13 @@ the Redis drop is finally recorded in
 - [x] `routes/preInterview.ts`, `routes/plan.ts`, clean `index.ts`
 
 ### Frontend
+
 - [x] React 19 + BrowserRouter, `/form` `/interview` `/results`
 - [x] shadcn/ui component set
 - [x] `form.tsx` — full submit → plan → interview flow
 
 ### Terraform
+
 - [x] `environments/global/` — S3 state bucket, versioning, `prepilot-terraform` IAM user, S3 backend
 - [x] `modules/iam/` — server role + Bedrock invoke policy
 - [x] `environments/dev/` — applied
@@ -86,6 +90,7 @@ the Redis drop is finally recorded in
 ## Phase 2 — Resume + Auth + Database ✅
 
 ### Backend
+
 - [x] JWT validation middleware — `lib/cognitoAuth.ts`, `aws-jwt-verify` against Cognito JWKS
 - [x] Resume upload + parse — `unpdf`; **`multer` deliberately not used**, `lib/multipart.ts` bridges Express's `IncomingMessage` to a web `Request` so Bun's own `formData()` parses it
 - [x] `lib/s3.ts` — `S3Client` singleton, `putResume()` / `deleteResume()`.
@@ -102,6 +107,7 @@ the Redis drop is finally recorded in
       profile and (until 4.5 removed its need) the pre-interview route
 
 ### Terraform
+
 - [x] `modules/cognito/` — user pool, app client, Google IdP, `auth.tharunsekar.xyz`
 - [x] `modules/dynamodb/` — `prepilot-sessions-<env>`, PAY_PER_REQUEST, PITR and deletion-protection flags, optional TTL. Wired into `environments/dev/main.tf`
 - [x] `modules/iam/` extended — DynamoDB (`GetItem`/`PutItem`/`UpdateItem`/`Query`/`BatchGetItem`/`BatchWriteItem`), S3 read/write, and `bedrock:InvokeModelWithBidirectionalStream`
@@ -114,6 +120,7 @@ table. A GSI would have been a second copy of the same access pattern with
 eventual consistency attached.
 
 ### Frontend
+
 - [x] Amplify + Cognito + Google OAuth, `signup` / `signin` / `confirm` / `callback`
 - [x] `lib/auth.tsx` `AuthProvider`, `RequireAuth` / `RedirectIfAuthenticated` guards
 - [x] `lib/api.ts` — authenticated axios client, access token per request
@@ -143,6 +150,7 @@ remaining options. **Decide before scaling past one task.**
 ## Phase 3 — WebSocket + Nova Sonic ✅
 
 ### Backend
+
 - [x] `ws` wired to the HTTP server's `upgrade` event — the only place a
       handshake can be authenticated before a socket exists
 - [x] `routes/interview.ts` (~530 lines) — connection handler, event union,
@@ -157,6 +165,7 @@ remaining options. **Decide before scaling past one task.**
 - [x] Streams closed on disconnect, heartbeat ping/pong, idle timeout
 
 ### Frontend
+
 - [x] `lib/audio/capture.ts` — AudioWorklet, 16 kHz 16-bit PCM mono
 - [x] `lib/audio/playback.ts` — scheduled 24 kHz LPCM playback
 - [x] `hooks/useInterview.ts` — the ten-state union, barge-in, level metering
@@ -164,12 +173,13 @@ remaining options. **Decide before scaling past one task.**
 - [x] `lib/interviewSocket.ts`
 
 ### Terraform
+
 - [x] `modules/vpc/` — VPC, public + private subnets, NAT, route tables, SGs
 - [x] ~~ElastiCache Redis~~ — **dropped, see below**
 
 **Redis is out of the stack**, and as of 2026-09-09 that is finally written
 down: [ADR-0006](docs/adr/0006-drop-redis-dynamodb-alone.md) supersedes ADR-0003,
-which had sat marked *Accepted* for a month while describing infrastructure that
+which had sat marked _Accepted_ for a month while describing infrastructure that
 was never provisioned. `data-model.md` has been corrected too.
 
 The remaining consequence is the rate-limiter carry-forward above.
@@ -179,6 +189,7 @@ The remaining consequence is the rate-limiter carry-forward above.
 ## Phase 4 — Sonic end-to-end ✅
 
 ### Backend
+
 - [x] System prompt built from the candidate's plan, resume and repos
 - [x] Transcript persisted per exchange via `recordAnswer` (`ANSWER#<qId>`),
       `finishInterview` on close
@@ -191,6 +202,7 @@ The remaining consequence is the rate-limiter carry-forward above.
 - [x] Two-stage wrap-up nudges (T-3min, T-1min)
 
 ### Frontend
+
 - [x] Buffered Web Audio playback (no `<audio>` blob)
 - [x] `result.tsx` — real, and reachable from the interview's end screen. Polls
       `GET /sessions/:id/evaluation` and shows per-answer scores as they land,
@@ -204,6 +216,7 @@ Candidate material moved from session-scoped to user-scoped. Reasoning in
 [ADR-0007](docs/adr/0007-user-scoped-redacted-candidate-material.md).
 
 ### Data model
+
 - [x] `USER#<uid>/PROFILE` — names, `resumeKey`, redacted `resumeText`, `repos`,
       `profileVersion`, `status`
 - [x] `USER#<uid>/PLAN` — one cached plan per user, stamped with the
@@ -216,6 +229,7 @@ Candidate material moved from session-scoped to user-scoped. Reasoning in
       writing the attribute, so it did nothing
 
 ### Backend
+
 - [x] `lib/profile.ts` — profile and plan-cache access, `ADD profileVersion :one`
       so concurrent uploads cannot both read 3 and write 4
 - [x] `lib/redact.ts` — Comprehend `DetectPiiEntities` + one phone pattern,
@@ -232,6 +246,7 @@ Candidate material moved from session-scoped to user-scoped. Reasoning in
       `profileVersion`, not the profile's current one
 
 ### Frontend
+
 - [x] `pages/profile.tsx` — onboarding and edit in one screen
 - [x] `pages/startInterview.tsx` — role selection, `/start`
 - [x] `components/layout/RequireProfile.tsx` — keys on the server's `complete`
@@ -242,11 +257,13 @@ Candidate material moved from session-scoped to user-scoped. Reasoning in
       `Response`
 
 ### Terraform (applied 2026-09-09)
+
 - [x] `comprehend:DetectPiiEntities`, `s3:DeleteObject`, `dynamodb:DeleteItem`,
       `cognito-idp:AdminDeleteUser` scoped to the pool ARN
 - [x] `audio/` prefix, its lifecycle rule and `audio_retention_days` removed
 
 ### Not done
+
 - [x] ~~The onboarding guard is untested~~ — `RequireProfile.test.tsx`, pass 2.
       The **upload state machine** in `ResumeField` is still untested
 - [ ] `POST /profile/resume` re-scrapes GitHub on every resume upload, even
@@ -273,6 +290,7 @@ enforces it afterwards. One round trip, on the one agent that runs once per
 question.
 
 ### Backend ✅
+
 - [x] `agents/evaluator.ts` — correctness / clarity / depth (0–10), via `converseText`
 - [x] `lib/sqs.ts` — `SQSClient` singleton, `enqueueEvaluations` batched at 10
 - [x] On interview end: enqueue each recorded answer to the eval queue
@@ -322,6 +340,7 @@ for a second generation. `VISIBILITY_TIMEOUT_SECONDS` (120) must stay in sync
 with the `sqs` module's `visibility_timeout_seconds`; nothing enforces it.
 
 ### Terraform — applied to dev 2026-09-10
+
 - [x] `sqs` module — `prepilot-eval-<env>`, DLQ, `maxReceiveCount: 3`,
       SSE, 14-day DLQ retention, redrive-allow-policy naming the one source
 - [x] **Second IAM role for the worker** — `prepilot-evaluator-worker-role-<env>`
@@ -353,11 +372,12 @@ billable Sonic stream.
 Cost: SQS is effectively free — per-request billing against a 1M/month free
 tier, ~17 requests per interview, no per-hour charge. The `ecs` module is where
 real money starts.
+
 - ~~Audio bucket prefix~~ — **decided against.** Audio is never persisted; it
-      streams through the WebSocket and is discarded, and the transcript is the
-      durable record. The `audio/` prefix, its lifecycle rule and the `audioKey`
-      attribute were all removed. `durationMs` + transcript length is a usable
-      pacing signal for the Evaluator without storing a byte of voice
+  streams through the WebSocket and is discarded, and the transcript is the
+  durable record. The `audio/` prefix, its lifecycle rule and the `audioKey`
+  attribute were all removed. `durationMs` + transcript length is a usable
+  pacing signal for the Evaluator without storing a byte of voice
 
 ---
 
@@ -452,12 +472,12 @@ delete issued by whatever changed the data. Push invalidation has a failure this
 codebase has already been bitten by — if the write succeeds and the delete does
 not, the cache is stale forever with nothing that will ever look again.
 
-| Stamp field | Catches |
-|-------------|---------|
-| `rowCount` | a session finished, or an old one aged out via TTL |
-| `latestCompletedAt` | one row expiring while another lands — count unchanged |
-| `summarisedCount` | the summarizer attaching a narrative to a row the report was already built without. Neither field above moves |
-| `version` | a deploy changed the prompt. The one trigger with no signal in the data |
+| Stamp field         | Catches                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `rowCount`          | a session finished, or an old one aged out via TTL                                                            |
+| `latestCompletedAt` | one row expiring while another lands — count unchanged                                                        |
+| `summarisedCount`   | the summarizer attaching a narrative to a row the report was already built without. Neither field above moves |
+| `version`           | a deploy changed the prompt. The one trigger with no signal in the data                                       |
 
 `runCoachAgent` takes optional `cachedProse` and returns
 `{ report, prose, generated }`. It does not know what a cache is — the route
@@ -469,6 +489,7 @@ transient Bedrock failure into a permanently numbers-only report.
 `deleteProfileItems` names this SK explicitly. The USER partition has no prefix
 sweep, so a cache added without a line there outlives the account it belongs to
 — `__tests__/lib/erasure.test.ts` now asserts that, which nothing did before.
+
 - [ ] No link from the results page to `/coach`
 
 ---
@@ -476,6 +497,7 @@ sweep, so a cache added without a line there outlives the account it belongs to
 ## Phase 7 — Deploy + CI/CD + Observability 🔸
 
 ### Terraform
+
 - [x] `modules/` — `cloudfront`, `cognito`, `dynamodb`, `iam`, `s3`, `sqs`,
       `ssm`, `vpc`. All applied to dev
 - [x] ~~`ssm` carries the Tavily key; the server role has `ssm:GetParameter`
@@ -492,6 +514,7 @@ sweep, so a cache added without a line there outlives the account it belongs to
 - [ ] `environments/prod/` — still five empty files (0 bytes each)
 
 ### CI/CD
+
 - [x] **`.github/workflows/ci.yml` exists** and runs `check-types` and `test` on
       every PR and every push to `dev` and `master`. It caught the `mock.module`
       leak that three local passes missed — see the rule below
@@ -508,7 +531,7 @@ This is where the bill begins, and two of the three charges run whether or not
 anybody uses the app:
 
 - **NAT Gateway** — ~$32/month per AZ plus data processing. With no ECS tasks it
-  is currently pure waste. Decide one NAT or one per AZ *deliberately*; a second
+  is currently pure waste. Decide one NAT or one per AZ _deliberately_; a second
   is the classic way this doubles silently
 - **ALB** — same shape, smaller number
 - **ECS Fargate** — per vCPU-hour. Scaling dev to zero between sessions is the
@@ -537,7 +560,7 @@ tests under Node while production runs Bun. `bun:test` implements the Jest API
 (`describe`/`it`/`expect`), so the tests read as Jest tests and stay portable if
 that tradeoff ever changes.
 
-Jest was checked properly rather than dismissed. It is *viable*: `apps/servers`
+Jest was checked properly rather than dismissed. It is _viable_: `apps/servers`
 uses no Bun APIs at all, and `lib/multipart.ts` is pure web standard
 (`Readable.toWeb`, `new Request`, `formData()` — all Node 18+). The Bun surface
 is `apps/web/src/index.ts` (`serve`) and `build.ts` (`Bun.Glob`/`Bun.build`),
@@ -545,6 +568,7 @@ neither of which is unit-testable. So the decision was fidelity and config cost,
 not capability.
 
 Conventions:
+
 - `__tests__/` mirroring source at each workspace root
 - `packages/shared/tsconfig.json` carries `include: ["src", "__tests__"]` and
   `types: ["bun"]` so tests type-check; `apps/servers` includes them by default
@@ -557,6 +581,7 @@ Conventions:
 - [x] `apps/servers/__tests__/lib/` — `exchangeBuffer`, `errors`
 
 The cases worth knowing are the ones encoding a real defect or near-miss:
+
 - `extractGithubUsername` rejects `evil.com/<user>`, `github.com@evil.com`,
   `github.com.evil.com` and percent-encoded traversal — the boundary between
   user input and an outbound request path
@@ -592,6 +617,7 @@ closed, but three things were needed to get there and none are obvious:
    input matcher after it. Reversed, the catch-all swallows everything.
 
 Test-only infrastructure, no production code changed:
+
 - `bunfig.toml` in both apps with a `preload`. `lib/config.ts` (both sides)
   reads env at module scope and throws, so a router or component cannot even be
   imported without it. Deliberately preferred to making config lazy —
@@ -610,6 +636,7 @@ Test-only infrastructure, no production code changed:
 - [x] `httpErrors.test.ts` (24) — field vs global failure scoping
 
 Cases worth knowing:
+
 - `GET /profile` never serialises `resumeText` or `resumeKey` — asserted
   against the raw response body, not the parsed object
 - A DynamoDB failure returns generic copy; the response is asserted NOT to
@@ -647,18 +674,19 @@ unconditionally, plus nonsense AWS credentials and
 - [x] `agents/planner.test.ts` (24) — JSON extraction and prompt building
 
 Cases worth knowing:
+
 - **All three items in `createSession` share one `expiresAt`.** Derived
   per-item, a session written across an hour would have its parts disappear
   across an hour, leaving a transcript whose META is already gone
 - `loadPlannerInputs` finds items by **sort key, not position** — BatchGetItem
   returns matches unordered and omits misses
 - `deleteKeyChunk` retries `UnprocessedItems` and gives up after 3, because
-  BatchWriteItem reports throttling as a *successful* response that wrote nothing
+  BatchWriteItem reports throttling as a _successful_ response that wrote nothing
 - `attachPlan` and `startInterview` distinguish wrong-owner from wrong-status
   via `ReturnValuesOnConditionCheckFailure`, and still give a non-owner the
   same answer as a missing session — no enumeration oracle
 - The plan cache compares the **session's** `profileVersion`, not the profile's
-  current one, and stamps the cache with the version read *before* the Bedrock
+  current one, and stamps the cache with the version read _before_ the Bedrock
   call — a profile saved mid-generation must not mark the plan fresh
 - A cache read failure degrades to a miss; a cache write failure still returns
   the plan. Neither fails a request the Planner can serve
@@ -675,7 +703,7 @@ Cases worth knowing:
 
 A real plan is 15–40 minutes by schema, so exercising the wrap-up nudges and
 the hard stop costs a 40-minute sitting per attempt. Two env vars in
-`apps/servers/.env` shorten the *running session* without touching the plan:
+`apps/servers/.env` shorten the _running session_ without touching the plan:
 
 ```
 INTERVIEW_TEST_MODE=true
@@ -783,6 +811,7 @@ the suite while appearing to cover them. It delegates every non-Tavily request
 to the real fetch, so the route tests driving live Express servers are untouched.
 
 Cases worth knowing:
+
 - **`aliasedProjection` aliases every name, not the ones that look reserved.**
   `depth` took down the completion query; `role` took down the history page the
   moment a projection was added. aws-sdk-client-mock does NOT validate against
@@ -842,13 +871,13 @@ The correction, measured on the same tree: what Pass 5 recorded as 93.57% funcs
 
 Source-only coverage **89.48 → 93.11% funcs, 90.28 → 95.33% lines**.
 
-| File | Before | After |
-|------|--------|-------|
-| `lib/resume.ts` | 0 / 13.3 | **100 / 100** |
-| `lib/s3.ts` | 80 / 45.1 | **100 / 97.8** |
-| `routes/profile.ts` | 100 / 68.3 | **100 / 94.1** |
-| `lib/profile.ts` | 95.7 / 74.1 | **100 / 97.6** |
-| `worker.ts` | 28.6 / 31.2 | **80 / 91.0** |
+| File                | Before      | After          |
+| ------------------- | ----------- | -------------- |
+| `lib/resume.ts`     | 0 / 13.3    | **100 / 100**  |
+| `lib/s3.ts`         | 80 / 45.1   | **100 / 97.8** |
+| `routes/profile.ts` | 100 / 68.3  | **100 / 94.1** |
+| `lib/profile.ts`    | 95.7 / 74.1 | **100 / 97.6** |
+| `worker.ts`         | 28.6 / 31.2 | **80 / 91.0**  |
 
 - `__tests__/workerLoop.test.ts` (19) — `runWorker`, and the delete-vs-redeliver
   decision inside `processMessage`. `worker.test.ts` already covered
@@ -865,6 +894,7 @@ to pdf.js, so covering it needs a document with a real catalog, page tree,
 content stream and a correct xref.
 
 Cases worth knowing:
+
 - **The archived object must be over 100 bytes.** pdf.js TRANSFERS its input
   buffer, so without the copy in `lib/resume.ts` the route stores a zero-byte
   object in S3 and reports success. Asserted at both layers — the unit test
@@ -882,6 +912,7 @@ Cases worth knowing:
 
 **Three fixture bugs, all found by failing tests and none in production code.**
 Worth recording because each cost a debugging round and each will recur:
+
 1. The worker asks `shouldStop()` once per while-pass AND again before every
    message, so a naive call counter trips mid-batch and abandons the messages
    the test is about. Drive it from the receive count instead
@@ -908,6 +939,7 @@ the test's own `mockClient` captured — it registers no module mock.
   real `http.Server`, over the real ExchangeBuffer and tool dispatcher
 
 Cases worth knowing:
+
 - **A renewal must not report a close.** The old stream is closed BEFORE
   `renewing` drops; reversed, its `onClose` fires while the flag is already
   false and the route treats a routine handover as the interview ending,
@@ -964,11 +996,11 @@ only as `TimeoutError: Stream timed out because of no activity` — and was
 demoted to last so the chain could recover by itself. It has. Re-probed with
 `bun scripts/modelProbe.ts`:
 
-| Model | 2026-09-03 | 2026-09-09 |
-|-------|-----------|-----------|
-| `mistral.ministral-3-8b-instruct` | 30s timeout | **362ms** |
-| `us.meta.llama4-scout-17b-instruct-v1:0` | 280ms | 354ms |
-| `qwen.qwen3-coder-30b-a3b-v1:0` | 478ms | **8796ms** |
+| Model                                    | 2026-09-03  | 2026-09-09 |
+| ---------------------------------------- | ----------- | ---------- |
+| `mistral.ministral-3-8b-instruct`        | 30s timeout | **362ms**  |
+| `us.meta.llama4-scout-17b-instruct-v1:0` | 280ms       | 354ms      |
+| `qwen.qwen3-coder-30b-a3b-v1:0`          | 478ms       | **8796ms** |
 
 Ministral is primary again, which restores CLAUDE.md's locked decision and
 matches the order `bedrock_text_model_ids` in the IAM module already documented
@@ -988,21 +1020,21 @@ the cheap outcome.
 
 ## Known issues / open items
 
-| Issue | File | Priority |
-|-------|------|----------|
-| No CD. `ci.yml` gates PRs but nothing deploys | `.github/workflows/` | High — Phase 7 |
-| `GET /coach` regenerates per request; one Ministral call per page load | `apps/servers/routes/coach.ts` | Medium — cache on `USER#<uid>/COACH` |
-| No link from the results page to `/coach` | `apps/web/src/pages/result.tsx` | Low |
-| Editing `packages/shared` does not invalidate the dev server's cached module | Bun dev server | Medium — restart after any shared edit |
-| Rate limiter is in-memory; per-task budget | `apps/servers/lib/rateLimit.ts` | Medium — options in ADR-0006 |
-| Router mount-time wiring (helmet/cors/auth/rate-limit) is untested — `index.ts` calls `listen()` at module scope, so tests mount routers directly | `apps/servers/index.ts` | Medium — would need `app` exported and the listen guarded |
-| The resume upload state machine in the UI is still untested | `apps/web/src/components/ResumeField.tsx` | Medium — the frontend skill asks for it |
-| `AdminDeleteUser` retry path (`UserNotFoundException`) never exercised for real | `apps/servers/lib/cognitoAdmin.ts` | Low — covered by construction |
-| GitHub scraping uses axios; `@octokit/rest` installed, unused | `apps/servers/lib/github.ts` | Medium |
-| `turbo.json` `build.outputs` is `.next/**` | `turbo.json` | Low |
-| `packages/ui/` unused; app uses its own `components/ui/` | `packages/ui/` | Low — delete |
-| `/api/hello` demo routes still present | `apps/web/src/index.ts` | Low — delete |
-| `environments/prod/` — five empty files | `infra/terraform/environments/prod/` | Low — Phase 7 |
+| Issue                                                                                                                                             | File                                      | Priority                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- | --------------------------------------------------------- |
+| No CD. `ci.yml` gates PRs but nothing deploys                                                                                                     | `.github/workflows/`                      | High — Phase 7                                            |
+| `GET /coach` regenerates per request; one Ministral call per page load                                                                            | `apps/servers/routes/coach.ts`            | Medium — cache on `USER#<uid>/COACH`                      |
+| No link from the results page to `/coach`                                                                                                         | `apps/web/src/pages/result.tsx`           | Low                                                       |
+| Editing `packages/shared` does not invalidate the dev server's cached module                                                                      | Bun dev server                            | Medium — restart after any shared edit                    |
+| Rate limiter is in-memory; per-task budget                                                                                                        | `apps/servers/lib/rateLimit.ts`           | Medium — options in ADR-0006                              |
+| Router mount-time wiring (helmet/cors/auth/rate-limit) is untested — `index.ts` calls `listen()` at module scope, so tests mount routers directly | `apps/servers/index.ts`                   | Medium — would need `app` exported and the listen guarded |
+| The resume upload state machine in the UI is still untested                                                                                       | `apps/web/src/components/ResumeField.tsx` | Medium — the frontend skill asks for it                   |
+| `AdminDeleteUser` retry path (`UserNotFoundException`) never exercised for real                                                                   | `apps/servers/lib/cognitoAdmin.ts`        | Low — covered by construction                             |
+| GitHub scraping uses axios; `@octokit/rest` installed, unused                                                                                     | `apps/servers/lib/github.ts`              | Medium                                                    |
+| `turbo.json` `build.outputs` is `.next/**`                                                                                                        | `turbo.json`                              | Low                                                       |
+| `packages/ui/` unused; app uses its own `components/ui/`                                                                                          | `packages/ui/`                            | Low — delete                                              |
+| `/api/hello` demo routes still present                                                                                                            | `apps/web/src/index.ts`                   | Low — delete                                              |
+| `environments/prod/` — five empty files                                                                                                           | `infra/terraform/environments/prod/`      | Low — Phase 7                                             |
 
 **Resolved since 2026-08-19:** Form.tsx navigation · `apps/servers` `start`
 script · `check-types` coverage · DynamoDB module and session persistence ·

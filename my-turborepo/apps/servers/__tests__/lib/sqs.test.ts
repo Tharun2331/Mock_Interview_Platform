@@ -13,8 +13,10 @@ function ids(count: number): string[] {
 }
 
 function entriesOf(callIndex: number) {
-  return sqs.commandCalls(SendMessageBatchCommand)[callIndex]?.args[0].input
-    .Entries ?? [];
+  return (
+    sqs.commandCalls(SendMessageBatchCommand)[callIndex]?.args[0].input
+      .Entries ?? []
+  );
 }
 
 beforeEach(() => sqs.reset());
@@ -138,7 +140,7 @@ describe("enqueueEvaluations", () => {
     });
 
     await expect(
-      enqueueEvaluations({ sessionId: "session-1", questionIds: ids(2) })
+      enqueueEvaluations({ sessionId: "session-1", questionIds: ids(2) }),
     ).rejects.toThrow(ServiceError);
   });
 
@@ -151,7 +153,7 @@ describe("enqueueEvaluations", () => {
     });
 
     await expect(
-      enqueueEvaluations({ sessionId: "session-1", questionIds: ids(2) })
+      enqueueEvaluations({ sessionId: "session-1", questionIds: ids(2) }),
     ).rejects.toThrow(/2 of 2 rejected/);
   });
 
@@ -159,7 +161,7 @@ describe("enqueueEvaluations", () => {
     sqs.on(SendMessageBatchCommand).rejects(new Error("throttled"));
 
     await expect(
-      enqueueEvaluations({ sessionId: "session-1", questionIds: ids(1) })
+      enqueueEvaluations({ sessionId: "session-1", questionIds: ids(1) }),
     ).rejects.toThrow(ServiceError);
   });
 
@@ -171,7 +173,7 @@ describe("enqueueEvaluations", () => {
     await enqueueEvaluations({ sessionId: "session-1", questionIds: ["q1"] });
 
     expect(
-      sqs.commandCalls(SendMessageBatchCommand)[0]?.args[0].input.QueueUrl
+      sqs.commandCalls(SendMessageBatchCommand)[0]?.args[0].input.QueueUrl,
     ).toBe(requireEvalQueue());
   });
 });

@@ -26,7 +26,7 @@ describe("key builders", () => {
   });
 
   // The USER# partition holds PROFILE and PLAN alongside session refs, and a
-// history Query must filter on this prefix rather than read the partition.
+  // history Query must filter on this prefix rather than read the partition.
   it("produce a session ref SK that the history filter matches", () => {
     expect(sessionSk("abc").startsWith(KEY_PREFIX.SESSION)).toBe(true);
   });
@@ -102,14 +102,21 @@ describe("SessionMetaSchema", () => {
   it("accepts an absent expiresAt but rejects a non-positive one", () => {
     expect(SessionMetaSchema.safeParse(meta()).success).toBe(true);
     expect(
-      SessionMetaSchema.safeParse(meta({ expiresAt: 1_800_000_000 })).success
+      SessionMetaSchema.safeParse(meta({ expiresAt: 1_800_000_000 })).success,
     ).toBe(true);
-    expect(SessionMetaSchema.safeParse(meta({ expiresAt: 0 })).success).toBe(false);
-    expect(SessionMetaSchema.safeParse(meta({ expiresAt: -1 })).success).toBe(false);
+    expect(SessionMetaSchema.safeParse(meta({ expiresAt: 0 })).success).toBe(
+      false,
+    );
+    expect(SessionMetaSchema.safeParse(meta({ expiresAt: -1 })).success).toBe(
+      false,
+    );
   });
 
   it("rejects a status outside the lifecycle enum", () => {
-    const parsed = SessionMetaSchema.safeParse({ ...meta(), status: "cancelled" });
+    const parsed = SessionMetaSchema.safeParse({
+      ...meta(),
+      status: "cancelled",
+    });
     expect(parsed.success).toBe(false);
   });
 
@@ -129,9 +136,9 @@ describe("SessionMetaSchema", () => {
   // Sessions created before profiles existed have no version, and an absent one
   // simply never matches a cached plan — a replan, not a crash.
   it("allows an absent profileVersion", () => {
-    expect(SessionMetaSchema.safeParse(meta({ profileVersion: undefined })).success).toBe(
-      true
-    );
+    expect(
+      SessionMetaSchema.safeParse(meta({ profileVersion: undefined })).success,
+    ).toBe(true);
   });
 });
 
@@ -164,20 +171,21 @@ describe("SessionAnswerSchema", () => {
   });
 
   it("accepts an empty transcript — silence is a scoreable answer", () => {
-    expect(SessionAnswerSchema.safeParse(answer({ transcript: "" })).success).toBe(
-      true
-    );
+    expect(
+      SessionAnswerSchema.safeParse(answer({ transcript: "" })).success,
+    ).toBe(true);
   });
 
   it("rejects a negative duration", () => {
-    expect(SessionAnswerSchema.safeParse(answer({ durationMs: -1 })).success).toBe(
-      false
-    );
+    expect(
+      SessionAnswerSchema.safeParse(answer({ durationMs: -1 })).success,
+    ).toBe(false);
   });
 
   it("rejects a question type outside the enum", () => {
     expect(
-      SessionAnswerSchema.safeParse(answer({ questionType: "system_design" })).success
+      SessionAnswerSchema.safeParse(answer({ questionType: "system_design" }))
+        .success,
     ).toBe(false);
   });
 });
@@ -200,23 +208,23 @@ describe("SessionEvaluationSchema", () => {
     expect(SessionEvaluationSchema.safeParse(evaluation()).success).toBe(true);
     expect(
       SessionEvaluationSchema.safeParse(
-        evaluation({ correctness: 0, clarity: 0, depth: 0 })
-      ).success
+        evaluation({ correctness: 0, clarity: 0, depth: 0 }),
+      ).success,
     ).toBe(true);
     expect(
       SessionEvaluationSchema.safeParse(
-        evaluation({ correctness: 10, clarity: 10, depth: 10 })
-      ).success
+        evaluation({ correctness: 10, clarity: 10, depth: 10 }),
+      ).success,
     ).toBe(true);
   });
 
   it("rejects scores outside the band", () => {
-    expect(SessionEvaluationSchema.safeParse(evaluation({ depth: 11 })).success).toBe(
-      false
-    );
-    expect(SessionEvaluationSchema.safeParse(evaluation({ depth: -1 })).success).toBe(
-      false
-    );
+    expect(
+      SessionEvaluationSchema.safeParse(evaluation({ depth: 11 })).success,
+    ).toBe(false);
+    expect(
+      SessionEvaluationSchema.safeParse(evaluation({ depth: -1 })).success,
+    ).toBe(false);
   });
 
   // Scores from two different models are not strictly comparable, and without
@@ -230,8 +238,8 @@ describe("SessionEvaluationSchema", () => {
   });
 
   it("requires a non-empty rationale", () => {
-    expect(SessionEvaluationSchema.safeParse(evaluation({ rationale: "" })).success).toBe(
-      false
-    );
+    expect(
+      SessionEvaluationSchema.safeParse(evaluation({ rationale: "" })).success,
+    ).toBe(false);
   });
 });

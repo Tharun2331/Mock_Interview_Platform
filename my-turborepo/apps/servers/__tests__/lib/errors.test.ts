@@ -30,12 +30,15 @@ const ERROR_CLASSES = [
 ] as const;
 
 describe("error classes", () => {
-  it.each(ERROR_CLASSES)("%s is a real Error carrying its message", (_name, Cls) => {
-    const error = new Cls("something went wrong");
+  it.each(ERROR_CLASSES)(
+    "%s is a real Error carrying its message",
+    (_name, Cls) => {
+      const error = new Cls("something went wrong");
 
-    expect(error).toBeInstanceOf(Error);
-    expect(error.message).toBe("something went wrong");
-  });
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toBe("something went wrong");
+    },
+  );
 
   // The `name` is what appears in logs, and several of these are otherwise
   // structurally identical — without it a log line cannot tell them apart.
@@ -66,22 +69,26 @@ describe("instanceof dispatch", () => {
   // oracle for whether a session id is real.
   it("does not confuse a missing session with a wrong-state one", () => {
     expect(new SessionAccessError("no such session")).not.toBeInstanceOf(
-      SessionStateError
+      SessionStateError,
     );
     expect(new SessionStateError("already started")).not.toBeInstanceOf(
-      SessionAccessError
+      SessionAccessError,
     );
   });
 
   // The fail-closed path: the response has to say the resume was rejected,
   // not that it was saved.
   it("does not confuse a redaction failure with a parse failure", () => {
-    expect(new RedactionError("comprehend down")).not.toBeInstanceOf(ResumeParseError);
+    expect(new RedactionError("comprehend down")).not.toBeInstanceOf(
+      ResumeParseError,
+    );
     expect(new ResumeParseError("no text")).not.toBeInstanceOf(RedactionError);
   });
 
   it("does not confuse an erasing profile with a missing session", () => {
-    expect(new ProfileStateError("deleting")).not.toBeInstanceOf(SessionAccessError);
+    expect(new ProfileStateError("deleting")).not.toBeInstanceOf(
+      SessionAccessError,
+    );
   });
 
   it("catches each class as a plain Error for the outer middleware", () => {
@@ -104,7 +111,9 @@ describe("BedrockError", () => {
       "qwen.qwen3-coder-30b-a3b-v1:0",
     ];
 
-    expect(new BedrockError("all models failed", chain).modelsTried).toEqual(chain);
+    expect(new BedrockError("all models failed", chain).modelsTried).toEqual(
+      chain,
+    );
   });
 
   it("is still a BedrockError when only one model was tried", () => {

@@ -60,13 +60,18 @@ function renderAt(path = `/results/${SESSION_ID}`) {
         <Route path="/start" element={<p>start page</p>} />
         <Route path="/coach" element={<p>coach page</p>} />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
 beforeEach(() => {
   fetchEvaluation.mockClear();
-  nextResult = { status: "evaluating", completed: 0, total: 2, evaluations: [] };
+  nextResult = {
+    status: "evaluating",
+    completed: 0,
+    total: 2,
+    evaluations: [],
+  };
 });
 
 afterEach(cleanup);
@@ -84,7 +89,7 @@ describe("while answers are still being scored", () => {
     renderAt();
 
     await waitFor(() =>
-      expect(screen.getByText(MESSAGES.RESULT_PROGRESS(2, 6))).toBeDefined()
+      expect(screen.getByText(MESSAGES.RESULT_PROGRESS(2, 6))).toBeDefined(),
     );
   });
 
@@ -100,8 +105,10 @@ describe("while answers are still being scored", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText("How do you choose between a queue and a direct call?")
-      ).toBeDefined()
+        screen.getByText(
+          "How do you choose between a queue and a direct call?",
+        ),
+      ).toBeDefined(),
     );
   });
 
@@ -134,7 +141,7 @@ describe("once the round is finished", () => {
     renderAt();
 
     await waitFor(() =>
-      expect(screen.getByText(MESSAGES.RESULT_OVERALL)).toBeDefined()
+      expect(screen.getByText(MESSAGES.RESULT_OVERALL)).toBeDefined(),
     );
   });
 
@@ -157,8 +164,8 @@ describe("once the round is finished", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText("Queues are good when you want things asynchronous.")
-      ).toBeDefined()
+        screen.getByText("Queues are good when you want things asynchronous."),
+      ).toBeDefined(),
     );
   });
 
@@ -169,8 +176,10 @@ describe("once the round is finished", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText("Naming one queue you have run in production would help.")
-      ).toBeDefined()
+        screen.getByText(
+          "Naming one queue you have run in production would help.",
+        ),
+      ).toBeDefined(),
     );
   });
 
@@ -180,7 +189,9 @@ describe("once the round is finished", () => {
     nextResult = finished;
     const { container } = renderAt();
 
-    await waitFor(() => expect(screen.getByText(MESSAGES.RESULT_OVERALL)).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByText(MESSAGES.RESULT_OVERALL)).toBeDefined(),
+    );
     expect(container.textContent).not.toContain("ministral");
     expect(container.textContent).not.toContain("Bedrock");
     expect(container.textContent).not.toContain("Sonic");
@@ -189,11 +200,14 @@ describe("once the round is finished", () => {
   // A score on a half-heard question needs its context, or it reads as an
   // unexplained penalty.
   it("says when an answer was given over an interrupted question", async () => {
-    nextResult = { ...finished, evaluations: [evaluation({ interrupted: true })] };
+    nextResult = {
+      ...finished,
+      evaluations: [evaluation({ interrupted: true })],
+    };
     renderAt();
 
     await waitFor(() =>
-      expect(screen.getByText(MESSAGES.RESULT_INTERRUPTED)).toBeDefined()
+      expect(screen.getByText(MESSAGES.RESULT_INTERRUPTED)).toBeDefined(),
     );
   });
 
@@ -201,7 +215,9 @@ describe("once the round is finished", () => {
     nextResult = finished;
     renderAt();
 
-    await waitFor(() => expect(screen.getByText(MESSAGES.RESULT_OVERALL)).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByText(MESSAGES.RESULT_OVERALL)).toBeDefined(),
+    );
     expect(screen.queryByText(MESSAGES.RESULT_INTERRUPTED)).toBeNull();
   });
 });
@@ -209,11 +225,16 @@ describe("once the round is finished", () => {
 // These are primary screens, not edge cases.
 describe("states with nothing to show", () => {
   it("explains an interview that recorded nothing, rather than spinning", async () => {
-    nextResult = { status: "complete", completed: 0, total: 0, evaluations: [] };
+    nextResult = {
+      status: "complete",
+      completed: 0,
+      total: 0,
+      evaluations: [],
+    };
     renderAt();
 
     await waitFor(() =>
-      expect(screen.getByText(MESSAGES.RESULT_EMPTY_TITLE)).toBeDefined()
+      expect(screen.getByText(MESSAGES.RESULT_EMPTY_TITLE)).toBeDefined(),
     );
   });
 
@@ -222,7 +243,7 @@ describe("states with nothing to show", () => {
     renderAt();
 
     await waitFor(() =>
-      expect(screen.getByText(MESSAGES.RESULT_FAILED_TITLE)).toBeDefined()
+      expect(screen.getByText(MESSAGES.RESULT_FAILED_TITLE)).toBeDefined(),
     );
   });
 
@@ -231,10 +252,10 @@ describe("states with nothing to show", () => {
     renderAt();
 
     await waitFor(() =>
-      expect(screen.getByText(MESSAGES.RESULT_LOAD_FAILED)).toBeDefined()
+      expect(screen.getByText(MESSAGES.RESULT_LOAD_FAILED)).toBeDefined(),
     );
     expect(
-      screen.getByRole("button", { name: new RegExp(MESSAGES.RETRY, "i") })
+      screen.getByRole("button", { name: new RegExp(MESSAGES.RETRY, "i") }),
     ).toBeDefined();
   });
 
@@ -253,7 +274,7 @@ describe("states with nothing to show", () => {
     renderAt("/results");
 
     await waitFor(() =>
-      expect(screen.getByText(MESSAGES.RESULT_MISSING_SESSION)).toBeDefined()
+      expect(screen.getByText(MESSAGES.RESULT_MISSING_SESSION)).toBeDefined(),
     );
     expect(fetchEvaluation).not.toHaveBeenCalled();
   });
@@ -298,7 +319,7 @@ describe("the link to the coaching roadmap", () => {
 
     await waitFor(() => expect(fetchEvaluation).toHaveBeenCalled());
     expect(
-      screen.queryByRole("button", { name: MESSAGES.RESULT_VIEW_COACH })
+      screen.queryByRole("button", { name: MESSAGES.RESULT_VIEW_COACH }),
     ).toBeNull();
   });
 });

@@ -72,7 +72,7 @@ describe("the history key layout", () => {
 
     expect(summary.startsWith(KEY_PREFIX.SESSION)).toBe(false);
     expect(`${KEY_PREFIX.SESSION}01J`.startsWith(KEY_PREFIX.USER_SUMMARY)).toBe(
-      false
+      false,
     );
     // And it sorts after the refs, so neither Query's range touches the other.
     expect(summary > `${KEY_PREFIX.SESSION}￿`).toBe(true);
@@ -83,7 +83,7 @@ describe("the history key layout", () => {
   it("is a different key from the per-session rollup", () => {
     expect(SORT_KEY.EVAL_SUMMARY).toBe("SUMMARY");
     expect(userSummarySk("2026-09-12T10:00:00.000Z")).not.toBe(
-      SORT_KEY.EVAL_SUMMARY
+      SORT_KEY.EVAL_SUMMARY,
     );
   });
 });
@@ -97,7 +97,7 @@ describe("listSessionHistory", () => {
     const input = ddb.commandCalls(QueryCommand)[0]?.args[0].input;
     expect(input?.ExpressionAttributeValues?.[":pk"]).toBe(userPk(USER_ID));
     expect(input?.ExpressionAttributeValues?.[":prefix"]).toBe(
-      KEY_PREFIX.USER_SUMMARY
+      KEY_PREFIX.USER_SUMMARY,
     );
     // Reversing the scan is the whole of the ordering logic.
     expect(input?.ScanIndexForward).toBe(false);
@@ -106,8 +106,14 @@ describe("listSessionHistory", () => {
   it("returns one card per finished interview", async () => {
     ddb.on(QueryCommand).resolves({
       Items: [
-        summaryRow({ sessionId: "s2", completedAt: "2026-09-12T10:00:00.000Z" }),
-        summaryRow({ sessionId: "s1", completedAt: "2026-09-11T10:00:00.000Z" }),
+        summaryRow({
+          sessionId: "s2",
+          completedAt: "2026-09-12T10:00:00.000Z",
+        }),
+        summaryRow({
+          sessionId: "s1",
+          completedAt: "2026-09-11T10:00:00.000Z",
+        }),
       ],
     });
 
@@ -182,7 +188,7 @@ describe("deleteSessionSummaries", () => {
     await deleteSessionSummaries({ userId: USER_ID });
 
     expect(
-      ddb.commandCalls(QueryCommand)[0]?.args[0].input.ProjectionExpression
+      ddb.commandCalls(QueryCommand)[0]?.args[0].input.ProjectionExpression,
     ).toBe("PK, SK");
   });
 
@@ -198,7 +204,10 @@ describe("overallScore", () => {
   it("is the mean of the three dimensions, to one decimal", () => {
     expect(overallScore({ correctness: 6, clarity: 7, depth: 5 })).toBe(6);
     expect(overallScore({ correctness: 7, clarity: 6, depth: 5 })).toBe(6);
-    expect(overallScore({ correctness: 6, clarity: 6, depth: 7 })).toBeCloseTo(6.3, 5);
+    expect(overallScore({ correctness: 6, clarity: 6, depth: 7 })).toBeCloseTo(
+      6.3,
+      5,
+    );
   });
 
   it("stays inside the 0-10 band at both ends", () => {
@@ -209,10 +218,12 @@ describe("overallScore", () => {
 
 describe("extremeDimensions", () => {
   it("names the highest and lowest scoring dimension", () => {
-    expect(extremeDimensions({ correctness: 4, clarity: 8, depth: 6 })).toEqual({
-      topStrength: "clarity",
-      topWeakness: "correctness",
-    });
+    expect(extremeDimensions({ correctness: 4, clarity: 8, depth: 6 })).toEqual(
+      {
+        topStrength: "clarity",
+        topWeakness: "correctness",
+      },
+    );
   });
 
   // Picking max and min independently would name the SAME dimension as both

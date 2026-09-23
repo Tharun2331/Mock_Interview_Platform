@@ -1,35 +1,42 @@
 export const MESSAGES = {
-  INVALID_BODY:         "Invalid request body",
-  MISSING_GITHUB_USER:  "Could not extract GitHub username from URL",
-  GITHUB_FETCH_FAILED:  "Failed to fetch GitHub repos",
-  INVALID_PLAN_BODY:    "Invalid request body",
+  INVALID_BODY: "Invalid request body",
+  MISSING_GITHUB_USER: "Could not extract GitHub username from URL",
+  GITHUB_FETCH_FAILED: "Failed to fetch GitHub repos",
+  INVALID_PLAN_BODY: "Invalid request body",
   UNAUTHORIZED_MISSING_TOKEN: "Unauthorized: missing or malformed token",
   UNAUTHORIZED_INVALID_TOKEN: "Unauthorized: invalid token",
-  RATE_LIMITED:         "Too many requests. Wait a moment and try again.",
+  RATE_LIMITED: "Too many requests. Wait a moment and try again.",
   // Client-facing, and safe to be specific: the value came from them and the
   // fix is theirs. Names the shape rather than saying "invalid".
-  INVALID_GITHUB_URL:   "Enter a GitHub profile URL, like https://github.com/your-username.",
-  PLAN_FAILED:          "Could not generate an interview plan. Try again.",
+  INVALID_GITHUB_URL:
+    "Enter a GitHub profile URL, like https://github.com/your-username.",
+  PLAN_FAILED: "Could not generate an interview plan. Try again.",
 
-  UPLOAD_NOT_A_FILE:    "No resume file was included in the upload.",
-  RESUME_REQUIRED:      "A resume PDF is required to start an interview.",
-  EXPECTED_MULTIPART:   "Send this request as multipart/form-data with a resume file.",
-  UPLOAD_NOT_PDF:       "That file is not a PDF. Upload your resume as a PDF.",
-  UPLOAD_MALFORMED:     "The upload could not be read. Try selecting the file again.",
+  UPLOAD_NOT_A_FILE: "No resume file was included in the upload.",
+  RESUME_REQUIRED: "A resume PDF is required to start an interview.",
+  EXPECTED_MULTIPART:
+    "Send this request as multipart/form-data with a resume file.",
+  UPLOAD_NOT_PDF: "That file is not a PDF. Upload your resume as a PDF.",
+  UPLOAD_MALFORMED:
+    "The upload could not be read. Try selecting the file again.",
   // Log-facing: names the fix for whoever is reading server output.
-  UPLOAD_BUCKET_UNSET:  "UPLOADS_BUCKET is not set. Run `terraform output uploads_bucket_id` and set it in apps/servers/.env.",
-  SESSIONS_TABLE_UNSET: "SESSIONS_TABLE is not set. Run `terraform output sessions_table_name` and set it in apps/servers/.env.",
-  EVAL_QUEUE_UNSET:     "EVAL_QUEUE_URL is not set. Run `terraform output eval_queue_url` and set it in apps/servers/.env.",
-  EVAL_ENQUEUE_FAILED:  "Could not queue answers for scoring.",
-  EVAL_WRITE_FAILED:    "Could not store the evaluation.",
-  GAP_WRITE_FAILED:     "Could not store the gap analysis.",
-  GAP_UNAVAILABLE:      "We could not analyse that job description right now. This is on our side — try again shortly.",
-  INVALID_GAP_BODY:     "Provide a session id and a job description.",
-  INTEL_WRITE_FAILED:   "Could not store what we found out about the company.",
-  INVALID_INTEL_BODY:   "Provide a session id and a company name.",
+  UPLOAD_BUCKET_UNSET:
+    "UPLOADS_BUCKET is not set. Run `terraform output uploads_bucket_id` and set it in apps/servers/.env.",
+  SESSIONS_TABLE_UNSET:
+    "SESSIONS_TABLE is not set. Run `terraform output sessions_table_name` and set it in apps/servers/.env.",
+  EVAL_QUEUE_UNSET:
+    "EVAL_QUEUE_URL is not set. Run `terraform output eval_queue_url` and set it in apps/servers/.env.",
+  EVAL_ENQUEUE_FAILED: "Could not queue answers for scoring.",
+  EVAL_WRITE_FAILED: "Could not store the evaluation.",
+  GAP_WRITE_FAILED: "Could not store the gap analysis.",
+  GAP_UNAVAILABLE:
+    "We could not analyse that job description right now. This is on our side — try again shortly.",
+  INVALID_GAP_BODY: "Provide a session id and a job description.",
+  INTEL_WRITE_FAILED: "Could not store what we found out about the company.",
+  INVALID_INTEL_BODY: "Provide a session id and a company name.",
   EVAL_SUMMARY_WRITE_FAILED: "Could not open the evaluation rollup.",
-  EVAL_SUMMARY_READ_FAILED:  "Could not read the evaluation rollup.",
-  INVALID_SESSION_ID:        "That interview session could not be found.",
+  EVAL_SUMMARY_READ_FAILED: "Could not read the evaluation rollup.",
+  INVALID_SESSION_ID: "That interview session could not be found.",
   // Both log-facing. A stored item that no longer matches its schema is a
   // deploy-skew bug, not something a candidate can act on — the client sees the
   // route's generic failure copy instead.
@@ -37,27 +44,33 @@ export const MESSAGES = {
   SESSION_ITEM_INVALID: "A stored session item did not match its schema.",
   SESSION_CREATE_FAILED: "Could not create the interview session.",
   SESSION_UPDATE_FAILED: "Could not update the interview session.",
-  SESSION_READ_FAILED:   "Could not read the interview session.",
+  SESSION_READ_FAILED: "Could not read the interview session.",
   // Client-facing. Re-planning after the interview starts would change the
   // focus areas and question count out from under answers already recorded.
-  SESSION_ALREADY_STARTED: "This interview has already started, so its plan can no longer be changed.",
+  SESSION_ALREADY_STARTED:
+    "This interview has already started, so its plan can no longer be changed.",
   // Covers both "no plan yet" and "already running in another tab". Both mean
   // the same thing to the candidate: this session cannot be started here.
-  SESSION_NOT_INTERVIEWABLE: "This interview cannot be started. It may already be running in another tab, or its plan is not ready yet.",
+  SESSION_NOT_INTERVIEWABLE:
+    "This interview cannot be started. It may already be running in another tab, or its plan is not ready yet.",
   // Client-facing. Detail stays in the log: a stream error can carry AWS
   // internals, and mid-interview is the worst possible moment to show them.
-  INTERVIEW_FAILED:     "The interview connection failed. Your progress so far is saved.",
+  INTERVIEW_FAILED:
+    "The interview connection failed. Your progress so far is saved.",
   // Not user-facing: sent to the model to make it take the first turn. Written
   // as a stage direction rather than as the candidate talking, so the model
   // greets them instead of replying to a greeting that never happened.
-  INTERVIEW_KICKOFF:    "[The candidate has joined and their microphone is live. Greet them and begin.]",
+  INTERVIEW_KICKOFF:
+    "[The candidate has joined and their microphone is live. Greet them and begin.]",
   // Also not user-facing. Sent as the planned end approaches so the interview
   // lands rather than being cut off — the hard stop follows regardless.
-  INTERVIEW_WRAP_UP:    "[Time is nearly up. Ask one final question, then close the interview warmly and call endInterview.]",
+  INTERVIEW_WRAP_UP:
+    "[Time is nearly up. Ask one final question, then close the interview warmly and call endInterview.]",
   // The second nudge, sent a minute out. Deliberately leaves no room for another
   // question: by this point the first nudge has already been ignored once, and
   // repeating it in the same words invites the same outcome.
-  INTERVIEW_FINAL_CALL: "[Time is up. Do not ask anything else. Thank the candidate in one sentence, then call endInterview on this turn.]",
+  INTERVIEW_FINAL_CALL:
+    "[Time is up. Do not ask anything else. Thank the candidate in one sentence, then call endInterview on this turn.]",
   // The third and last attempt, sent the moment the clock reaches zero.
   //
   // There used to be nothing here, and the gap was visible: the candidate's
@@ -68,22 +81,24 @@ export const MESSAGES = {
   // Worded differently again, for the reason FINAL_CALL is worded differently
   // from WRAP_UP: two nudges have already been ignored by this point, and
   // repeating them in the same words invites the same outcome.
-  INTERVIEW_TIME_EXPIRED: "[The clock has reached zero and the candidate can see it. Stop talking about the current topic. Say one short closing sentence and call endInterview on this turn — the session is cut off in moments either way.]",
+  INTERVIEW_TIME_EXPIRED:
+    "[The clock has reached zero and the candidate can see it. Stop talking about the current topic. Say one short closing sentence and call endInterview on this turn — the session is cut off in moments either way.]",
   // Client-facing. Covers both "no such session" and "not yours" — see
   // SessionAccessError for why those are not distinguished.
-  SESSION_NOT_FOUND:    "That interview session could not be found.",
+  SESSION_NOT_FOUND: "That interview session could not be found.",
   // Client-facing counterpart to SESSION_CREATE_FAILED. The candidate's resume
   // uploaded fine; the record of it did not save.
-  SESSION_UNAVAILABLE:  "We could not start your session right now. This is on our side — try again shortly.",
+  SESSION_UNAVAILABLE:
+    "We could not start your session right now. This is on our side — try again shortly.",
   // The genuine catch-all. Says nothing about what the candidate sent, because
   // by definition we do not know — anything that named a specific cause here
   // would be a guess, and the last one sent people to re-check a valid URL.
-  UNEXPECTED_FAILED:    "Something went wrong on our side. Try again shortly.",
+  UNEXPECTED_FAILED: "Something went wrong on our side. Try again shortly.",
   // Log-facing, same reasoning as their SESSION_ counterparts: a storage
   // failure is a deploy or dependency problem, not something a candidate can
   // act on. Routes map these to PROFILE_UNAVAILABLE.
-  PROFILE_READ_FAILED:  "Could not read the candidate profile.",
-  PROFILE_SAVE_FAILED:  "Could not save the candidate profile.",
+  PROFILE_READ_FAILED: "Could not read the candidate profile.",
+  PROFILE_SAVE_FAILED: "Could not save the candidate profile.",
   PROFILE_DELETE_FAILED: "Could not delete the candidate profile.",
   RESUME_DELETE_FAILED: "Could not delete the stored resume.",
   COGNITO_DELETE_FAILED: "Could not delete the Cognito user.",
@@ -91,10 +106,12 @@ export const MESSAGES = {
   // Distinct from SESSION_DELETE_FAILED: the calls succeeded but DynamoDB
   // handed items back unprocessed until the retries ran out. The profile keeps
   // its `deleting` marker, so re-running the erasure finishes the job.
-  SESSION_DELETE_INCOMPLETE: "Session data was only partly deleted — retry the erasure.",
+  SESSION_DELETE_INCOMPLETE:
+    "Session data was only partly deleted — retry the erasure.",
   // Client-facing. Erasure is resumable by design, so the honest instruction is
   // to try again rather than to contact anyone.
-  ACCOUNT_DELETE_FAILED: "We could not finish deleting your account. Some data may remain — try again shortly.",
+  ACCOUNT_DELETE_FAILED:
+    "We could not finish deleting your account. Some data may remain — try again shortly.",
   PLAN_CACHE_READ_FAILED: "Could not read the cached interview plan.",
   PLAN_CACHE_SAVE_FAILED: "Could not cache the interview plan.",
   COACH_CACHE_READ_FAILED: "Could not read the cached coaching report.",
@@ -102,28 +119,38 @@ export const MESSAGES = {
   // Log-facing. Redaction failing closed means the upload fails: storing text
   // that only the deterministic pass had seen would put names and addresses in
   // DynamoDB with nothing downstream able to tell.
-  REDACTION_FAILED:     "Could not scan the resume for personal information.",
-  REDACTION_INPUT_TOO_LARGE: "Resume text exceeds the PII scan limit — PLAN_LIMITS.MAX_RESUME_CHARS and REDACTION.MAX_BYTES have drifted apart.",
+  REDACTION_FAILED: "Could not scan the resume for personal information.",
+  REDACTION_INPUT_TOO_LARGE:
+    "Resume text exceeds the PII scan limit — PLAN_LIMITS.MAX_RESUME_CHARS and REDACTION.MAX_BYTES have drifted apart.",
   // Client-facing. Says what failed without implying their file was wrong.
-  REDACTION_UNAVAILABLE: "We could not process your resume right now. This is on our side — try again shortly.",
+  REDACTION_UNAVAILABLE:
+    "We could not process your resume right now. This is on our side — try again shortly.",
   // Client-facing. Reached when a session is started before onboarding is
   // finished — the client guard should have caught it, so this is a backstop
   // and names the missing step rather than saying "invalid".
-  PROFILE_INCOMPLETE:   "Add your resume to your profile before starting an interview.",
+  PROFILE_INCOMPLETE:
+    "Add your resume to your profile before starting an interview.",
   // Client-facing.
-  PROFILE_UNAVAILABLE:  "We could not save your profile right now. This is on our side — try again shortly.",
+  PROFILE_UNAVAILABLE:
+    "We could not save your profile right now. This is on our side — try again shortly.",
   // Client-facing. Reached only between an erasure request and the sweep that
   // completes it, so it says the account is going rather than that it is broken.
-  PROFILE_DELETING:     "This account is being deleted and can no longer be changed.",
+  PROFILE_DELETING:
+    "This account is being deleted and can no longer be changed.",
   // Client-facing counterpart. Says it is our problem, not their file's.
-  UPLOAD_UNAVAILABLE:   "We could not store your resume right now. This is on our side — try again shortly, or continue without it.",
-  UPLOAD_STORE_FAILED:  "Could not store the resume. Try again.",
-  RESUME_PARSE_FAILED:  "That PDF could not be read. It may be corrupt or password-protected.",
+  UPLOAD_UNAVAILABLE:
+    "We could not store your resume right now. This is on our side — try again shortly, or continue without it.",
+  UPLOAD_STORE_FAILED: "Could not store the resume. Try again.",
+  RESUME_PARSE_FAILED:
+    "That PDF could not be read. It may be corrupt or password-protected.",
 } as const;
 
 // States the limit in the same breath as the violation, so the user knows what
 // to do rather than just that something was wrong.
-export const uploadTooLarge = (actualBytes: number, maxBytes: number): string => {
+export const uploadTooLarge = (
+  actualBytes: number,
+  maxBytes: number,
+): string => {
   const mb = (bytes: number): string => (bytes / (1024 * 1024)).toFixed(1);
   return `That file is ${mb(actualBytes)} MB. The limit is ${mb(maxBytes)} MB.`;
 };

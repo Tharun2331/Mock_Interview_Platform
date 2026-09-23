@@ -129,7 +129,7 @@ export function Confirm() {
     <AuthLayout>
       <Card className="w-full">
         <CardHeader>
-          <CardTitle className="font-display text-3xl">
+          <CardTitle className="font-display text-3xl font-normal">
             {isEditingEmail
               ? MESSAGES.CONFIRM_EDIT_EMAIL_TITLE
               : MESSAGES.CONFIRM_TITLE}
@@ -203,7 +203,9 @@ export function Confirm() {
                     aria-invalid={!!errors.code}
                     {...register("code")}
                   />
-                  <FieldError errors={errors.code ? [errors.code] : undefined} />
+                  <FieldError
+                    errors={errors.code ? [errors.code] : undefined}
+                  />
                 </Field>
               </FieldGroup>
             </CardContent>

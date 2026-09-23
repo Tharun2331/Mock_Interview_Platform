@@ -28,7 +28,7 @@ const requirePublicEnv = (key: string, value: string | undefined): string => {
   if (!value) {
     throw new Error(
       `Missing required build-time variable: ${key}. ` +
-        `Set it before running the build — see apps/web/build.ts.`
+        `Set it before running the build — see apps/web/build.ts.`,
     );
   }
   return value;
@@ -38,11 +38,11 @@ export const COGNITO = {
   region: requirePublicEnv("BUN_PUBLIC_REGION", process.env.BUN_PUBLIC_REGION),
   userPoolId: requirePublicEnv(
     "BUN_PUBLIC_COGNITO_USER_POOL_ID",
-    process.env.BUN_PUBLIC_COGNITO_USER_POOL_ID
+    process.env.BUN_PUBLIC_COGNITO_USER_POOL_ID,
   ),
   userPoolClientId: requirePublicEnv(
     "BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID",
-    process.env.BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID
+    process.env.BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID,
   ),
   oauth: {
     domain: "auth.tharunsekar.xyz",

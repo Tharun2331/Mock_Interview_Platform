@@ -37,7 +37,6 @@ export function errorMessage(error: unknown, fallback: string): string {
 // user IS authenticated, so callers should proceed instead of showing an error.
 export function isAlreadyAuthenticated(error: unknown): boolean {
   return (
-    error instanceof Error &&
-    error.name === "UserAlreadyAuthenticatedException"
+    error instanceof Error && error.name === "UserAlreadyAuthenticatedException"
   );
 }

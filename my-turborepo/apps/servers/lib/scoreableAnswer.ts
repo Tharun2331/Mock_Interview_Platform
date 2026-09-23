@@ -75,12 +75,14 @@ const COURTESY_TAILS = [
 const COURTESY_PATTERN = new RegExp(
   `^(ok|okay|alright|sure|yeah|yes|no)?\\s*` +
     `(thank you|thanks|thankyou|cheers)\\s*` +
-    `((${COURTESY_TAILS})\\s*)*$`
+    `((${COURTESY_TAILS})\\s*)*$`,
 );
 
 // A farewell with no thanks in it at all — "have a good one", "you too".
 // Separate from the pattern above because that one requires the thanks.
-const FAREWELL_PATTERN = new RegExp(`^(ok|okay|alright|sure)?\\s*(${COURTESY_TAILS})$`);
+const FAREWELL_PATTERN = new RegExp(
+  `^(ok|okay|alright|sure)?\\s*(${COURTESY_TAILS})$`,
+);
 
 // Asking about the session itself rather than answering the question.
 //
@@ -165,8 +167,7 @@ const OPENER_WORDS = new Set([
 export type SkipReason = "courtesy" | "clarification" | "opener" | "meta";
 
 export type ScoreableVerdict =
-  | { scoreable: true }
-  | { scoreable: false; reason: SkipReason };
+  { scoreable: true } | { scoreable: false; reason: SkipReason };
 
 export function classifyAnswer(transcript: string): ScoreableVerdict {
   const text = normalise(transcript);

@@ -86,20 +86,22 @@ export async function loadEvaluationJob(args: {
             ConsistentRead: true,
           },
         },
-      })
+      }),
     );
   } catch (error) {
     throw new ServiceError(
       `${MESSAGES.SESSION_READ_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 
   // BatchGetItem returns matches unordered and omits misses, so items are found
   // by sort key rather than by position.
   const items = response.Responses?.[TableName] ?? [];
-  const answerItem = items.find((item) => item.SK === answerSk(args.questionId));
+  const answerItem = items.find(
+    (item) => item.SK === answerSk(args.questionId),
+  );
   const metaItem = items.find((item) => item.SK === SORT_KEY.META);
   const existing = items.find((item) => item.SK === evalSk(args.questionId));
 
@@ -118,7 +120,7 @@ export async function loadEvaluationJob(args: {
 // answers worth scoring even if its META is older than the plan attribute.
 function toEvaluatorInput(
   answer: SessionAnswer,
-  meta: SessionMeta
+  meta: SessionMeta,
 ): EvaluatorInput {
   return {
     questionText: answer.questionText,
@@ -165,13 +167,13 @@ export async function loadSessionEvaluations(args: {
             // decides when the Coach fires.
           },
         },
-      })
+      }),
     );
   } catch (error) {
     throw new ServiceError(
       `${MESSAGES.SESSION_READ_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 
@@ -201,7 +203,7 @@ export async function loadSessionEvaluations(args: {
   ]);
 
   const answerById = new Map(
-    answers.map((item) => [item.questionId, item] as const)
+    answers.map((item) => [item.questionId, item] as const),
   );
 
   const views: EvaluationView[] = [];
@@ -243,7 +245,12 @@ export async function loadSessionEvaluations(args: {
   return {
     // `planning`, `ready` and `in_progress` cannot reach this route — the
     // handler rejects them — so the remaining states are the three below.
-    status: meta.status === "complete" ? "complete" : meta.status === "failed" ? "failed" : "evaluating",
+    status:
+      meta.status === "complete"
+        ? "complete"
+        : meta.status === "failed"
+          ? "failed"
+          : "evaluating",
     completed: views.length,
     // The answers actually enqueued, not the plan's questionCount. Falling back
     // to the number scored keeps a session with no rollup from reporting
@@ -278,13 +285,13 @@ async function putSessionSummary(args: {
       new GetCommand({
         TableName,
         Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.META },
-      })
+      }),
     );
   } catch (error) {
     throw new ServiceError(
       `${MESSAGES.SESSION_READ_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 
@@ -315,14 +322,14 @@ async function putSessionSummary(args: {
           averages: args.averages,
           questionCount: args.questionCount,
         },
-      })
+      }),
     );
     return { userId: meta.userId, completedAt };
   } catch (error) {
     throw new ServiceError(
       `${MESSAGES.EVAL_SUMMARY_WRITE_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 }
@@ -417,7 +424,7 @@ export function aliasedProjection(fields: readonly string[]): {
   return {
     ProjectionExpression: fields.map((field) => `#${field}`).join(", "),
     ExpressionAttributeNames: Object.fromEntries(
-      fields.map((field) => [`#${field}`, field])
+      fields.map((field) => [`#${field}`, field]),
     ),
   };
 }
@@ -452,13 +459,13 @@ export async function listUserSessionSummaries(args: {
           ScanIndexForward: false,
           ExclusiveStartKey: cursor,
           ...(args.fields === undefined ? {} : aliasedProjection(args.fields)),
-        })
+        }),
       );
     } catch (error) {
       throw new ServiceError(
         `${MESSAGES.SESSION_READ_FAILED} — ${
           error instanceof Error ? error.message : "unknown"
-        }`
+        }`,
       );
     }
 
@@ -504,13 +511,13 @@ export async function deleteSessionSummaries(args: {
           },
           ProjectionExpression: "PK, SK",
           ExclusiveStartKey: cursor,
-        })
+        }),
       );
     } catch (error) {
       throw new ServiceError(
         `${MESSAGES.SESSION_READ_FAILED} — ${
           error instanceof Error ? error.message : "unknown"
-        }`
+        }`,
       );
     }
 
@@ -524,7 +531,10 @@ export async function deleteSessionSummaries(args: {
   } while (cursor !== undefined);
 
   for (let start = 0; start < keys.length; start += DELETE_BATCH_SIZE) {
-    await deleteKeyChunk(TableName, keys.slice(start, start + DELETE_BATCH_SIZE));
+    await deleteKeyChunk(
+      TableName,
+      keys.slice(start, start + DELETE_BATCH_SIZE),
+    );
   }
 
   return keys.length;
@@ -533,7 +543,7 @@ export async function deleteSessionSummaries(args: {
 async function queryByPrefix(
   TableName: string,
   pk: string,
-  prefix: string
+  prefix: string,
 ): Promise<Record<string, unknown>[]> {
   const rows: Record<string, unknown>[] = [];
   let cursor: Record<string, unknown> | undefined;
@@ -547,13 +557,13 @@ async function queryByPrefix(
           KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
           ExpressionAttributeValues: { ":pk": pk, ":prefix": prefix },
           ExclusiveStartKey: cursor,
-        })
+        }),
       );
     } catch (error) {
       throw new ServiceError(
         `${MESSAGES.SESSION_READ_FAILED} — ${
           error instanceof Error ? error.message : "unknown"
-        }`
+        }`,
       );
     }
 
@@ -593,13 +603,13 @@ export async function startEvaluationSummary(args: {
           // `averages` is deliberately absent until every answer is scored. Its
           // absence is the election below: exactly one worker can add it.
         },
-      })
+      }),
     );
   } catch (error) {
     throw new ServiceError(
       `${MESSAGES.EVAL_SUMMARY_WRITE_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 }
@@ -647,7 +657,7 @@ function mean(values: number[]): number {
 // explicitly — the completion check must be strongly consistent or it fires at
 // the wrong time.
 async function readEvaluationScores(
-  sessionId: string
+  sessionId: string,
 ): Promise<EvaluationAverages[]> {
   const TableName = requireTable();
   const scores: EvaluationAverages[] = [];
@@ -684,13 +694,13 @@ async function readEvaluationScores(
           },
           ConsistentRead: true,
           ExclusiveStartKey: cursor,
-        })
+        }),
       );
     } catch (error) {
       throw new ServiceError(
         `${MESSAGES.SESSION_READ_FAILED} — ${
           error instanceof Error ? error.message : "unknown"
-        }`
+        }`,
       );
     }
 
@@ -731,13 +741,13 @@ export async function finalizeIfComplete(args: {
         TableName,
         Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.EVAL_SUMMARY },
         ConsistentRead: true,
-      })
+      }),
     );
   } catch (error) {
     throw new ServiceError(
       `${MESSAGES.EVAL_SUMMARY_READ_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 
@@ -746,7 +756,7 @@ export async function finalizeIfComplete(args: {
   const summary = parseItem(
     SessionEvalSummarySchema,
     summaryResponse.Item,
-    "SUMMARY"
+    "SUMMARY",
   );
 
   // Already closed out by whoever finished first.
@@ -781,7 +791,7 @@ export async function finalizeIfComplete(args: {
         // session; everyone else is a no-op.
         ConditionExpression: "attribute_not_exists(averages)",
         ExpressionAttributeValues: { ":averages": averages },
-      })
+      }),
     );
   } catch (error) {
     if (error instanceof ConditionalCheckFailedException) {
@@ -790,7 +800,7 @@ export async function finalizeIfComplete(args: {
     throw new ServiceError(
       `${MESSAGES.EVAL_SUMMARY_WRITE_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 
@@ -813,7 +823,7 @@ export async function finalizeIfComplete(args: {
     console.error(
       `[evaluations] ${args.sessionId} history summary failed — ${
         error instanceof Error ? error.message : error
-      }`
+      }`,
     );
   }
 
@@ -868,13 +878,13 @@ export async function putEvaluation(args: {
           modelId: args.modelId,
           evaluatedAt: new Date().toISOString(),
         },
-      })
+      }),
     );
   } catch (error) {
     throw new ServiceError(
       `${MESSAGES.EVAL_WRITE_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 }
@@ -904,19 +914,19 @@ export async function attachSessionSummary(args: {
         ExpressionAttributeNames: { "#summary": "summary" },
         ExpressionAttributeValues: { ":summary": args.summary },
         ConditionExpression: "attribute_exists(PK)",
-      })
+      }),
     );
   } catch (error) {
     if (error instanceof ConditionalCheckFailedException) {
       console.warn(
-        `[evaluations] history row for ${args.userId} vanished before its summary landed`
+        `[evaluations] history row for ${args.userId} vanished before its summary landed`,
       );
       return;
     }
     throw new ServiceError(
       `${MESSAGES.EVAL_SUMMARY_WRITE_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 }

@@ -73,7 +73,7 @@ describe("eraseUserAccount", () => {
       .map((key) => key?.SK);
 
     expect(order.indexOf(SORT_KEY.COACH)).toBeLessThan(
-      order.indexOf(SORT_KEY.PROFILE)
+      order.indexOf(SORT_KEY.PROFILE),
     );
   });
 });

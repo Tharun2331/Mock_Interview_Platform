@@ -28,7 +28,17 @@ export function PresenceOrb({
 }: PresenceOrbProps) {
   // Capped well short of the container so a shout cannot push the bloom out of
   // its own layout box.
-  const scale = responsive ? 1 + Math.min(level, 1) * 0.28 : 1;
+  //
+  // The coefficient came down from 0.28 to split the labour with the level
+  // meter beside it. Both were fed the same `activeLevel` and the same hue, so
+  // the screen encoded one number twice — the orb the loudest reading of it and
+  // the meter the precise one. The orb's job is presence: whose turn it is,
+  // carried by the state hue. The meter's job is the signal.
+  //
+  // Deliberately not dropped to zero. The orb is the largest thing on screen,
+  // and a fully static one would move the "your microphone is live" signal onto
+  // the smallest element. It still answers to a real analyser — just quietly.
+  const scale = responsive ? 1 + Math.min(level, 1) * 0.12 : 1;
 
   return (
     <div
@@ -41,12 +51,22 @@ export function PresenceOrb({
           room rather than a second solid shape. */}
       <div
         className="presence-orb absolute inset-0 rounded-full opacity-40 blur-2xl transition-transform duration-100 motion-reduce:transition-none"
-        style={{ "--orb-hue": hue, transform: `scale(${scale * 1.15})` } as React.CSSProperties}
+        style={
+          {
+            "--orb-hue": hue,
+            transform: `scale(${scale * 1.15})`,
+          } as React.CSSProperties
+        }
       />
       {/* The core. Smaller, denser, and the thing the eye actually tracks. */}
       <div
         className="presence-orb relative size-2/3 rounded-full transition-transform duration-100 motion-reduce:transition-none"
-        style={{ "--orb-hue": hue, transform: `scale(${scale})` } as React.CSSProperties}
+        style={
+          {
+            "--orb-hue": hue,
+            transform: `scale(${scale})`,
+          } as React.CSSProperties
+        }
       />
       {/* A hairline ring holds the shape when reduced motion freezes the scale,
           so the orb still reads as an object rather than a smudge. */}

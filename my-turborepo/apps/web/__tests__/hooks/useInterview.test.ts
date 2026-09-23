@@ -13,10 +13,12 @@ type Frame = Int16Array;
 
 let captureLevel = 0;
 const captureStop = mock(() => {});
-const startCapture = mock(async (_args: { onFrame: (frame: Frame) => void }) => ({
-  stop: captureStop,
-  readLevel: () => captureLevel,
-}));
+const startCapture = mock(
+  async (_args: { onFrame: (frame: Frame) => void }) => ({
+    stop: captureStop,
+    readLevel: () => captureLevel,
+  }),
+);
 
 let voicePlaying = false;
 let voiceLevel = 0;
@@ -55,7 +57,7 @@ const openInterviewSocket = mock(
     emit = args.onEvent;
     emitClose = args.onClose;
     return { stop: socketStop, close: socketClose, sendAudio };
-  }
+  },
 );
 
 mock.module("@/lib/audio/capture", () => ({ startCapture }));
@@ -249,7 +251,9 @@ describe("event races", () => {
   it("keeps the server's specific end reason when the socket then closes", async () => {
     const { result } = await startInterview();
 
-    await act(async () => emit({ type: "closed", reason: "Interview complete" }));
+    await act(async () =>
+      emit({ type: "closed", reason: "Interview complete" }),
+    );
     await act(async () => emitClose(""));
 
     expect(result.current.state).toEqual({
@@ -377,12 +381,17 @@ describe("transcript", () => {
     const { result } = await startInterview();
 
     await act(async () =>
-      emit({ type: "transcript", role: "USER", text: "So we", final: false })
+      emit({ type: "transcript", role: "USER", text: "So we", final: false }),
     );
     const firstId = result.current.transcript[0]?.id;
 
     await act(async () =>
-      emit({ type: "transcript", role: "USER", text: "So we had a monolith", final: false })
+      emit({
+        type: "transcript",
+        role: "USER",
+        text: "So we had a monolith",
+        final: false,
+      }),
     );
 
     expect(result.current.transcript).toHaveLength(1);
@@ -395,10 +404,15 @@ describe("transcript", () => {
     const { result } = await startInterview();
 
     await act(async () =>
-      emit({ type: "transcript", role: "USER", text: "Done.", final: true })
+      emit({ type: "transcript", role: "USER", text: "Done.", final: true }),
     );
     await act(async () =>
-      emit({ type: "transcript", role: "USER", text: "Next thought", final: false })
+      emit({
+        type: "transcript",
+        role: "USER",
+        text: "Next thought",
+        final: false,
+      }),
     );
 
     expect(result.current.transcript).toHaveLength(2);
@@ -408,10 +422,20 @@ describe("transcript", () => {
     const { result } = await startInterview();
 
     await act(async () =>
-      emit({ type: "transcript", role: "USER", text: "My answer", final: false })
+      emit({
+        type: "transcript",
+        role: "USER",
+        text: "My answer",
+        final: false,
+      }),
     );
     await act(async () =>
-      emit({ type: "transcript", role: "ASSISTANT", text: "Next question", final: false })
+      emit({
+        type: "transcript",
+        role: "ASSISTANT",
+        text: "Next question",
+        final: false,
+      }),
     );
 
     expect(result.current.transcript).toHaveLength(2);

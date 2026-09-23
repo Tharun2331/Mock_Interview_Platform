@@ -36,7 +36,8 @@ function reply(scores: {
   sampleAnswer?: string;
 }): string {
   return JSON.stringify({
-    rationale: "You named the tradeoff but did not ground it in anything you built.",
+    rationale:
+      "You named the tradeoff but did not ground it in anything you built.",
     ...scores,
   });
 }
@@ -53,13 +54,21 @@ describe("needsSampleAnswer", () => {
   describe("technical — correctness and depth", () => {
     it("fires below the threshold", () => {
       expect(
-        needsSampleAnswer("technical", { correctness: 4, clarity: 9, depth: 5 })
+        needsSampleAnswer("technical", {
+          correctness: 4,
+          clarity: 9,
+          depth: 5,
+        }),
       ).toBe(true);
     });
 
     it("does not fire at or above it", () => {
       expect(
-        needsSampleAnswer("technical", { correctness: 6, clarity: 1, depth: 6 })
+        needsSampleAnswer("technical", {
+          correctness: 6,
+          clarity: 1,
+          depth: 6,
+        }),
       ).toBe(false);
     });
 
@@ -67,7 +76,11 @@ describe("needsSampleAnswer", () => {
     // This is the case that separates technical from behavioural.
     it("ignores clarity entirely", () => {
       expect(
-        needsSampleAnswer("technical", { correctness: 2, clarity: 10, depth: 2 })
+        needsSampleAnswer("technical", {
+          correctness: 2,
+          clarity: 10,
+          depth: 2,
+        }),
       ).toBe(true);
     });
   });
@@ -75,13 +88,21 @@ describe("needsSampleAnswer", () => {
   describe("role_specific — correctness and depth, same as technical", () => {
     it("fires below the threshold", () => {
       expect(
-        needsSampleAnswer("role_specific", { correctness: 3, clarity: 8, depth: 4 })
+        needsSampleAnswer("role_specific", {
+          correctness: 3,
+          clarity: 8,
+          depth: 4,
+        }),
       ).toBe(true);
     });
 
     it("does not fire at or above it", () => {
       expect(
-        needsSampleAnswer("role_specific", { correctness: 7, clarity: 2, depth: 8 })
+        needsSampleAnswer("role_specific", {
+          correctness: 7,
+          clarity: 2,
+          depth: 8,
+        }),
       ).toBe(false);
     });
 
@@ -92,7 +113,7 @@ describe("needsSampleAnswer", () => {
     it("is scored identically to technical", () => {
       const scores = { correctness: 5, clarity: 0, depth: 5 };
       expect(needsSampleAnswer("role_specific", scores)).toBe(
-        needsSampleAnswer("technical", scores)
+        needsSampleAnswer("technical", scores),
       );
     });
   });
@@ -100,13 +121,21 @@ describe("needsSampleAnswer", () => {
   describe("behavioural — correctness and clarity", () => {
     it("fires below the threshold", () => {
       expect(
-        needsSampleAnswer("behavioural", { correctness: 4, clarity: 5, depth: 9 })
+        needsSampleAnswer("behavioural", {
+          correctness: 4,
+          clarity: 5,
+          depth: 9,
+        }),
       ).toBe(true);
     });
 
     it("does not fire at or above it", () => {
       expect(
-        needsSampleAnswer("behavioural", { correctness: 6, clarity: 6, depth: 0 })
+        needsSampleAnswer("behavioural", {
+          correctness: 6,
+          clarity: 6,
+          depth: 0,
+        }),
       ).toBe(false);
     });
 
@@ -115,7 +144,11 @@ describe("needsSampleAnswer", () => {
     // story is not weak just because it was short.
     it("ignores depth entirely", () => {
       expect(
-        needsSampleAnswer("behavioural", { correctness: 9, clarity: 9, depth: 0 })
+        needsSampleAnswer("behavioural", {
+          correctness: 9,
+          clarity: 9,
+          depth: 0,
+        }),
       ).toBe(false);
     });
   });
@@ -124,7 +157,11 @@ describe("needsSampleAnswer", () => {
   it("treats the threshold itself as strong enough", () => {
     const at = EVALUATION_LIMITS.SAMPLE_ANSWER_THRESHOLD;
     expect(
-      needsSampleAnswer("technical", { correctness: at, clarity: 0, depth: at })
+      needsSampleAnswer("technical", {
+        correctness: at,
+        clarity: 0,
+        depth: at,
+      }),
     ).toBe(false);
   });
 });
@@ -132,7 +169,7 @@ describe("needsSampleAnswer", () => {
 describe("the Evaluator's use of the gate", () => {
   it("keeps a sample answer on a weak technical answer", async () => {
     setModelReply(
-      reply({ correctness: 3, clarity: 8, depth: 3, sampleAnswer: REWRITE })
+      reply({ correctness: 3, clarity: 8, depth: 3, sampleAnswer: REWRITE }),
     );
 
     const result = await runEvaluator(BASE);
@@ -142,7 +179,7 @@ describe("the Evaluator's use of the gate", () => {
 
   it("keeps one on a weak behavioural answer", async () => {
     setModelReply(
-      reply({ correctness: 4, clarity: 3, depth: 9, sampleAnswer: REWRITE })
+      reply({ correctness: 4, clarity: 3, depth: 9, sampleAnswer: REWRITE }),
     );
 
     const result = await runEvaluator({ ...BASE, questionType: "behavioural" });
@@ -152,10 +189,13 @@ describe("the Evaluator's use of the gate", () => {
 
   it("keeps one on a weak role-specific answer", async () => {
     setModelReply(
-      reply({ correctness: 2, clarity: 9, depth: 4, sampleAnswer: REWRITE })
+      reply({ correctness: 2, clarity: 9, depth: 4, sampleAnswer: REWRITE }),
     );
 
-    const result = await runEvaluator({ ...BASE, questionType: "role_specific" });
+    const result = await runEvaluator({
+      ...BASE,
+      questionType: "role_specific",
+    });
 
     expect(result.sampleAnswer).toBe(REWRITE);
   });
@@ -167,13 +207,13 @@ describe("the Evaluator's use of the gate", () => {
     "drops one the model volunteered on a strong %s answer",
     async (questionType) => {
       setModelReply(
-        reply({ correctness: 9, clarity: 9, depth: 9, sampleAnswer: REWRITE })
+        reply({ correctness: 9, clarity: 9, depth: 9, sampleAnswer: REWRITE }),
       );
 
       const result = await runEvaluator({ ...BASE, questionType });
 
       expect(result.sampleAnswer).toBeUndefined();
-    }
+    },
   );
 
   // Omitted, never empty. The session summarizer reuses this where it exists
@@ -190,7 +230,7 @@ describe("the Evaluator's use of the gate", () => {
 
   it("treats a whitespace-only rewrite as no rewrite", async () => {
     setModelReply(
-      reply({ correctness: 2, clarity: 2, depth: 2, sampleAnswer: "   \n " })
+      reply({ correctness: 2, clarity: 2, depth: 2, sampleAnswer: "   \n " }),
     );
 
     expect((await runEvaluator(BASE)).sampleAnswer).toBeUndefined();
@@ -202,14 +242,16 @@ describe("the Evaluator's use of the gate", () => {
         correctness: 2,
         clarity: 2,
         depth: 2,
-        sampleAnswer: "x".repeat(EVALUATION_LIMITS.MAX_SAMPLE_ANSWER_CHARS + 500),
-      })
+        sampleAnswer: "x".repeat(
+          EVALUATION_LIMITS.MAX_SAMPLE_ANSWER_CHARS + 500,
+        ),
+      }),
     );
 
     const result = await runEvaluator(BASE);
 
     expect(result.sampleAnswer?.length).toBe(
-      EVALUATION_LIMITS.MAX_SAMPLE_ANSWER_CHARS
+      EVALUATION_LIMITS.MAX_SAMPLE_ANSWER_CHARS,
     );
   });
 
@@ -218,7 +260,7 @@ describe("the Evaluator's use of the gate", () => {
   // answer would be the largest cost increase in the product.
   it("stays a single model call", async () => {
     setModelReply(
-      reply({ correctness: 2, clarity: 2, depth: 2, sampleAnswer: REWRITE })
+      reply({ correctness: 2, clarity: 2, depth: 2, sampleAnswer: REWRITE }),
     );
 
     await runEvaluator(BASE);
@@ -246,7 +288,7 @@ describe("the Evaluator's use of the gate", () => {
 
   it("still returns the scores unchanged", async () => {
     setModelReply(
-      reply({ correctness: 3, clarity: 8, depth: 3, sampleAnswer: REWRITE })
+      reply({ correctness: 3, clarity: 8, depth: 3, sampleAnswer: REWRITE }),
     );
 
     const result = await runEvaluator(BASE);

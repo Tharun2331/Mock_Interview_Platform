@@ -18,7 +18,7 @@ function renderHeader(path = "/start") {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Header />
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -45,14 +45,18 @@ describe("the history link", () => {
     });
     renderHeader();
 
-    expect(screen.queryByRole("link", { name: MESSAGES.HISTORY_NAV })).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: MESSAGES.HISTORY_NAV }),
+    ).toBeNull();
   });
 
   it("is hidden for a candidate who has saved no profile yet", () => {
     setProfileState({ status: "ready", profile: null });
     renderHeader();
 
-    expect(screen.queryByRole("link", { name: MESSAGES.HISTORY_NAV })).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: MESSAGES.HISTORY_NAV }),
+    ).toBeNull();
   });
 
   // Neither state knows whether the candidate may pass, and guessing wrong in
@@ -64,7 +68,9 @@ describe("the history link", () => {
     setProfileState(state);
     renderHeader();
 
-    expect(screen.queryByRole("link", { name: MESSAGES.HISTORY_NAV })).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: MESSAGES.HISTORY_NAV }),
+    ).toBeNull();
   });
 
   // The label is visually hidden on the narrowest screens, so the accessible
@@ -75,7 +81,7 @@ describe("the history link", () => {
     renderHeader();
 
     expect(
-      screen.getByRole("link", { name: MESSAGES.HISTORY_NAV })
+      screen.getByRole("link", { name: MESSAGES.HISTORY_NAV }),
     ).toBeDefined();
   });
 });
@@ -116,7 +122,9 @@ describe("the coach link", () => {
     setProfileState({ status: "ready", profile: COMPLETE });
     renderHeader();
 
-    expect(screen.getByRole("link", { name: MESSAGES.COACH_NAV })).toBeDefined();
+    expect(
+      screen.getByRole("link", { name: MESSAGES.COACH_NAV }),
+    ).toBeDefined();
   });
 });
 
@@ -125,8 +133,12 @@ describe("the rest of the header", () => {
     setProfileState({ status: "ready", profile: COMPLETE });
     renderHeader();
 
-    expect(screen.getByRole("link", { name: MESSAGES.PROFILE_NAV })).toBeDefined();
-    expect(screen.getByRole("button", { name: MESSAGES.SIGN_OUT })).toBeDefined();
+    expect(
+      screen.getByRole("link", { name: MESSAGES.PROFILE_NAV }),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: MESSAGES.SIGN_OUT }),
+    ).toBeDefined();
   });
 
   // The profile link is how someone finishes onboarding, so it must survive
@@ -135,6 +147,8 @@ describe("the rest of the header", () => {
     setProfileState({ status: "ready", profile: null });
     renderHeader();
 
-    expect(screen.getByRole("link", { name: MESSAGES.PROFILE_NAV })).toBeDefined();
+    expect(
+      screen.getByRole("link", { name: MESSAGES.PROFILE_NAV }),
+    ).toBeDefined();
   });
 });

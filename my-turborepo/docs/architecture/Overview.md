@@ -394,17 +394,17 @@ them. Sharing a role collapses the benefit.
 
 **Live interview turns** use a single model with no fallback:
 
-| Role   | Model                     | API                                    |
-| ------ | ------------------------- | -------------------------------------- |
-| Speech | `amazon.nova-2-sonic-v1:0` | `InvokeModelWithBidirectionalStream`    |
+| Role   | Model                      | API                                  |
+| ------ | -------------------------- | ------------------------------------ |
+| Speech | `amazon.nova-2-sonic-v1:0` | `InvokeModelWithBidirectionalStream` |
 
 **Text agents** (Planner, Evaluator, Coach) keep the three-tier chain:
 
 | Role     | Model                                 | Notes                                               |
 | -------- | ------------------------------------- | --------------------------------------------------- |
-| Primary  | `mistral.ministral-3-8b-instruct`     | Latency/quality balance                              |
-| Backup   | `meta.llama4-scout-17b-instruct-v1:0` | Larger context; fall back when the primary is weak    |
-| Fallback | `qwen.qwen3-coder-30b-a3b-v1:0`       | Different provider; hedges regional capacity issues   |
+| Primary  | `mistral.ministral-3-8b-instruct`     | Latency/quality balance                             |
+| Backup   | `meta.llama4-scout-17b-instruct-v1:0` | Larger context; fall back when the primary is weak  |
+| Fallback | `qwen.qwen3-coder-30b-a3b-v1:0`       | Different provider; hedges regional capacity issues |
 
 All three verified `ACTIVE` in `us-east-1` on 2026-08-19. The list mirrors
 `bedrock_text_model_ids` in the `iam` module — the task role can invoke these

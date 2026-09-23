@@ -20,7 +20,13 @@ const headers = new AxiosHeaders();
 const config = { headers };
 
 function withResponse(status: number, data: unknown): AxiosError {
-  const response = { status, data, statusText: "", headers, config } as AxiosResponse;
+  const response = {
+    status,
+    data,
+    statusText: "",
+    headers,
+    config,
+  } as AxiosResponse;
   return new AxiosError("failed", "ERR_BAD_RESPONSE", config, null, response);
 }
 
@@ -91,9 +97,9 @@ describe("statusOf", () => {
 // and ours.
 describe("serverMessage", () => {
   it("returns the server's own message", () => {
-    expect(serverMessage(withResponse(400, { message: "That file is 12 MB." }))).toBe(
-      "That file is 12 MB."
-    );
+    expect(
+      serverMessage(withResponse(400, { message: "That file is 12 MB." })),
+    ).toBe("That file is 12 MB.");
   });
 
   it("returns null for an empty message rather than an empty string", () => {
@@ -115,16 +121,20 @@ describe("serverFailure", () => {
   // 400/413/422 describe what the candidate sent, so they belong beside the
   // field they can actually change.
   it.each([400, 413, 422])("scopes %d to the field", (status) => {
-    expect(serverFailure(withResponse(status, { message: "too big" }))).toEqual({
-      message: "too big",
-      scope: "field",
-    });
+    expect(serverFailure(withResponse(status, { message: "too big" }))).toEqual(
+      {
+        message: "too big",
+        scope: "field",
+      },
+    );
   });
 
   // A 500 means the server could not do its job. Showing that beside a file
   // input sends someone re-picking PDFs to fix something that is not theirs.
   it.each([500, 502, 503])("scopes %d globally", (status) => {
-    expect(serverFailure(withResponse(status, { message: "our fault" }))).toEqual({
+    expect(
+      serverFailure(withResponse(status, { message: "our fault" })),
+    ).toEqual({
       message: "our fault",
       scope: "global",
     });
@@ -133,7 +143,7 @@ describe("serverFailure", () => {
   // 503 is the redaction path failing closed — ours, not theirs.
   it("puts the redaction failure in the global scope, not on the file field", () => {
     const failure = serverFailure(
-      withResponse(503, { message: MESSAGES.PROFILE_LOAD_FAILED })
+      withResponse(503, { message: MESSAGES.PROFILE_LOAD_FAILED }),
     );
 
     expect(failure?.scope).toBe("global");
@@ -147,28 +157,32 @@ describe("serverFailure", () => {
   // falls back rather than guessing.
   it("returns null for a status it has no placement rule for", () => {
     expect(serverFailure(withResponse(418, { message: "teapot" }))).toBeNull();
-    expect(serverFailure(withResponse(409, { message: "conflict" }))).toBeNull();
+    expect(
+      serverFailure(withResponse(409, { message: "conflict" })),
+    ).toBeNull();
   });
 });
 
 describe("transportMessage", () => {
   it("prefers the session-expired message for a 401", () => {
     expect(transportMessage(withResponse(401, {}), "fallback")).toBe(
-      MESSAGES.FORM_SESSION_EXPIRED
+      MESSAGES.FORM_SESSION_EXPIRED,
     );
   });
 
   it("distinguishes a timeout from an unreachable server", () => {
     expect(transportMessage(withoutResponse("ECONNABORTED"), "fallback")).toBe(
-      MESSAGES.FORM_TIMED_OUT
+      MESSAGES.FORM_TIMED_OUT,
     );
     expect(transportMessage(withoutResponse("ERR_NETWORK"), "fallback")).toBe(
-      MESSAGES.FORM_UNREACHABLE
+      MESSAGES.FORM_UNREACHABLE,
     );
   });
 
   it("falls back for anything it cannot classify", () => {
     expect(transportMessage(new Error("boom"), "fallback")).toBe("fallback");
-    expect(transportMessage(withResponse(500, {}), "fallback")).toBe("fallback");
+    expect(transportMessage(withResponse(500, {}), "fallback")).toBe(
+      "fallback",
+    );
   });
 });

@@ -15,7 +15,11 @@ import { buildInterviewSystemPrompt } from "../../agents/mockInterview";
 const PLAN: PlanResponse = {
   focusAreas: [
     { area: "Kafka", evidence: "order-service consumers", source: "github" },
-    { area: "Postgres", evidence: "order-service persistence", source: "github" },
+    {
+      area: "Postgres",
+      evidence: "order-service persistence",
+      source: "github",
+    },
   ],
   questionMix: { behavioural: 3, technical: 5, roleSpecific: 2 },
   startingDifficulty: "mid",
@@ -28,8 +32,16 @@ const ANALYSIS: GapAnalysis = {
   sessionId: "01J000000000000000000000",
   requirements: [
     { requirement: "Kubernetes", bucket: "none", evidence: "not mentioned" },
-    { requirement: "Terraform", bucket: "weak", evidence: "cloud work, no IaC named" },
-    { requirement: "Kafka", bucket: "strong", evidence: "order-service consumers" },
+    {
+      requirement: "Terraform",
+      bucket: "weak",
+      evidence: "cloud work, no IaC named",
+    },
+    {
+      requirement: "Kafka",
+      bucket: "strong",
+      evidence: "order-service consumers",
+    },
   ],
   createdAt: "2026-09-12T10:00:00.000Z",
 };
@@ -39,7 +51,7 @@ describe("an interview with no gap analysis", () => {
   it("builds a prompt without one", () => {
     expect(() => buildInterviewSystemPrompt(PLAN)).not.toThrow();
     expect(() =>
-      buildInterviewSystemPrompt(PLAN, { gapAnalysis: null })
+      buildInterviewSystemPrompt(PLAN, { gapAnalysis: null }),
     ).not.toThrow();
   });
 
@@ -61,7 +73,7 @@ describe("an interview with no gap analysis", () => {
 
   it("is the default when the option is simply not passed", () => {
     expect(buildInterviewSystemPrompt(PLAN)).not.toContain(
-      "WHAT THIS ROLE ASKS FOR"
+      "WHAT THIS ROLE ASKS FOR",
     );
   });
 });
@@ -97,9 +109,9 @@ describe("an interview with a gap analysis", () => {
   it("omits the section for an analysis with no requirements", () => {
     const empty: GapAnalysis = { ...ANALYSIS, requirements: [] };
 
-    expect(buildInterviewSystemPrompt(PLAN, { gapAnalysis: empty })).not.toContain(
-      "WHAT THIS ROLE ASKS FOR"
-    );
+    expect(
+      buildInterviewSystemPrompt(PLAN, { gapAnalysis: empty }),
+    ).not.toContain("WHAT THIS ROLE ASKS FOR");
   });
 });
 

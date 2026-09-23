@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { signUp, signIn, signInWithRedirect } from "aws-amplify/auth";
 import { SignupSchema, type SignupInput } from "@repo/shared";
 
-
 import {
   Field,
   FieldDescription,
@@ -107,7 +106,7 @@ export function Signup() {
     <AuthLayout>
       <Card className="w-full">
         <CardHeader>
-          <CardTitle className="font-display text-3xl">
+          <CardTitle className="font-display text-3xl font-normal">
             {MESSAGES.SIGNUP_TITLE}
           </CardTitle>
           <CardDescription>{MESSAGES.SIGNUP_DESCRIPTION}</CardDescription>
@@ -148,7 +147,9 @@ export function Signup() {
                   aria-invalid={!!errors.email}
                   {...register("email")}
                 />
-                <FieldError errors={errors.email ? [errors.email] : undefined} />
+                <FieldError
+                  errors={errors.email ? [errors.email] : undefined}
+                />
               </Field>
 
               <Field data-invalid={!!errors.password}>
@@ -185,7 +186,9 @@ export function Signup() {
                 />
                 <FieldError
                   errors={
-                    errors.confirmPassword ? [errors.confirmPassword] : undefined
+                    errors.confirmPassword
+                      ? [errors.confirmPassword]
+                      : undefined
                   }
                 />
               </Field>

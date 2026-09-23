@@ -48,7 +48,10 @@ export const WEAKNESS_DIMENSIONS = {
   technical: ["correctness", "depth"],
   role_specific: ["correctness", "depth"],
   behavioural: ["correctness", "clarity"],
-} as const satisfies Record<QuestionType, readonly ["correctness", ...string[]]>;
+} as const satisfies Record<
+  QuestionType,
+  readonly ["correctness", ...string[]]
+>;
 
 /**
  * Whether this answer is weak enough to be worth rewriting.
@@ -58,7 +61,7 @@ export const WEAKNESS_DIMENSIONS = {
  */
 export function needsSampleAnswer(
   questionType: QuestionType,
-  scores: { correctness: number; clarity: number; depth: number }
+  scores: { correctness: number; clarity: number; depth: number },
 ): boolean {
   const [first, second] = WEAKNESS_DIMENSIONS[questionType];
   const mean = (scores[first] + scores[second]) / 2;
@@ -335,7 +338,9 @@ export const SessionHistoryResponseSchema = z.object({
   sessions: z.array(SessionHistoryItemSchema),
 });
 
-export type SessionHistoryResponse = z.infer<typeof SessionHistoryResponseSchema>;
+export type SessionHistoryResponse = z.infer<
+  typeof SessionHistoryResponseSchema
+>;
 
 // Which dimension was strongest and weakest across a session.
 //
@@ -354,9 +359,7 @@ export function extremeDimensions(averages: {
   clarity: number;
   depth: number;
 }): { topStrength: ScoreDimension; topWeakness: ScoreDimension } {
-  const ranked = [...DIMENSION_ORDER].sort(
-    (a, b) => averages[b] - averages[a]
-  );
+  const ranked = [...DIMENSION_ORDER].sort((a, b) => averages[b] - averages[a]);
 
   // `ranked` always has three entries, but the compiler cannot know that from
   // an array type — and a non-null assertion is not allowed here.
@@ -374,8 +377,7 @@ export function overallScore(averages: {
   clarity: number;
   depth: number;
 }): number {
-  const mean =
-    (averages.correctness + averages.clarity + averages.depth) / 3;
+  const mean = (averages.correctness + averages.clarity + averages.depth) / 3;
   // One decimal, matching how the per-dimension averages are already rounded.
   return Math.round(mean * 10) / 10;
 }

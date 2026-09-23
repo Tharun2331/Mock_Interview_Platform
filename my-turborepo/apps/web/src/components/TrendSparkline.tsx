@@ -77,7 +77,7 @@ export function TrendSparkline({
           topic,
           points.length,
           points[0]?.avgScore ?? 0,
-          last?.avgScore ?? 0
+          last?.avgScore ?? 0,
         )}
       </title>
 

@@ -158,7 +158,7 @@ async function collectComprehendSpans(text: string): Promise<Span[]> {
       new DetectPiiEntitiesCommand({
         Text: text,
         LanguageCode: REDACTION.LANGUAGE_CODE,
-      })
+      }),
     );
   } catch (error) {
     // Fail closed. The alternative — storing what the deterministic pass alone
@@ -169,7 +169,7 @@ async function collectComprehendSpans(text: string): Promise<Span[]> {
     throw new RedactionError(
       `${MESSAGES.REDACTION_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 
@@ -253,7 +253,7 @@ export async function redactResumeText(text: string): Promise<RedactionResult> {
   const byteLength = Buffer.byteLength(text, "utf8");
   if (byteLength > REDACTION.MAX_BYTES) {
     throw new ServiceError(
-      `${MESSAGES.REDACTION_INPUT_TOO_LARGE} (${byteLength} bytes, limit ${REDACTION.MAX_BYTES})`
+      `${MESSAGES.REDACTION_INPUT_TOO_LARGE} (${byteLength} bytes, limit ${REDACTION.MAX_BYTES})`,
     );
   }
 

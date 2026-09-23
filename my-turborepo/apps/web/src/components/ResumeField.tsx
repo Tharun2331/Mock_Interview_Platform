@@ -30,7 +30,7 @@ function validate(file: File): string | null {
   if (file.size > RESUME_LIMITS.MAX_BYTES) {
     return resumeTooLarge(
       formatMegabytes(file.size),
-      formatMegabytes(RESUME_LIMITS.MAX_BYTES)
+      formatMegabytes(RESUME_LIMITS.MAX_BYTES),
     );
   }
 
@@ -97,7 +97,7 @@ export function ResumeField({
         <div
           className={cn(
             "flex items-center gap-3 rounded-md border border-hairline bg-surface-2 px-3 py-2",
-            error !== null && "border-destructive"
+            error !== null && "border-destructive",
           )}
         >
           <FileTextIcon aria-hidden className="size-4 shrink-0 text-cue-ink" />

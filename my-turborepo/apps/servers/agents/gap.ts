@@ -114,7 +114,10 @@ const RANK: Record<GapRequirement["bucket"], number> = {
 /** Comparable form: words only, single-spaced, padded so containment checks
  *  land on word boundaries rather than mid-word. */
 function comparable(requirement: string): string {
-  return ` ${requirement.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
+  return ` ${requirement
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()} `;
 }
 
 // Below this, containment is more likely to be a coincidence than a restatement
@@ -140,13 +143,11 @@ const MIN_CONTAINMENT_CHARS = 30;
  * candidate could answer well; a false `strong` costs the gap the interview
  * existed to find.
  */
-export function repairRequirements(
-  items: GapRequirement[]
-): GapRequirement[] {
+export function repairRequirements(items: GapRequirement[]): GapRequirement[] {
   const demoted = items.map((item) =>
     item.bucket !== "none" && ABSENCE.test(item.evidence)
       ? { ...item, bucket: "none" as const }
-      : item
+      : item,
   );
 
   const kept: GapRequirement[] = [];
@@ -157,7 +158,9 @@ export function repairRequirements(
       const other = comparable(existing.requirement);
       const short = key.length <= other.length ? key : other;
       const long = key.length <= other.length ? other : key;
-      return short.trim().length >= MIN_CONTAINMENT_CHARS && long.includes(short);
+      return (
+        short.trim().length >= MIN_CONTAINMENT_CHARS && long.includes(short)
+      );
     });
 
     if (duplicate === -1) {
@@ -232,11 +235,11 @@ export async function runGapAgent(input: GapAgentInput): Promise<GapAnalysis> {
     issues.push(
       parsed.error.issues
         .map((issue) => `${issue.path.join(".") || "root"}: ${issue.message}`)
-        .join("; ")
+        .join("; "),
     );
   }
 
   throw new BedrockError(
-    `Gap analysis failed validation twice — ${issues.join(" | ")}`
+    `Gap analysis failed validation twice — ${issues.join(" | ")}`,
   );
 }
