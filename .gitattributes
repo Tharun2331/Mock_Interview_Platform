@@ -1,0 +1,21 @@
+# Normalize everything to LF in the repository, regardless of what a given
+# checkout's core.autocrlf does to the working tree. Windows' Git ships with
+# core.autocrlf=true at the system level (Program Files/Git/etc/gitconfig),
+# which converts LF -> CRLF on every checkout. Prettier's default output is
+# LF, so a branch switch, cherry-pick, or reset repeatedly reintroduced CRLF
+# into files Prettier had already normalized, showing up as a whitespace-only
+# diff on the next `git status` with nothing actually changed. `eol=lf` pins
+# the working-tree line ending for text files regardless of autocrlf.
+* text=auto eol=lf
+
+# Binary assets: no line-ending conversion, ever.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
