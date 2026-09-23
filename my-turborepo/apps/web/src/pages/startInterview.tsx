@@ -1,12 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
-import {
-  AlertTriangleIcon,
-  CheckIcon,
-  FileTextIcon,
-  FolderGit2Icon,
-} from "lucide-react";
+import { AlertTriangleIcon, CheckIcon } from "lucide-react";
 import {
   GAP_LIMITS,
   INTEL_LIMITS,
@@ -21,12 +16,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
+import { Eyebrow } from "@/components/Eyebrow";
 import { SessionPlan } from "@/components/SessionPlan";
 import { api } from "@/lib/api";
 import { useProfile } from "@/lib/profile";
@@ -223,13 +217,13 @@ export function StartInterview() {
       <div className="flex min-h-full w-full items-center justify-center p-4 py-10">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 font-display text-2xl">
+            <h1 className="flex items-center gap-2 font-display text-3xl">
               <AlertTriangleIcon
                 aria-hidden
                 className="size-4 shrink-0 text-score-mixed"
               />
               {MESSAGES.PLAN_FAILED_TITLE}
-            </CardTitle>
+            </h1>
             <CardDescription>{setup.message}</CardDescription>
           </CardHeader>
           <CardFooter className="mt-4 flex-col gap-2">
@@ -255,245 +249,259 @@ export function StartInterview() {
   }
 
   return (
-    <div className="flex min-h-full w-full items-center justify-center p-4 py-10">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <span className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-ink-faint">
-            {MESSAGES.START_EYEBROW}
-          </span>
-          <CardTitle className="font-display text-3xl">
+    // A page, not a dialog. This used to be a bordered card centred in the
+    // viewport, which is a modal gesture — it says "something is on top of
+    // something else" when there is nothing behind it. The shell here is the
+    // one /history, /coach and /results already use (page header, then
+    // sections), so five of the six screens behind the login now share a
+    // layout and only the interview screen is deliberately apart.
+    //
+    // `max-w-2xl` rather than the data pages' `max-w-3xl`: this is a form, and
+    // a line of prose can run wider than an input should. The old `max-w-md`
+    // was a login-box width holding a six-field form.
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 p-6 pb-16">
+      <header className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <Eyebrow>{MESSAGES.START_EYEBROW}</Eyebrow>
+          <h1 className="font-display text-4xl leading-[1.1] sm:text-5xl text-ink">
             {MESSAGES.START_TITLE}
-          </CardTitle>
-          <CardDescription className="leading-relaxed">
-            {MESSAGES.START_DESCRIPTION}
-          </CardDescription>
-        </CardHeader>
+          </h1>
+        </div>
+        <p className="max-w-xl text-sm leading-relaxed text-ink-muted">
+          {MESSAGES.START_DESCRIPTION}
+        </p>
+      </header>
 
-        <CardContent className="flex flex-col gap-6">
-          {/* What this round will be built from, named rather than assumed.
-              The material now lives a page away, so without this the candidate
-              has no way to tell whether the resume being used is the one they
-              meant — and the edit link is how they check. */}
-          {profile !== null ? (
-            <div className="flex flex-col gap-2 rounded-md border border-hairline bg-surface-2 px-3 py-2.5">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[0.7rem] uppercase tracking-[0.12em] text-ink-faint">
-                  {MESSAGES.START_MATERIAL_TITLE}
+      {/* What this round will be built from, named rather than assumed.
+          The material now lives a page away, so without this the candidate
+          has no way to tell whether the resume being used is the one they
+          meant — and the edit link is how they check.
+
+          The one block on this page that is read-only rather than input, so it
+          is the one that sits up on `surface-2` — that ladder exists to say
+          "this is a different kind of thing", and a page with a single surface
+          never gets to use it. */}
+      {profile !== null ? (
+        <section className="flex flex-col gap-2 rounded-lg border border-hairline bg-surface-2 p-5">
+          <div className="flex items-center justify-between">
+            <Eyebrow as="h2">{MESSAGES.START_MATERIAL_TITLE}</Eyebrow>
+            <Link
+              to="/profile"
+              className="text-xs text-ink-subtle underline underline-offset-2 hover:text-ink"
+            >
+              {MESSAGES.START_MATERIAL_EDIT}
+            </Link>
+          </div>
+          {/* No icons on these rows. A document glyph beside "Your resume" and
+              a folder glyph beside a GitHub handle restate what the words
+              already say, and two decorative glyphs in a four-line block is
+              most of what makes it read as generated. The rows are told apart
+              by their content, which is the thing worth reading. */}
+          <ul className="flex flex-col gap-1 text-sm">
+            <li>{MESSAGES.START_MATERIAL_RESUME}</li>
+            {profile.githubUsername !== undefined ? (
+              <li className="truncate">
+                {profile.githubUsername}
+                {/* Tabular numerals so the repo count does not shimmer. */}
+                <span className="text-ink-subtle tabular-nums">
+                  {" · "}
+                  {profile.repoCount}
                 </span>
-                <Link
-                  to="/profile"
-                  className="text-xs text-ink-subtle underline underline-offset-2 hover:text-ink"
-                >
-                  {MESSAGES.START_MATERIAL_EDIT}
-                </Link>
-              </div>
-              <ul className="flex flex-col gap-1 text-sm">
-                <li className="flex items-center gap-2">
-                  <FileTextIcon
-                    aria-hidden
-                    className="size-3.5 shrink-0 text-cue-ink"
-                  />
-                  {MESSAGES.START_MATERIAL_RESUME}
-                </li>
-                {profile.githubUsername !== undefined ? (
-                  <li className="flex items-center gap-2">
-                    <FolderGit2Icon
-                      aria-hidden
-                      className="size-3.5 shrink-0 text-cue-ink"
-                    />
-                    {/* Tabular numerals so the repo count does not shimmer. */}
-                    <span className="truncate">
-                      {profile.githubUsername}
-                      <span className="text-ink-subtle tabular-nums">
-                        {" · "}
-                        {profile.repoCount}
-                      </span>
-                    </span>
-                  </li>
-                ) : null}
-              </ul>
-            </div>
-          ) : null}
+              </li>
+            ) : null}
+          </ul>
+        </section>
+      ) : null}
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="role">{MESSAGES.FORM_ROLE_LABEL}</Label>
+      {/* Sections are separated by a rule and the ladder's top step, with no
+          heading of their own. Three inputs do not need three headings — the
+          field labels already name them, and an `<Eyebrow>` above each would
+          say the same word twice. Grouping here is spacing's job. */}
+      <section className="flex flex-col gap-4 border-t border-hairline pt-8">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="role">{MESSAGES.FORM_ROLE_LABEL}</Label>
 
-            {/* Shortcuts that fill the input rather than a separate mode. The
+          {/* Shortcuts that fill the input rather than a separate mode. The
                 input stays the single source of truth, so there is no state
                 where a chip is lit and the field says something else. */}
-            <div className="grid grid-cols-2 gap-2">
-              {TARGET_ROLE_PRESETS.map((preset) => {
-                const selected = targetRole.trim() === preset;
-                return (
-                  <Button
-                    key={preset}
-                    type="button"
-                    variant={selected ? "default" : "outline"}
-                    aria-pressed={selected}
-                    disabled={isBusy}
-                    className="cursor-pointer justify-start text-sm font-normal"
-                    onClick={() => {
-                      setTargetRole(preset);
-                      setRoleError(null);
-                    }}
-                  >
-                    {/* Selection is carried by the filled variant and by
+          {/* One column until `sm`. Two columns at 375px left every preset
+              truncated — "Backend Engin…", "Cloud / DevOp…" — which turns a set
+              of choices into a row of guesses, and the label that gets cut is
+              the one carrying the distinction. */}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {TARGET_ROLE_PRESETS.map((preset) => {
+              const selected = targetRole.trim() === preset;
+              return (
+                <Button
+                  key={preset}
+                  type="button"
+                  variant={selected ? "default" : "outline"}
+                  aria-pressed={selected}
+                  disabled={isBusy}
+                  className="cursor-pointer justify-start text-sm font-normal"
+                  onClick={() => {
+                    setTargetRole(preset);
+                    setRoleError(null);
+                  }}
+                >
+                  {/* Selection is carried by the filled variant and by
                         aria-pressed, with the check as a third channel —
                         colour alone is never the signal. */}
-                    {selected ? (
-                      <CheckIcon aria-hidden className="size-4 shrink-0" />
-                    ) : null}
-                    <span className="truncate">{preset}</span>
-                  </Button>
-                );
-              })}
-            </div>
-
-            <Input
-              id="role"
-              value={targetRole}
-              disabled={isBusy}
-              placeholder={MESSAGES.FORM_ROLE_PLACEHOLDER}
-              aria-describedby="role-hint"
-              aria-invalid={roleError !== null}
-              onChange={(e) => setTargetRole(e.target.value)}
-              // Validated on blur, not per keystroke — an error appearing while
-              // someone is still typing the first letter reads as scolding.
-              onBlur={() =>
-                setRoleError(
-                  targetRole.trim().length === 0
-                    ? MESSAGES.FORM_ROLE_REQUIRED
-                    : null
-                )
-              }
-            />
-            <p
-              id="role-hint"
-              className={
-                roleError !== null
-                  ? "text-xs text-destructive"
-                  : "text-xs text-ink-subtle"
-              }
-            >
-              {roleError ?? MESSAGES.FORM_ROLE_HINT}
-            </p>
+                  {selected ? (
+                    <CheckIcon aria-hidden className="size-4 shrink-0" />
+                  ) : null}
+                  <span className="truncate">{preset}</span>
+                </Button>
+              );
+            })}
           </div>
 
-          {/* Genuinely optional, and the interview is whole without it. Left
-              open rather than behind a disclosure: a collapsed field is a
-              field nobody finds, and this is the one input that changes what
-              the interviewer chooses to ask about. */}
-          <div className="flex flex-col gap-2">
-            <div className="flex items-baseline justify-between">
-              <Label htmlFor="job-description">{MESSAGES.START_JD_LABEL}</Label>
-              <span className="font-mono text-[0.7rem] uppercase tracking-[0.12em] text-ink-faint">
-                {MESSAGES.START_JD_OPTIONAL}
-              </span>
-            </div>
-            <Textarea
-              id="job-description"
-              value={jobDescription}
-              disabled={isBusy}
-              rows={5}
-              placeholder={MESSAGES.START_JD_PLACEHOLDER}
-              aria-describedby="job-description-hint"
-              aria-invalid={jdTooLong}
-              className="max-h-64 resize-y"
-              onChange={(e) => setJobDescription(e.target.value)}
-            />
-            <p
-              id="job-description-hint"
-              className={
-                jdTooLong
-                  ? "text-xs text-destructive"
-                  : "text-xs text-ink-subtle"
-              }
-            >
-              {jdTooLong ? MESSAGES.START_JD_TOO_LONG : MESSAGES.START_JD_HINT}
-            </p>
-          </div>
+          <Input
+            id="role"
+            value={targetRole}
+            disabled={isBusy}
+            placeholder={MESSAGES.FORM_ROLE_PLACEHOLDER}
+            aria-describedby="role-hint"
+            aria-invalid={roleError !== null}
+            onChange={(e) => setTargetRole(e.target.value)}
+            // Validated on blur, not per keystroke — an error appearing while
+            // someone is still typing the first letter reads as scolding.
+            onBlur={() =>
+              setRoleError(
+                targetRole.trim().length === 0
+                  ? MESSAGES.FORM_ROLE_REQUIRED
+                  : null,
+              )
+            }
+          />
+          <p
+            id="role-hint"
+            className={
+              roleError !== null
+                ? "text-xs text-destructive"
+                : "text-xs text-ink-subtle"
+            }
+          >
+            {roleError ?? MESSAGES.FORM_ROLE_HINT}
+          </p>
+        </div>
+      </section>
 
-          {/* Revealed by the posting rather than always present. Two more
+      {/* Genuinely optional, and the interview is whole without it. Left
+          open rather than behind a disclosure: a collapsed field is a
+          field nobody finds, and this is the one input that changes what
+          the interviewer chooses to ask about. */}
+      <section className="flex flex-col gap-4 border-t border-hairline pt-8">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-baseline justify-between">
+            <Label htmlFor="job-description">{MESSAGES.START_JD_LABEL}</Label>
+            <Eyebrow>{MESSAGES.START_JD_OPTIONAL}</Eyebrow>
+          </div>
+          <Textarea
+            id="job-description"
+            value={jobDescription}
+            disabled={isBusy}
+            rows={5}
+            placeholder={MESSAGES.START_JD_PLACEHOLDER}
+            aria-describedby="job-description-hint"
+            aria-invalid={jdTooLong}
+            className="max-h-64 resize-y"
+            onChange={(e) => setJobDescription(e.target.value)}
+          />
+          <p
+            id="job-description-hint"
+            className={
+              jdTooLong ? "text-xs text-destructive" : "text-xs text-ink-subtle"
+            }
+          >
+            {jdTooLong ? MESSAGES.START_JD_TOO_LONG : MESSAGES.START_JD_HINT}
+          </p>
+        </div>
+
+        {/* Revealed by the posting rather than always present. Two more
               fields on an empty form is a longer form for everyone; revealed
               here they arrive at the moment they start doing something. */}
-          {showCompanyFields ? (
-            <div className="flex flex-col gap-4 border-l border-hairline pl-4">
+        {showCompanyFields ? (
+          <div className="flex flex-col gap-4 border-l border-hairline pl-4">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-baseline justify-between">
+                <Label htmlFor="company">{MESSAGES.START_COMPANY_LABEL}</Label>
+                <Eyebrow>{MESSAGES.START_JD_OPTIONAL}</Eyebrow>
+              </div>
+              <Input
+                id="company"
+                value={companyName}
+                disabled={isBusy}
+                placeholder={MESSAGES.START_COMPANY_PLACEHOLDER}
+                aria-describedby="company-hint"
+                maxLength={INTEL_LIMITS.MAX_COMPANY_CHARS}
+                onChange={(e) => setCompanyName(e.target.value)}
+              />
+              <p id="company-hint" className="text-xs text-ink-subtle">
+                {MESSAGES.START_COMPANY_HINT}
+              </p>
+            </div>
+
+            {/* Only once a company is named — notes about nobody are notes
+                  the interview has no way to attach to anything. */}
+            {trimmedCompany.length > 0 ? (
               <div className="flex flex-col gap-2">
-                <div className="flex items-baseline justify-between">
-                  <Label htmlFor="company">{MESSAGES.START_COMPANY_LABEL}</Label>
-                  <span className="font-mono text-[0.7rem] uppercase tracking-[0.12em] text-ink-faint">
-                    {MESSAGES.START_JD_OPTIONAL}
-                  </span>
-                </div>
-                <Input
-                  id="company"
-                  value={companyName}
+                <Label htmlFor="company-notes">
+                  {MESSAGES.START_COMPANY_NOTES_LABEL}
+                </Label>
+                <Textarea
+                  id="company-notes"
+                  value={companyNotes}
                   disabled={isBusy}
-                  placeholder={MESSAGES.START_COMPANY_PLACEHOLDER}
-                  aria-describedby="company-hint"
-                  maxLength={INTEL_LIMITS.MAX_COMPANY_CHARS}
-                  onChange={(e) => setCompanyName(e.target.value)}
+                  rows={3}
+                  placeholder={MESSAGES.START_COMPANY_NOTES_PLACEHOLDER}
+                  aria-describedby="company-notes-hint"
+                  maxLength={INTEL_LIMITS.MAX_NOTES_CHARS}
+                  className="max-h-40 resize-y"
+                  onChange={(e) => setCompanyNotes(e.target.value)}
                 />
-                <p id="company-hint" className="text-xs text-ink-subtle">
-                  {MESSAGES.START_COMPANY_HINT}
+                <p id="company-notes-hint" className="text-xs text-ink-subtle">
+                  {MESSAGES.START_COMPANY_NOTES_HINT}
                 </p>
               </div>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
 
-              {/* Only once a company is named — notes about nobody are notes
-                  the interview has no way to attach to anything. */}
-              {trimmedCompany.length > 0 ? (
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="company-notes">
-                    {MESSAGES.START_COMPANY_NOTES_LABEL}
-                  </Label>
-                  <Textarea
-                    id="company-notes"
-                    value={companyNotes}
-                    disabled={isBusy}
-                    rows={3}
-                    placeholder={MESSAGES.START_COMPANY_NOTES_PLACEHOLDER}
-                    aria-describedby="company-notes-hint"
-                    maxLength={INTEL_LIMITS.MAX_NOTES_CHARS}
-                    className="max-h-40 resize-y"
-                    onChange={(e) => setCompanyNotes(e.target.value)}
-                  />
-                  <p id="company-notes-hint" className="text-xs text-ink-subtle">
-                    {MESSAGES.START_COMPANY_NOTES_HINT}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </CardContent>
+      {/* The submit block is a section like the others rather than a card
+          footer, so it sits on the same rule and the same rhythm. No `mt-6`
+          patching a gap the container already owns. */}
+      <div className="flex flex-col gap-3 border-t border-hairline pt-8">
+        {/* Space is reserved by the conditional block rather than a spinner
+            sitting where content will land. Announced politely so the phase
+            change is available without watching the bar. */}
+        {isBusy ? (
+          <div className="w-full space-y-2" aria-live="polite">
+            <p className="font-mono text-xs text-ink-subtle">
+              {setup.status === "creating"
+                ? MESSAGES.START_PHASE_CREATING
+                : MESSAGES.PLAN_PHASE_BUILDING}
+            </p>
+            <Progress
+              value={null}
+              className="animate-pulse motion-reduce:animate-none"
+            />
+          </div>
+        ) : null}
 
-        <CardFooter className="mt-6 flex-col gap-3">
-          {/* Space is reserved by the conditional block rather than a spinner
-              sitting where content will land. Announced politely so the phase
-              change is available without watching the bar. */}
-          {isBusy ? (
-            <div className="w-full space-y-2" aria-live="polite">
-              <p className="font-mono text-xs text-ink-subtle">
-                {setup.status === "creating"
-                  ? MESSAGES.START_PHASE_CREATING
-                  : MESSAGES.PLAN_PHASE_BUILDING}
-              </p>
-              <Progress
-                value={null}
-                className="animate-pulse motion-reduce:animate-none"
-              />
-            </div>
-          ) : null}
-
-          <Button
-            size="lg"
-            className="w-full cursor-pointer"
-            onClick={handleSubmit}
-            disabled={isBusy || jdTooLong}
-          >
-            {isBusy ? MESSAGES.START_SUBMIT_PENDING : MESSAGES.START_SUBMIT}
-          </Button>
-        </CardFooter>
-      </Card>
+        {/* Sized to its words rather than stretched across the column. A
+            full-width button reads as "the only thing here", which was true
+            inside a 448px card and is not true on a page. */}
+        <Button
+          size="lg"
+          className="cursor-pointer self-start"
+          onClick={handleSubmit}
+          disabled={isBusy || jdTooLong}
+        >
+          {isBusy ? MESSAGES.START_SUBMIT_PENDING : MESSAGES.START_SUBMIT}
+        </Button>
+      </div>
     </div>
   );
 }

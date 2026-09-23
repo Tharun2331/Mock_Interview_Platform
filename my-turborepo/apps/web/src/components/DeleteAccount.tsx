@@ -73,14 +73,13 @@ export function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
   };
 
   return (
+    // No heading or description of its own. The profile page's Account section
+    // now names this block and explains what deletion does, in its left rail —
+    // rendering both put the same warning on screen twice, side by side, and
+    // nested an `h2` inside the section's `h3`. The rail explains; this is the
+    // action. The full consequences are still spelled out in the dialog, which
+    // is the last point anyone can turn back.
     <div className="flex flex-col gap-3 rounded-md border border-destructive/30 px-4 py-4">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-sm font-medium">{MESSAGES.DELETE_SECTION_TITLE}</h2>
-        <p className="text-xs leading-relaxed text-ink-subtle">
-          {MESSAGES.DELETE_SECTION_BODY}
-        </p>
-      </div>
-
       <AlertDialog
         open={open}
         onOpenChange={(next) => {

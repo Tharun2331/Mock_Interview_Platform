@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Eyebrow } from "@/components/Eyebrow";
 import { PresenceOrb } from "@/components/PresenceOrb";
 import { useInterview, type InterviewState } from "@/hooks/useInterview";
 import { MESSAGES } from "@/lib/messages";
@@ -147,7 +148,7 @@ function Interstitial({
       {icon}
       <div className="flex max-w-sm flex-col gap-3">
         {title !== undefined ? (
-          <h2 className="font-display text-3xl text-ink">{title}</h2>
+          <h1 className="font-display text-3xl text-ink">{title}</h1>
         ) : null}
         <p className="text-sm leading-relaxed text-ink-muted">{body}</p>
       </div>
@@ -203,7 +204,10 @@ export function Interview() {
           }
           body={MESSAGES.INTERVIEW_NO_SESSION}
         >
-          <Button className="cursor-pointer" onClick={() => void navigate("/form")}>
+          <Button
+            className="cursor-pointer"
+            onClick={() => void navigate("/form")}
+          >
             {MESSAGES.INTERVIEW_BACK}
           </Button>
         </Interstitial>
@@ -212,7 +216,8 @@ export function Interview() {
   }
 
   const status = statusFor(state);
-  const listening = state.status === "recording" || state.status === "interrupting";
+  const listening =
+    state.status === "recording" || state.status === "interrupting";
   const speaking = state.status === "interviewer-speaking";
 
   // Whichever voice currently holds the floor. Both readings are measured off
@@ -254,9 +259,7 @@ export function Interview() {
 
       {state.status === "idle" ? (
         <Interstitial
-          icon={
-            <PresenceOrb hue="var(--cue)" className="size-28 sm:size-36" />
-          }
+          icon={<PresenceOrb hue="var(--cue)" className="size-28 sm:size-36" />}
           title={MESSAGES.INTERVIEW_TITLE}
           // Explained before the browser prompt appears, not after — a
           // permission dialog with no stated reason gets dismissed.
@@ -297,10 +300,7 @@ export function Interview() {
       ) : null}
 
       {state.status === "ended" ? (
-        <Interstitial
-          title={MESSAGES.INTERVIEW_ENDED}
-          body={state.reason}
-        >
+        <Interstitial title={MESSAGES.INTERVIEW_ENDED} body={state.reason}>
           {/* The primary action after an interview is reading the feedback,
               not starting another one. Scoring is already running by the time
               this renders — the results page shows it arriving rather than
@@ -329,9 +329,7 @@ export function Interview() {
               every running state, and this row is the one thing on screen that
               never moves. */}
           <div className="flex items-center justify-between">
-            <span className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-ink-faint">
-              {MESSAGES.INTERVIEW_EYEBROW}
-            </span>
+            <Eyebrow>{MESSAGES.INTERVIEW_EYEBROW}</Eyebrow>
 
             {/* Shown whenever the microphone is genuinely open — including
                 while the interviewer speaks, because it is. Hiding it then
@@ -362,7 +360,6 @@ export function Interview() {
               sits in — without it the page picks up a horizontal scrollbar at
               narrow widths. */}
           <section className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-6 overflow-hidden">
-
             {/* Height is reserved so the clock's arrival does not shunt the orb
                 down the screen mid-connect. Shown from the start rather than
                 only when time runs short: a candidate who has to ask how long
@@ -384,12 +381,9 @@ export function Interview() {
                   </span>
                   {/* The final stretch changes the word as well as the colour,
                       so the warning survives on a monochrome display. */}
-                  <span
+                  <Eyebrow
                     className={cn(
-                      "font-mono text-[0.7rem] uppercase tracking-[0.14em]",
-                      remainingMs <= FIVE_MINUTES_MS
-                        ? "text-score-mixed"
-                        : "text-ink-faint",
+                      remainingMs <= FIVE_MINUTES_MS && "text-score-mixed",
                     )}
                     aria-hidden
                   >
@@ -398,7 +392,7 @@ export function Interview() {
                       : remainingMs <= FIVE_MINUTES_MS
                         ? MESSAGES.INTERVIEW_TIME_ENDING_LABEL
                         : MESSAGES.INTERVIEW_TIME_LABEL}
-                  </span>
+                  </Eyebrow>
                   {/* The split numerals read as "three four five eight" to a
                       screen reader, so the whole sentence is carried here
                       instead. */}
@@ -406,8 +400,12 @@ export function Interview() {
                     {remainingMs === 0
                       ? MESSAGES.INTERVIEW_TIME_UP
                       : remainingMs <= FIVE_MINUTES_MS
-                        ? MESSAGES.INTERVIEW_TIME_ENDING(formatRemaining(remainingMs))
-                        : MESSAGES.INTERVIEW_TIME_LEFT(formatRemaining(remainingMs))}
+                        ? MESSAGES.INTERVIEW_TIME_ENDING(
+                            formatRemaining(remainingMs),
+                          )
+                        : MESSAGES.INTERVIEW_TIME_LEFT(
+                            formatRemaining(remainingMs),
+                          )}
                   </span>
                 </>
               ) : null}
@@ -479,8 +477,8 @@ export function Interview() {
                   // an index key remounts the row on every partial and makes the
                   // list jump while it is being read.
                   <p key={row.id} className="flex flex-col items-center gap-1">
-                    <span
-                      className="font-mono text-[0.6rem] uppercase tracking-[0.14em]"
+                    <Eyebrow
+                      size="sm"
                       style={{
                         color:
                           row.role === "candidate"
@@ -491,7 +489,7 @@ export function Interview() {
                       {row.role === "candidate"
                         ? MESSAGES.INTERVIEW_SPEAKER_YOU
                         : MESSAGES.INTERVIEW_SPEAKER_INTERVIEWER}
-                    </span>
+                    </Eyebrow>
                     {/* Provisional text is dimmed and promoted when final. The
                         difference between "we think you said" and "you said"
                         should need no legend. */}

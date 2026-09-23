@@ -59,3 +59,7 @@ override.tf.json
 
 # Local dev notes — never commit
 .claude.local.md
+
+# Playwright CLI — workspace state and session artifacts (snapshots, screenshots, traces)
+.playwright/
+.playwright-cli/

@@ -57,14 +57,19 @@ function renderPage() {
         <Route path="/coach" element={<Coach />} />
         <Route path="/start" element={<p>start page</p>} />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
 /** The page fetches on mount, so every assertion waits for the first paint
- *  after that resolves rather than racing the loading state. */
+ *  after that resolves rather than racing the loading state.
+ *
+ *  Level 1, not 2: every page behind the login now opens at `h1`, and each of
+ *  this page's states — failed, nothing-to-coach, and a report — puts its own
+ *  title there. So this anchors on "whatever this page is showing, it has
+ *  finished deciding", which is what the wait is actually for. */
 async function settle(): Promise<void> {
-  await screen.findByRole("heading", { level: 2 }, { timeout: 2000 });
+  await screen.findByRole("heading", { level: 1 }, { timeout: 2000 });
 }
 
 beforeEach(() => {
@@ -84,7 +89,7 @@ describe("a candidate with nothing to coach", () => {
 
     expect(screen.getByText(MESSAGES.COACH_EMPTY_TITLE)).toBeDefined();
     expect(
-      screen.getByRole("button", { name: MESSAGES.COACH_EMPTY_ACTION })
+      screen.getByRole("button", { name: MESSAGES.COACH_EMPTY_ACTION }),
     ).toBeDefined();
   });
 
@@ -118,7 +123,7 @@ describe("a candidate with one interview", () => {
     // Named on both tracks, so this is getAllByText rather than getByText.
     expect(screen.getAllByText("Backend Engineer").length).toBeGreaterThan(0);
     expect(
-      screen.getByText("Name the tradeoff before the solution.")
+      screen.getByText("Name the tradeoff before the solution."),
     ).toBeDefined();
   });
 });
@@ -173,7 +178,9 @@ describe("the trend cards", () => {
     await settle();
 
     expect(
-      screen.getByText("You are getting steadier at explaining your own systems.")
+      screen.getByText(
+        "You are getting steadier at explaining your own systems.",
+      ),
     ).toBeDefined();
   });
 });
@@ -188,7 +195,9 @@ describe("the roadmap", () => {
     await settle();
 
     const lists = screen.getAllByRole("list");
-    expect(lists.some((list) => list.tagName.toLowerCase() === "ol")).toBe(true);
+    expect(lists.some((list) => list.tagName.toLowerCase() === "ol")).toBe(
+      true,
+    );
   });
 
   it("renders the items in priority order", async () => {
@@ -227,9 +236,15 @@ describe("the roadmap", () => {
     renderPage();
     await settle();
 
-    expect(screen.getByText(MESSAGES.COACH_TRACK_LABEL.communication)).toBeDefined();
-    expect(screen.getByText(MESSAGES.COACH_TRACK_ANCHOR.communication)).toBeDefined();
-    expect(screen.getByText(MESSAGES.COACH_TRACK_LABEL.technical)).toBeDefined();
+    expect(
+      screen.getByText(MESSAGES.COACH_TRACK_LABEL.communication),
+    ).toBeDefined();
+    expect(
+      screen.getByText(MESSAGES.COACH_TRACK_ANCHOR.communication),
+    ).toBeDefined();
+    expect(
+      screen.getByText(MESSAGES.COACH_TRACK_LABEL.technical),
+    ).toBeDefined();
   });
 
   // The honest half of the design, and it has to be visible rather than buried
@@ -239,8 +254,12 @@ describe("the roadmap", () => {
     renderPage();
     await settle();
 
-    expect(screen.getByText(MESSAGES.COACH_CONFIDENCE_LABEL.confident)).toBeDefined();
-    expect(screen.getByText(MESSAGES.COACH_CONFIDENCE_LABEL.tentative)).toBeDefined();
+    expect(
+      screen.getByText(MESSAGES.COACH_CONFIDENCE_LABEL.confident),
+    ).toBeDefined();
+    expect(
+      screen.getByText(MESSAGES.COACH_CONFIDENCE_LABEL.tentative),
+    ).toBeDefined();
   });
 
   // A tooltip is invisible on a touch screen, so the sentence is on the page
@@ -250,7 +269,7 @@ describe("the roadmap", () => {
     await settle();
 
     expect(
-      screen.getByText(MESSAGES.COACH_CONFIDENCE_ANCHOR.tentative)
+      screen.getByText(MESSAGES.COACH_CONFIDENCE_ANCHOR.tentative),
     ).toBeDefined();
   });
 
@@ -297,7 +316,7 @@ describe("a failed load", () => {
 
     expect(screen.getByText(MESSAGES.COACH_LOAD_FAILED)).toBeDefined();
     expect(
-      screen.getByRole("button", { name: new RegExp(MESSAGES.RETRY, "i") })
+      screen.getByRole("button", { name: new RegExp(MESSAGES.RETRY, "i") }),
     ).toBeDefined();
   });
 
