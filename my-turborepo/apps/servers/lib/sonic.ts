@@ -25,7 +25,12 @@ import type { CompletedExchange } from "./exchangeBuffer";
 // open, not per turn, so a leaked stream is a meter left running.
 
 export type SonicEvent =
-  | { kind: "contentStart"; role: string; type: string; generationStage: string | null }
+  | {
+      kind: "contentStart";
+      role: string;
+      type: string;
+      generationStage: string | null;
+    }
   | { kind: "textOutput"; content: string }
   | { kind: "audioOutput"; base64: string }
   | { kind: "toolUse"; toolName: string; toolUseId: string; content: string }
@@ -62,7 +67,7 @@ type SonicSessionArgs = {
 class EventQueue {
   private readonly pending: InvokeModelWithBidirectionalStreamInput[] = [];
   private readonly waiting: ((
-    value: IteratorResult<InvokeModelWithBidirectionalStreamInput>
+    value: IteratorResult<InvokeModelWithBidirectionalStreamInput>,
   ) => void)[] = [];
   private closed = false;
 
@@ -301,13 +306,13 @@ export class SonicSession {
       new InvokeModelWithBidirectionalStreamCommand({
         modelId: SONIC.MODEL_ID,
         body: this.queue,
-      })
+      }),
     );
 
     this.resetIdleTimer();
     this.maxTimer = setTimeout(
       () => void this.close("max session duration reached"),
-      SONIC.MAX_SESSION_MS
+      SONIC.MAX_SESSION_MS,
     );
 
     // Deliberately not awaited. The caller needs start() to resolve so it can
@@ -430,12 +435,12 @@ export class SonicSession {
     if (this.idleTimer !== null) clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(
       () => void this.close("idle timeout"),
-      SONIC.IDLE_TIMEOUT_MS
+      SONIC.IDLE_TIMEOUT_MS,
     );
   }
 
   private async consume(
-    body: AsyncIterable<{ chunk?: { bytes?: Uint8Array } }> | undefined
+    body: AsyncIterable<{ chunk?: { bytes?: Uint8Array } }> | undefined,
   ): Promise<void> {
     try {
       for await (const chunk of body ?? []) {
@@ -489,14 +494,18 @@ export class SonicSession {
 
     const textOutput = event.textOutput;
     if (typeof textOutput === "object" && textOutput !== null) {
-      const content = readString((textOutput as Record<string, unknown>).content);
+      const content = readString(
+        (textOutput as Record<string, unknown>).content,
+      );
       if (content !== null) emit({ kind: "textOutput", content });
       return;
     }
 
     const audioOutput = event.audioOutput;
     if (typeof audioOutput === "object" && audioOutput !== null) {
-      const base64 = readString((audioOutput as Record<string, unknown>).content);
+      const base64 = readString(
+        (audioOutput as Record<string, unknown>).content,
+      );
       if (base64 !== null) emit({ kind: "audioOutput", base64 });
       return;
     }
@@ -531,7 +540,7 @@ export class SonicSession {
       emit({
         kind: "completionEnd",
         stopReason: readString(
-          (completionEnd as Record<string, unknown>).stopReason
+          (completionEnd as Record<string, unknown>).stopReason,
         ),
       });
     }
@@ -611,7 +620,7 @@ export class SonicConversation {
       // in seconds rather than only after six and a half minutes — a handover
       // that cannot be tested is a handover nobody has seen work.
       renewAfterMs?: number;
-    }
+    },
   ) {}
 
   get renewalCount(): number {
@@ -624,7 +633,7 @@ export class SonicConversation {
   }
 
   private async open(
-    history: readonly CompletedExchange[]
+    history: readonly CompletedExchange[],
   ): Promise<SonicSession> {
     const prompt = this.args.systemPrompt;
     const session = new SonicSession({
@@ -651,7 +660,7 @@ export class SonicConversation {
     this.renewTimer = setTimeout(
       () => void this.renew(),
       this.args.renewAfterMs ??
-        SONIC.STREAM_LIFETIME_MS - SONIC.RENEW_BEFORE_MS
+        SONIC.STREAM_LIFETIME_MS - SONIC.RENEW_BEFORE_MS,
     );
   }
 

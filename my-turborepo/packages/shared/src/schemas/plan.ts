@@ -103,35 +103,36 @@ export type PlannerInput = z.infer<typeof PlannerInputSchema>;
 // The interview plan itself: what to probe, how the round is split, and how hard
 // to pitch it. This is also the shape the model must emit, so it is validated
 // directly against the generation — no parallel "model output" schema to drift.
-export const PlanResponseSchema = z.object({
-  // Drawn from the candidate's actual repositories and stated skills, not from
-  // generic role expectations.
-  focusAreas: z
-    .array(FocusAreaSchema)
-    .min(PLAN_LIMITS.MIN_FOCUS_AREAS)
-    .max(PLAN_LIMITS.MAX_FOCUS_AREAS),
-  // A budget the live interviewer spends, not a queue it drains. It exists to
-  // stop a session running 40 behavioural questions deep, not to prescribe an
-  // order — the Mock Interview agent interleaves the three types as the
-  // conversation goes.
-  questionMix: z.object({
-    behavioural: z.number().int().min(0).max(PLAN_LIMITS.MAX_QUESTIONS),
-    technical: z.number().int().min(0).max(PLAN_LIMITS.MAX_QUESTIONS),
-    roleSpecific: z.number().int().min(0).max(PLAN_LIMITS.MAX_QUESTIONS),
-  }),
-  // A hypothesis, not a setting. The Mock Interview agent tests this over the
-  // first exchange or two of each focus area and moves off it in either
-  // direction based on what it actually hears. Nothing pins the whole session
-  // to it — that is the difference between an adaptive interview and a quiz
-  // with a difficulty slider.
-  startingDifficulty: InterviewDifficultySchema,
-  targetMinutes: z
-    .number()
-    .int()
-    .min(PLAN_LIMITS.MIN_TARGET_MINUTES)
-    .max(PLAN_LIMITS.MAX_TARGET_MINUTES),
-  reasoning: z.string().min(1),
-})
+export const PlanResponseSchema = z
+  .object({
+    // Drawn from the candidate's actual repositories and stated skills, not from
+    // generic role expectations.
+    focusAreas: z
+      .array(FocusAreaSchema)
+      .min(PLAN_LIMITS.MIN_FOCUS_AREAS)
+      .max(PLAN_LIMITS.MAX_FOCUS_AREAS),
+    // A budget the live interviewer spends, not a queue it drains. It exists to
+    // stop a session running 40 behavioural questions deep, not to prescribe an
+    // order — the Mock Interview agent interleaves the three types as the
+    // conversation goes.
+    questionMix: z.object({
+      behavioural: z.number().int().min(0).max(PLAN_LIMITS.MAX_QUESTIONS),
+      technical: z.number().int().min(0).max(PLAN_LIMITS.MAX_QUESTIONS),
+      roleSpecific: z.number().int().min(0).max(PLAN_LIMITS.MAX_QUESTIONS),
+    }),
+    // A hypothesis, not a setting. The Mock Interview agent tests this over the
+    // first exchange or two of each focus area and moves off it in either
+    // direction based on what it actually hears. Nothing pins the whole session
+    // to it — that is the difference between an adaptive interview and a quiz
+    // with a difficulty slider.
+    startingDifficulty: InterviewDifficultySchema,
+    targetMinutes: z
+      .number()
+      .int()
+      .min(PLAN_LIMITS.MIN_TARGET_MINUTES)
+      .max(PLAN_LIMITS.MAX_TARGET_MINUTES),
+    reasoning: z.string().min(1),
+  })
   // A mix of all zeroes satisfies every field bound and still describes no
   // interview. Checking the total is what makes the plan actually runnable.
   .refine(
@@ -140,12 +141,14 @@ export const PlanResponseSchema = z.object({
         plan.questionMix.behavioural +
         plan.questionMix.technical +
         plan.questionMix.roleSpecific;
-      return total >= PLAN_LIMITS.MIN_QUESTIONS && total <= PLAN_LIMITS.MAX_QUESTIONS;
+      return (
+        total >= PLAN_LIMITS.MIN_QUESTIONS && total <= PLAN_LIMITS.MAX_QUESTIONS
+      );
     },
     {
       message: `questionMix must total between ${PLAN_LIMITS.MIN_QUESTIONS} and ${PLAN_LIMITS.MAX_QUESTIONS} questions.`,
       path: ["questionMix"],
-    }
+    },
   );
 
 export type PlanResponse = z.infer<typeof PlanResponseSchema>;

@@ -24,7 +24,7 @@ const csvList = (key: string, value: string): string[] => {
   if (items.length === 0) {
     throw new Error(
       `${key} is set but contains no entries. ` +
-        `Provide a comma-separated list, or unset it to use the default.`
+        `Provide a comma-separated list, or unset it to use the default.`,
     );
   }
   return items;
@@ -72,7 +72,7 @@ const DEFAULT_TEXT_MODELS = [
   "mistral.ministral-3-8b-instruct",
   "us.meta.llama4-scout-17b-instruct-v1:0",
   "qwen.qwen3-coder-30b-a3b-v1:0",
-].join(","); 
+].join(",");
 
 // Shortens an interview to a length that can actually be sat through while
 // developing. A real plan is 15-40 minutes by schema, which makes testing the
@@ -100,40 +100,47 @@ const testTargetMinutes = (): number => {
 };
 
 export const config = {
-  port:                   Number(env("PORT", "8000")),
+  port: Number(env("PORT", "8000")),
   // True only outside production AND only when explicitly asked for.
-  interviewTestMode:      !isProduction() && env("INTERVIEW_TEST_MODE", "") === "true",
+  interviewTestMode:
+    !isProduction() && env("INTERVIEW_TEST_MODE", "") === "true",
   interviewTestTargetMinutes: testTargetMinutes(),
-  corsOrigins:            csvList("CORS_ORIGIN", env("CORS_ORIGIN", "http://localhost:3000")),
+  corsOrigins: csvList(
+    "CORS_ORIGIN",
+    env("CORS_ORIGIN", "http://localhost:3000"),
+  ),
   // Caps the JSON parser. Every current route takes a small object; resume
   // uploads are multipart and will carry their own limit.
-  jsonBodyLimit:          env("JSON_BODY_LIMIT", "16kb"),
-  awsRegion:              env("AWS_REGION", "us-east-1"),
-  bedrockTextModelIds:    csvList("BEDROCK_TEXT_MODEL_IDS", env("BEDROCK_TEXT_MODEL_IDS", DEFAULT_TEXT_MODELS)),
-  githubApiBase:          env("GITHUB_API_BASE", "https://api.github.com"),
+  jsonBodyLimit: env("JSON_BODY_LIMIT", "16kb"),
+  awsRegion: env("AWS_REGION", "us-east-1"),
+  bedrockTextModelIds: csvList(
+    "BEDROCK_TEXT_MODEL_IDS",
+    env("BEDROCK_TEXT_MODEL_IDS", DEFAULT_TEXT_MODELS),
+  ),
+  githubApiBase: env("GITHUB_API_BASE", "https://api.github.com"),
   // From `terraform output uploads_bucket_id`. Not requireEnv: only the upload
   // path needs it, and failing boot would take down /plan and auth with it.
   // `lib/s3.ts` raises a clear error if an upload is attempted while unset.
-  uploadsBucket:          env("UPLOADS_BUCKET", ""),
+  uploadsBucket: env("UPLOADS_BUCKET", ""),
   // From `terraform output sessions_table_name`, and in deployed environments
   // from SSM at /prepilot/<env>/dynamodb/table_name. Never derived from the
   // environment name: deriving it is how a misconfigured dev deploy ends up
   // reading and writing prod's interviews. Same treatment as uploadsBucket —
   // not requireEnv, because only the persistence path needs it and failing boot
   // would take down auth and /plan with it.
-  sessionsTable:          env("SESSIONS_TABLE", ""),
+  sessionsTable: env("SESSIONS_TABLE", ""),
   // From `terraform output eval_queue_url`. Same treatment as the two above:
   // not requireEnv, because only the post-interview path needs it and failing
   // boot would take down auth, /plan and the interview loop itself. `lib/sqs.ts`
   // raises a clear error if an enqueue is attempted while unset.
-  evalQueueUrl:           env("EVAL_QUEUE_URL", ""),
+  evalQueueUrl: env("EVAL_QUEUE_URL", ""),
   // Without a timeout a hung upstream holds the request open indefinitely and
   // requests pile up behind it.
-  githubTimeoutMs:        Number(env("GITHUB_TIMEOUT_MS", "5000")),
+  githubTimeoutMs: Number(env("GITHUB_TIMEOUT_MS", "5000")),
   // The GitHub call is unauthenticated (60 req/hr per IP), so an unthrottled
   // route burns the shared quota for every user at once.
-  rateLimitWindowMs:      Number(env("RATE_LIMIT_WINDOW_MS", "60000")),
-  rateLimitMaxRequests:   Number(env("RATE_LIMIT_MAX_REQUESTS", "20")),
-  cognitoUserPoolId:       requireEnv("COGNITO_USER_POOL_ID"),
+  rateLimitWindowMs: Number(env("RATE_LIMIT_WINDOW_MS", "60000")),
+  rateLimitMaxRequests: Number(env("RATE_LIMIT_MAX_REQUESTS", "20")),
+  cognitoUserPoolId: requireEnv("COGNITO_USER_POOL_ID"),
   cognitoUserPoolClientId: requireEnv("COGNITO_USER_POOL_CLIENT_ID"),
 } as const;

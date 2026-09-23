@@ -1,4 +1,11 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "bun:test";
 import {
   BatchGetCommand,
   DynamoDBDocumentClient,
@@ -48,7 +55,12 @@ const INPUTS = {
   SK: SORT_KEY.INPUTS,
   type: ITEM_TYPE.SESSION_INPUTS,
   repos: [
-    { description: "Kafka consumers", name: "order-service", fullName: "u/order-service", starCount: 42 },
+    {
+      description: "Kafka consumers",
+      name: "order-service",
+      fullName: "u/order-service",
+      starCount: 42,
+    },
   ],
   resumeText: "Three years of React and Node at EY.",
   resumeKey: "resumes/user-1/resume.pdf",
@@ -56,7 +68,11 @@ const INPUTS = {
 
 const REQUIREMENTS = [
   { requirement: "Kubernetes", bucket: "none", evidence: "not mentioned" },
-  { requirement: "Kafka", bucket: "strong", evidence: "order-service consumers" },
+  {
+    requirement: "Kafka",
+    bucket: "strong",
+    evidence: "order-service consumers",
+  },
 ];
 
 const ErrorBody = z.object({
@@ -141,7 +157,9 @@ describe("POST /api/v1/gap", () => {
     await postGap(url, {
       ...BODY,
       resumeText: "someone else's resume",
-      repos: [{ description: null, name: "evil", fullName: "x/evil", starCount: 9 }],
+      repos: [
+        { description: null, name: "evil", fullName: "x/evil", starCount: 9 },
+      ],
     });
 
     expect(structuredCallCount()).toBe(1);
@@ -156,7 +174,7 @@ describe("POST /api/v1/gap", () => {
 
     expect(response.status).toBe(400);
     expect(ErrorBody.parse(await response.json()).message).toBe(
-      MESSAGES.INVALID_GAP_BODY
+      MESSAGES.INVALID_GAP_BODY,
     );
     expect(structuredCallCount()).toBe(0);
   });
@@ -204,7 +222,7 @@ describe("POST /api/v1/gap", () => {
   it("502s a model failure without leaking its detail", async () => {
     sessionFound();
     setStructuredFailure(
-      new BedrockError("prompt fragment and AWS internals", ["ministral"])
+      new BedrockError("prompt fragment and AWS internals", ["ministral"]),
     );
     const { url } = await start();
 
@@ -214,13 +232,17 @@ describe("POST /api/v1/gap", () => {
     expect(response.status).toBe(502);
     expect(raw).not.toContain("prompt fragment");
     expect(raw).not.toContain("ministral");
-    expect(ErrorBody.parse(JSON.parse(raw)).message).toBe(MESSAGES.GAP_UNAVAILABLE);
+    expect(ErrorBody.parse(JSON.parse(raw)).message).toBe(
+      MESSAGES.GAP_UNAVAILABLE,
+    );
   });
 
   // Anything not recognised is ours, not the model's, so it reads as a 500.
   it("500s an unclassified failure rather than blaming the model", async () => {
     sessionFound();
-    setStructuredFailure(new Error("something unexpected with internals in it"));
+    setStructuredFailure(
+      new Error("something unexpected with internals in it"),
+    );
     const { url } = await start();
 
     const response = await postGap(url, BODY);
@@ -247,9 +269,19 @@ describe("summariseRepos", () => {
   it("renders one line per repository", () => {
     expect(
       summariseRepos([
-        { description: "Kafka consumers", name: "order-service", fullName: "u/order-service", starCount: 42 },
-        { description: null, name: "scratch", fullName: "u/scratch", starCount: 0 },
-      ])
+        {
+          description: "Kafka consumers",
+          name: "order-service",
+          fullName: "u/order-service",
+          starCount: 42,
+        },
+        {
+          description: null,
+          name: "scratch",
+          fullName: "u/scratch",
+          starCount: 0,
+        },
+      ]),
     ).toBe("- order-service: Kafka consumers\n- scratch");
   });
 

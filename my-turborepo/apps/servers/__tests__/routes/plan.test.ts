@@ -15,7 +15,13 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
-import { ITEM_TYPE, SORT_KEY, sessionPk, userPk, type PlanResponse } from "@repo/shared";
+import {
+  ITEM_TYPE,
+  SORT_KEY,
+  sessionPk,
+  userPk,
+  type PlanResponse,
+} from "@repo/shared";
 import { z } from "zod";
 import type { MountedApp } from "../helpers/testApp";
 
@@ -152,7 +158,7 @@ describe("validation", () => {
 
     expect(response.status).toBe(400);
     expect(ErrorBody.parse(await response.json()).message).toBe(
-      MESSAGES.INVALID_PLAN_BODY
+      MESSAGES.INVALID_PLAN_BODY,
     );
   });
 
@@ -174,7 +180,9 @@ describe("validation", () => {
     await postPlan(url, {
       ...BODY,
       resumeText: "someone else's resume",
-      repos: [{ description: null, name: "evil", fullName: "x/evil", starCount: 9 }],
+      repos: [
+        { description: null, name: "evil", fullName: "x/evil", starCount: 9 },
+      ],
     });
 
     // Asserted on the prompt the real Planner built, which is the last point
@@ -204,7 +212,9 @@ describe("the plan cache", () => {
 
   it("regenerates when the profile version has moved on", async () => {
     sessionFound();
-    ddb.on(GetCommand).resolves({ Item: cachedPlanItem({ profileVersion: 2 }) });
+    ddb
+      .on(GetCommand)
+      .resolves({ Item: cachedPlanItem({ profileVersion: 2 }) });
     ddb.on(PutCommand).resolves({});
     ddb.on(UpdateCommand).resolves({});
     const { url } = await start();
@@ -246,7 +256,9 @@ describe("the plan cache", () => {
     // Session snapshotted at 3; the cached plan was built at 3. Fresh, even
     // though the candidate has since saved their profile again.
     sessionFound({ ...META, profileVersion: 3 });
-    ddb.on(GetCommand).resolves({ Item: cachedPlanItem({ profileVersion: 3 }) });
+    ddb
+      .on(GetCommand)
+      .resolves({ Item: cachedPlanItem({ profileVersion: 3 }) });
     ddb.on(UpdateCommand).resolves({});
     const { url } = await start();
 
@@ -363,7 +375,11 @@ describe("the gap trigger", () => {
     setStructuredReplies([
       {
         requirements: [
-          { requirement: "Kubernetes", bucket: "none", evidence: "not mentioned" },
+          {
+            requirement: "Kubernetes",
+            bucket: "none",
+            evidence: "not mentioned",
+          },
         ],
       },
     ]);
@@ -464,7 +480,10 @@ describe("the company intel trigger", () => {
     readyToPlan();
     const { url } = await start();
 
-    const response = await postPlan(url, { ...BODY, companyName: "Acme Systems" });
+    const response = await postPlan(url, {
+      ...BODY,
+      companyName: "Acme Systems",
+    });
 
     expect(response.status).toBe(200);
     await new Promise((resolve) => setTimeout(resolve, 60));
@@ -535,7 +554,8 @@ describe("persistence", () => {
     await postPlan(url, BODY);
 
     const values =
-      ddb.commandCalls(UpdateCommand)[0]?.args[0].input.ExpressionAttributeValues;
+      ddb.commandCalls(UpdateCommand)[0]?.args[0].input
+        .ExpressionAttributeValues;
     expect(values?.[":plan"]).toEqual(PLAN);
     // Derived from the mix, not trusted from the client.
     expect(values?.[":questionCount"]).toBe(10);
@@ -547,7 +567,9 @@ describe("persistence", () => {
   it("does not touch the session when the model fails", async () => {
     sessionFound();
     ddb.on(GetCommand).resolves({});
-    setModelFailure(new BedrockError("all models failed", ["ministral", "llama"]));
+    setModelFailure(
+      new BedrockError("all models failed", ["ministral", "llama"]),
+    );
     const { url } = await start();
 
     await postPlan(url, BODY);
@@ -565,21 +587,21 @@ describe("failure mapping", () => {
 
     expect(response.status).toBe(404);
     expect(ErrorBody.parse(await response.json()).message).toBe(
-      MESSAGES.SESSION_NOT_FOUND
+      MESSAGES.SESSION_NOT_FOUND,
     );
   });
 
   it("404s someone else's session with the identical response", async () => {
-    ddb
-      .on(BatchGetCommand)
-      .resolves({ Responses: { [TABLE]: [{ ...META, userId: "someone-else" }, INPUTS] } });
+    ddb.on(BatchGetCommand).resolves({
+      Responses: { [TABLE]: [{ ...META, userId: "someone-else" }, INPUTS] },
+    });
     const { url } = await start();
 
     const response = await postPlan(url, BODY);
 
     expect(response.status).toBe(404);
     expect(ErrorBody.parse(await response.json()).message).toBe(
-      MESSAGES.SESSION_NOT_FOUND
+      MESSAGES.SESSION_NOT_FOUND,
     );
   });
 
@@ -593,7 +615,7 @@ describe("failure mapping", () => {
 
     expect(response.status).toBe(409);
     expect(ErrorBody.parse(await response.json()).message).toBe(
-      MESSAGES.SESSION_ALREADY_STARTED
+      MESSAGES.SESSION_ALREADY_STARTED,
     );
   });
 
@@ -627,7 +649,7 @@ describe("failure mapping", () => {
 
     expect(response.status).toBe(500);
     expect(ErrorBody.parse(await response.json()).message).toBe(
-      MESSAGES.SESSION_UNAVAILABLE
+      MESSAGES.SESSION_UNAVAILABLE,
     );
   });
 
@@ -636,7 +658,9 @@ describe("failure mapping", () => {
   it("502s a Bedrock failure and keeps its detail out of the response", async () => {
     sessionFound();
     ddb.on(GetCommand).resolves({});
-    setModelFailure(new BedrockError("prompt fragment and AWS internals", ["ministral"]));
+    setModelFailure(
+      new BedrockError("prompt fragment and AWS internals", ["ministral"]),
+    );
     const { url } = await start();
 
     const response = await postPlan(url, BODY);

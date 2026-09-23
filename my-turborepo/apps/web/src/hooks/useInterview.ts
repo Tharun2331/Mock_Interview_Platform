@@ -179,7 +179,7 @@ export function useInterview(sessionId: string) {
           break;
       }
     },
-    [appendTranscript, teardown]
+    [appendTranscript, teardown],
   );
 
   const start = useCallback(async () => {
@@ -193,7 +193,10 @@ export function useInterview(sessionId: string) {
         onFrame: (frame) => socketRef.current?.sendAudio(frame),
       });
     } catch (error) {
-      setState({ status: "permission-denied", message: permissionMessage(error) });
+      setState({
+        status: "permission-denied",
+        message: permissionMessage(error),
+      });
       return;
     }
     captureRef.current = capture;
@@ -230,7 +233,7 @@ export function useInterview(sessionId: string) {
               : {
                   status: "ended",
                   reason: reason || MESSAGES.INTERVIEW_DISCONNECTED,
-                }
+                },
           );
           teardown();
         },

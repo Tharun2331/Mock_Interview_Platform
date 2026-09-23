@@ -66,7 +66,7 @@ export async function serve(app: Express): Promise<MountedApp> {
     url: `http://127.0.0.1:${address.port}`,
     close: () =>
       new Promise((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve()))
+        server.close((error) => (error ? reject(error) : resolve())),
       ),
   };
 }

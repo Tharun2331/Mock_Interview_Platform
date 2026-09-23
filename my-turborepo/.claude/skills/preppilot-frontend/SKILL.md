@@ -9,10 +9,10 @@ PrepPilot has two frontend surfaces with genuinely opposite priorities. Applying
 
 ## Routing
 
-| Surface | Examples | Priority |
-|---|---|---|
-| **Identity** | Landing page, sign-in, onboarding, empty first-run screens | Distinctiveness. This is the portfolio impression. |
-| **App** | Interview screen, transcript, evaluation, coach, history, settings | Legibility of system state. Boldness here costs the user. |
+| Surface      | Examples                                                           | Priority                                                  |
+| ------------ | ------------------------------------------------------------------ | --------------------------------------------------------- |
+| **Identity** | Landing page, sign-in, onboarding, empty first-run screens         | Distinctiveness. This is the portfolio impression.        |
+| **App**      | Interview screen, transcript, evaluation, coach, history, settings | Legibility of system state. Boldness here costs the user. |
 
 A screen can be both — the first-run empty state is an app screen doing identity work. When in doubt, ask which failure is worse: forgettable, or ambiguous. On the interview screen, ambiguous is always worse.
 
@@ -84,18 +84,18 @@ Keep body text highly legible at small sizes — transcripts are read under time
 
 Model it as a discriminated union and render from it. Never from independent booleans like `isRecording && !isLoading`, which is how contradictory UI ships.
 
-| State | What the user must know instantly | Contract |
-|---|---|---|
-| `idle` | Nothing is being captured | Neutral surface, primary action reads "Start answer" |
-| `requesting-permission` | The browser is asking, not the app | Explain why the mic is needed *before* the prompt appears |
-| `permission-denied` | The app is blocked and how to unblock it | Recovery instructions naming the browser's own UI |
-| `recording` | Audio is live and they have the floor | Loudest signal on screen, plus a live input-level meter |
-| `processing` | They stopped, the interviewer hasn't started | Progress distinguishing "sent" from "stalled" |
-| `interviewer-speaking` | The interviewer is talking, and they *may* interrupt | Playback affordance, skip control, and a live mic indicator |
-| `interrupting` | Their voice cut the interviewer off, deliberately or not | Playback stops instantly; treat as a transition into `recording` |
-| `error` | What broke and what to do | Specific cause, one clear next action |
+| State                   | What the user must know instantly                        | Contract                                                         |
+| ----------------------- | -------------------------------------------------------- | ---------------------------------------------------------------- |
+| `idle`                  | Nothing is being captured                                | Neutral surface, primary action reads "Start answer"             |
+| `requesting-permission` | The browser is asking, not the app                       | Explain why the mic is needed _before_ the prompt appears        |
+| `permission-denied`     | The app is blocked and how to unblock it                 | Recovery instructions naming the browser's own UI                |
+| `recording`             | Audio is live and they have the floor                    | Loudest signal on screen, plus a live input-level meter          |
+| `processing`            | They stopped, the interviewer hasn't started             | Progress distinguishing "sent" from "stalled"                    |
+| `interviewer-speaking`  | The interviewer is talking, and they _may_ interrupt     | Playback affordance, skip control, and a live mic indicator      |
+| `interrupting`          | Their voice cut the interviewer off, deliberately or not | Playback stops instantly; treat as a transition into `recording` |
+| `error`                 | What broke and what to do                                | Specific cause, one clear next action                            |
 
-`interrupting` is the state that distinguishes this design from a turn-based one. It is entered by the *user's voice*, not by a button or a server message, which makes it the only transition in the machine with no explicit trigger in the UI. Two consequences: it must be reachable from `interviewer-speaking` in the type definition, and the transition must be fast enough to feel causal — if playback keeps going for half a second after someone starts talking, they will stop and apologise to a machine.
+`interrupting` is the state that distinguishes this design from a turn-based one. It is entered by the _user's voice_, not by a button or a server message, which makes it the only transition in the machine with no explicit trigger in the UI. Two consequences: it must be reachable from `interviewer-speaking` in the type definition, and the transition must be fast enough to feel causal — if playback keeps going for half a second after someone starts talking, they will stop and apologise to a machine.
 
 Three rules outrank every aesthetic choice here:
 
@@ -140,7 +140,7 @@ Resume upload and GitHub connect are the first real interaction. Wire `react-hoo
 - Validate on blur, not on every keystroke. Errors that appear mid-typing read as scolding.
 - Reject files at the boundary and say why in the same sentence as the limit: "That file is 12 MB. The limit is 8 MB."
 - Show parse progress as distinct phases — uploading, extracting text, reading — because PDF parsing is slow enough that one undifferentiated bar looks stalled.
-- A parse that yields little text is a *result*, not an error. Show what was extracted and let the user proceed or re-upload.
+- A parse that yields little text is a _result_, not an error. Show what was extracted and let the user proceed or re-upload.
 - GitHub connect is an OAuth round trip: render a pending state that survives the redirect, and never imply the token reaches the browser.
 
 ## Data density
@@ -160,8 +160,8 @@ Default to wrapping a shadcn component in a project component that encodes PrepP
 ---
 
 ## Design references
-Before styling any screen, check `docs/design/references/README.md` and consult the matching `*-design.md` file for tone, typography, spacing, and motion. Never copy exact colors or branding from these — extract the pattern, apply PrepPilot's own accent.
 
+Before styling any screen, check `docs/design/references/README.md` and consult the matching `*-design.md` file for tone, typography, spacing, and motion. Never copy exact colors or branding from these — extract the pattern, apply PrepPilot's own accent.
 
 # Applies to both modes
 
@@ -203,4 +203,3 @@ The state machine is the highest-value thing to test, because its failures are i
 ## Before writing code
 
 Sketch the state machine and name every state, including failures, before touching JSX. Then check the plan against two questions. If the network stalled for eight seconds in each state, would the user know what was happening and what to do? And in every state where the mic is open, does the interface say so? If any state fails either test, the design is not finished.
-

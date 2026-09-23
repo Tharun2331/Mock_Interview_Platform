@@ -13,7 +13,7 @@ const sessionsUrl = (sessionId: string): string =>
   `/api/v1/sessions/${encodeURIComponent(sessionId)}/evaluation`;
 
 export async function fetchEvaluation(
-  sessionId: string
+  sessionId: string,
 ): Promise<EvaluationResponse> {
   const response = await api.get(sessionsUrl(sessionId));
 

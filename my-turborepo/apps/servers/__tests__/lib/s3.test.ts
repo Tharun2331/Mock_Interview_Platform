@@ -54,7 +54,11 @@ describe("where a resume is stored", () => {
 
   it("accepts the identifier shapes the app actually produces", () => {
     // A Cognito sub, a federated username, and a ULID.
-    for (const id of [USER_ID, "google_109371234567890", "01J000000000000000000000"]) {
+    for (const id of [
+      USER_ID,
+      "google_109371234567890",
+      "01J000000000000000000000",
+    ]) {
       expect(() => resumeKey(id)).not.toThrow();
     }
   });
@@ -71,7 +75,10 @@ describe("storing the PDF", () => {
   });
 
   it("returns the key it wrote, so the caller stores a pointer it did not guess", async () => {
-    const key = await putResume({ userId: USER_ID, bytes: new Uint8Array([1]) });
+    const key = await putResume({
+      userId: USER_ID,
+      bytes: new Uint8Array([1]),
+    });
 
     expect(key).toBe(`resumes/${USER_ID}/resume.pdf`);
   });
@@ -84,12 +91,14 @@ describe("storing the PDF", () => {
 
     await putResume({ userId: USER_ID, bytes });
 
-    expect(s3.commandCalls(PutObjectCommand)[0]?.args[0].input.Body).toBe(bytes);
+    expect(s3.commandCalls(PutObjectCommand)[0]?.args[0].input.Body).toBe(
+      bytes,
+    );
   });
 
   it("writes nothing when the key is refused", async () => {
     await expect(
-      putResume({ userId: "../evil", bytes: new Uint8Array([1]) })
+      putResume({ userId: "../evil", bytes: new Uint8Array([1]) }),
     ).rejects.toThrow(UploadError);
 
     expect(s3.commandCalls(PutObjectCommand)).toHaveLength(0);
@@ -101,7 +110,7 @@ describe("storing the PDF", () => {
     s3.on(PutObjectCommand).rejects(new Error("AccessDenied"));
 
     await expect(
-      putResume({ userId: USER_ID, bytes: new Uint8Array([1]) })
+      putResume({ userId: USER_ID, bytes: new Uint8Array([1]) }),
     ).rejects.toThrow(ServiceError);
   });
 
@@ -109,7 +118,7 @@ describe("storing the PDF", () => {
     s3.on(PutObjectCommand).rejects(new Error("AccessDenied"));
 
     await expect(
-      putResume({ userId: USER_ID, bytes: new Uint8Array([1]) })
+      putResume({ userId: USER_ID, bytes: new Uint8Array([1]) }),
     ).rejects.toThrow(/AccessDenied/);
   });
 });
@@ -142,7 +151,7 @@ describe("removing the PDF", () => {
     s3.on(DeleteObjectCommand).rejects(new Error("NoSuchBucket"));
 
     await expect(deleteResume(USER_ID)).rejects.toThrow(
-      MESSAGES.RESUME_DELETE_FAILED
+      MESSAGES.RESUME_DELETE_FAILED,
     );
   });
 

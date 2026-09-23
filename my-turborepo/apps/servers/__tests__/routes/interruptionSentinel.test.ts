@@ -22,9 +22,9 @@ describe("the barge-in sentinel", () => {
   // Parsed rather than matched against the exact string Sonic happens to emit
   // today, so a formatting change upstream does not silently reopen the bug.
   it("recognises it alongside other fields", () => {
-    expect(isInterruptionSentinel('{"interrupted":true,"reason":"barge_in"}')).toBe(
-      true
-    );
+    expect(
+      isInterruptionSentinel('{"interrupted":true,"reason":"barge_in"}'),
+    ).toBe(true);
   });
 
   it("does not fire on interrupted:false", () => {
@@ -46,7 +46,9 @@ describe("actual speech is never mistaken for it", () => {
   // A sentence that merely opens with a brace is speech, not a signal — and
   // must not be handed to JSON.parse as though it were.
   it("passes through a sentence that starts with a brace", () => {
-    expect(isInterruptionSentinel("{ is the opening brace in JSON")).toBe(false);
+    expect(isInterruptionSentinel("{ is the opening brace in JSON")).toBe(
+      false,
+    );
   });
 
   // The length cap is what keeps a long answer off JSON.parse entirely.

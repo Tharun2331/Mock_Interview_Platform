@@ -20,11 +20,11 @@ connection and relays partial transcripts back as they arrive.
 
 Question generation and speech synthesis stay on HTTP.
 
-| Step             | Transport         | Why                                                      |
-| ---------------- | ----------------- | -------------------------------------------------------- |
-| Audio → text     | WebSocket         | Bidirectional, continuous, revises partials               |
-| Text → question  | HTTP + SSE stream | One prompt, one answer — streamed for perceived latency   |
-| Question → audio | HTTP              | One text in, one audio blob out                           |
+| Step             | Transport         | Why                                                     |
+| ---------------- | ----------------- | ------------------------------------------------------- |
+| Audio → text     | WebSocket         | Bidirectional, continuous, revises partials             |
+| Text → question  | HTTP + SSE stream | One prompt, one answer — streamed for perceived latency |
+| Question → audio | HTTP              | One text in, one audio blob out                         |
 
 ## Rejected: HTTP POST
 

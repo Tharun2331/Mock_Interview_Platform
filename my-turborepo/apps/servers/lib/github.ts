@@ -19,7 +19,7 @@ const GithubRepoSchema = z.object({
 const GithubReposSchema = z.array(GithubRepoSchema);
 
 export async function fetchRepos(
-  username: string
+  username: string,
 ): Promise<PreInterviewRepo[]> {
   let response;
   try {
@@ -27,7 +27,7 @@ export async function fetchRepos(
       // Encoded despite passing the username allowlist — defence in depth, so
       // this stays safe if the allowlist is ever widened.
       `${config.githubApiBase}/users/${encodeURIComponent(username)}/repos`,
-      { timeout: config.githubTimeoutMs }
+      { timeout: config.githubTimeoutMs },
     );
   } catch (error) {
     // Wrapped rather than left as an AxiosError so the route can tell this
@@ -35,7 +35,7 @@ export async function fetchRepos(
     throw new GithubError(
       `${MESSAGES.GITHUB_FETCH_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 

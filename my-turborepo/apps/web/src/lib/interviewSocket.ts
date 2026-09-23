@@ -57,7 +57,7 @@ export type InterviewSocket = {
 };
 
 export async function openInterviewSocket(
-  args: InterviewSocketArgs
+  args: InterviewSocketArgs,
 ): Promise<InterviewSocket> {
   const session = await fetchAuthSession();
   const token = session.tokens?.accessToken.toString();
@@ -80,7 +80,7 @@ export async function openInterviewSocket(
     socket.addEventListener(
       "error",
       () => reject(new Error("Interview connection failed")),
-      { once: true }
+      { once: true },
     );
   });
 
@@ -101,7 +101,7 @@ export async function openInterviewSocket(
   // reconnect racing a half-closed stream can leave two billable streams open.
   // A drop is surfaced to the user instead.
   socket.addEventListener("close", (event: CloseEvent) =>
-    args.onClose(event.reason)
+    args.onClose(event.reason),
   );
 
   return {

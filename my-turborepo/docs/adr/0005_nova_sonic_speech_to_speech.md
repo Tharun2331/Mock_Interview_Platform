@@ -31,12 +31,12 @@ Use **`amazon.nova-2-sonic-v1:0`** via `InvokeModelWithBidirectionalStream` for 
 
 Text-only agents are unaffected and stay on Llama 3.1 8B via `ConverseCommand`:
 
-| Agent | Model | API |
-|---|---|---|
-| Mock Interview (live turns) | `amazon.nova-2-sonic-v1:0` | `InvokeModelWithBidirectionalStream` |
-| Planner | `meta.llama3-1-8b-instruct-v1:0` | `ConverseCommand` |
-| Evaluator | `meta.llama3-1-8b-instruct-v1:0` | `ConverseCommand` |
-| Coach | `meta.llama3-1-8b-instruct-v1:0` + Knowledge Bases | `ConverseCommand` |
+| Agent                       | Model                                              | API                                  |
+| --------------------------- | -------------------------------------------------- | ------------------------------------ |
+| Mock Interview (live turns) | `amazon.nova-2-sonic-v1:0`                         | `InvokeModelWithBidirectionalStream` |
+| Planner                     | `meta.llama3-1-8b-instruct-v1:0`                   | `ConverseCommand`                    |
+| Evaluator                   | `meta.llama3-1-8b-instruct-v1:0`                   | `ConverseCommand`                    |
+| Coach                       | `meta.llama3-1-8b-instruct-v1:0` + Knowledge Bases | `ConverseCommand`                    |
 
 > **Amendment, 2026-08-19 — text models only.** The text-agent model in the
 > table above is superseded. The chain is now `mistral.ministral-3-8b-instruct`

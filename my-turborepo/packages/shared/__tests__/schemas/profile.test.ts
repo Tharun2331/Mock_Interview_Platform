@@ -61,7 +61,9 @@ describe("isProfileComplete", () => {
   // Explicitly not required: a candidate with no public repositories should
   // still be able to interview.
   it("is true without a GitHub username", () => {
-    expect(isProfileComplete(profile({ githubUsername: undefined }))).toBe(true);
+    expect(isProfileComplete(profile({ githubUsername: undefined }))).toBe(
+      true,
+    );
   });
 
   // A username is a display field; the gate does not depend on it.
@@ -88,7 +90,7 @@ describe("toProfileView", () => {
           { description: null, name: "a", fullName: "u/a", starCount: 1 },
           { description: "b", name: "b", fullName: "u/b", starCount: 2 },
         ],
-      })
+      }),
     );
 
     expect(withRepos.hasResume).toBe(true);
@@ -102,14 +104,18 @@ describe("toProfileView", () => {
   // re-derive it. This assertion is what keeps the two from disagreeing.
   it("carries the server's own completeness verdict", () => {
     expect(toProfileView(profile()).complete).toBe(true);
-    expect(toProfileView(profile({ resumeKey: undefined })).complete).toBe(false);
+    expect(toProfileView(profile({ resumeKey: undefined })).complete).toBe(
+      false,
+    );
     expect(toProfileView(profile({ status: "deleting" })).complete).toBe(false);
   });
 });
 
 describe("normalizeTargetRole", () => {
   it("folds case, trims, and collapses interior whitespace", () => {
-    expect(normalizeTargetRole("  Backend   Engineer ")).toBe("backend engineer");
+    expect(normalizeTargetRole("  Backend   Engineer ")).toBe(
+      "backend engineer",
+    );
     expect(normalizeTargetRole("BACKEND ENGINEER")).toBe("backend engineer");
     expect(normalizeTargetRole("Backend\tEngineer")).toBe("backend engineer");
     expect(normalizeTargetRole("Backend\nEngineer")).toBe("backend engineer");
@@ -156,7 +162,7 @@ describe("isCachedPlanFresh", () => {
         cached: cached(),
         profileVersion: 3,
         targetRole: "Backend Engineer",
-      })
+      }),
     ).toBe(true);
   });
 
@@ -166,7 +172,7 @@ describe("isCachedPlanFresh", () => {
         cached: cached(),
         profileVersion: 3,
         targetRole: "  backend   ENGINEER ",
-      })
+      }),
     ).toBe(true);
   });
 
@@ -176,7 +182,7 @@ describe("isCachedPlanFresh", () => {
         cached: cached(),
         profileVersion: 4,
         targetRole: "Backend Engineer",
-      })
+      }),
     ).toBe(false);
   });
 
@@ -187,7 +193,7 @@ describe("isCachedPlanFresh", () => {
         cached: cached(),
         profileVersion: 2,
         targetRole: "Backend Engineer",
-      })
+      }),
     ).toBe(false);
   });
 
@@ -197,7 +203,7 @@ describe("isCachedPlanFresh", () => {
         cached: cached(),
         profileVersion: 3,
         targetRole: "Frontend Engineer",
-      })
+      }),
     ).toBe(false);
   });
 });
@@ -226,22 +232,25 @@ describe("UserProfileSchema", () => {
   });
 
   it("rejects a negative or fractional profile version", () => {
-    expect(UserProfileSchema.safeParse(profile({ profileVersion: -1 })).success).toBe(
-      false
-    );
-    expect(UserProfileSchema.safeParse(profile({ profileVersion: 1.5 })).success).toBe(
-      false
-    );
+    expect(
+      UserProfileSchema.safeParse(profile({ profileVersion: -1 })).success,
+    ).toBe(false);
+    expect(
+      UserProfileSchema.safeParse(profile({ profileVersion: 1.5 })).success,
+    ).toBe(false);
   });
 
   it("rejects a status outside the enum", () => {
-    const parsed = UserProfileSchema.safeParse({ ...profile(), status: "suspended" });
+    const parsed = UserProfileSchema.safeParse({
+      ...profile(),
+      status: "suspended",
+    });
     expect(parsed.success).toBe(false);
   });
 
   it("rejects a non-ISO timestamp", () => {
     expect(
-      UserProfileSchema.safeParse(profile({ updatedAt: "09/09/2026" })).success
+      UserProfileSchema.safeParse(profile({ updatedAt: "09/09/2026" })).success,
     ).toBe(false);
   });
 });
@@ -270,7 +279,7 @@ describe("ProfileDetailsBody", () => {
         username: "   ",
         firstName: "Tharun",
         lastName: "Sekar",
-      }).success
+      }).success,
     ).toBe(false);
   });
 
@@ -316,9 +325,9 @@ describe("ProfileGithubBody", () => {
   });
 
   it("rejects an over-long value", () => {
-    expect(ProfileGithubBody.safeParse({ gitHub: "a".repeat(201) }).success).toBe(
-      false
-    );
+    expect(
+      ProfileGithubBody.safeParse({ gitHub: "a".repeat(201) }).success,
+    ).toBe(false);
   });
 });
 

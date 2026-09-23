@@ -37,7 +37,7 @@ describe("failing closed", () => {
       .rejects(new Error("ThrottlingException"));
 
     await expect(redactResumeText("Call me on 415 555 0132")).rejects.toThrow(
-      RedactionError
+      RedactionError,
     );
   });
 
@@ -47,7 +47,7 @@ describe("failing closed", () => {
     // A phone number WAS matched here. Returning that partial result is exactly
     // the silent failure this guards against.
     await expect(
-      redactResumeText("Reach me at (415) 555-0132 any time")
+      redactResumeText("Reach me at (415) 555-0132 any time"),
     ).rejects.toThrow(RedactionError);
   });
 
@@ -100,7 +100,9 @@ describe("what gets redacted", () => {
       },
     ]);
 
-    const result = await redactResumeText("2019 - 2023 at an order pipeline team");
+    const result = await redactResumeText(
+      "2019 - 2023 at an order pipeline team",
+    );
 
     expect(result.text).toBe("2019 - 2023 at an order pipeline team");
     expect(result.redactedCount).toBe(0);
@@ -131,7 +133,9 @@ describe("what gets redacted", () => {
       },
     ]);
 
-    expect((await redactResumeText("Tharun builds pipelines")).redactedCount).toBe(1);
+    expect(
+      (await redactResumeText("Tharun builds pipelines")).redactedCount,
+    ).toBe(1);
   });
 
   // Every field on the response is optional in the SDK's types; skipping beats
@@ -143,13 +147,17 @@ describe("what gets redacted", () => {
       { BeginOffset: 0, EndOffset: 6, Score: 0.99 },
     ]);
 
-    expect((await redactResumeText("Tharun builds things")).redactedCount).toBe(0);
+    expect((await redactResumeText("Tharun builds things")).redactedCount).toBe(
+      0,
+    );
   });
 
   it("redacts an entity whose score the service omitted", async () => {
     entities([{ BeginOffset: 0, EndOffset: 6, Type: PiiEntityType.NAME }]);
 
-    expect((await redactResumeText("Tharun builds things")).redactedCount).toBe(1);
+    expect((await redactResumeText("Tharun builds things")).redactedCount).toBe(
+      1,
+    );
   });
 });
 
@@ -183,7 +191,7 @@ describe("the deterministic phone pass", () => {
 
       expect(result.redactedCount).toBe(0);
       expect(result.text).toContain(text);
-    }
+    },
   );
 
   // A shared /g regex keeps lastIndex between calls — the second resume would
@@ -253,7 +261,7 @@ describe("overlapping spans", () => {
     const result = await redactResumeText(text);
 
     expect(result.text).toBe(
-      `[${PiiEntityType.NAME}] emailed [${PiiEntityType.EMAIL}] about it`
+      `[${PiiEntityType.NAME}] emailed [${PiiEntityType.EMAIL}] about it`,
     );
     expect(result.redactedCount).toBe(2);
   });
@@ -278,12 +286,19 @@ describe("the redaction summary", () => {
     entities([
       { BeginOffset: 0, EndOffset: 6, Type: PiiEntityType.NAME, Score: 0.99 },
       { BeginOffset: 7, EndOffset: 12, Type: PiiEntityType.NAME, Score: 0.99 },
-      { BeginOffset: 13, EndOffset: 20, Type: PiiEntityType.EMAIL, Score: 0.99 },
+      {
+        BeginOffset: 13,
+        EndOffset: 20,
+        Type: PiiEntityType.EMAIL,
+        Score: 0.99,
+      },
     ]);
 
     const result = await redactResumeText("Tharun Sekar a@b.com and more text");
 
-    expect(result.types).toEqual([PiiEntityType.EMAIL, PiiEntityType.NAME].sort());
+    expect(result.types).toEqual(
+      [PiiEntityType.EMAIL, PiiEntityType.NAME].sort(),
+    );
   });
 
   it("sends the configured language code", async () => {
@@ -292,7 +307,8 @@ describe("the redaction summary", () => {
     await redactResumeText("some text");
 
     expect(
-      comprehend.commandCalls(DetectPiiEntitiesCommand)[0]?.args[0].input.LanguageCode
+      comprehend.commandCalls(DetectPiiEntitiesCommand)[0]?.args[0].input
+        .LanguageCode,
     ).toBe(REDACTION.LANGUAGE_CODE);
   });
 });

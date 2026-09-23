@@ -17,7 +17,11 @@ const INPUT = {
   sessionId: "01J000000000000000000000",
 };
 
-const CLASSIFIED = { style: "practical", focus: "infrastructure", seniority: "senior" };
+const CLASSIFIED = {
+  style: "practical",
+  focus: "infrastructure",
+  seniority: "senior",
+};
 
 beforeEach(() => {
   resetStructuredStub();
@@ -38,8 +42,12 @@ describe("degradation is the default path", () => {
     setStructuredFailure(new Error("chain exhausted"));
 
     expect(
-      (await runCompanyIntelAgent({ ...INPUT, notes: "Two rounds, both pairing." }))
-        .style
+      (
+        await runCompanyIntelAgent({
+          ...INPUT,
+          notes: "Two rounds, both pairing.",
+        })
+      ).style,
     ).toBe("unknown");
   });
 
@@ -73,7 +81,10 @@ describe("what it produces", () => {
   });
 
   it("produces an item that satisfies the stored schema", async () => {
-    const intel = await runCompanyIntelAgent({ ...INPUT, notes: "A recruiter call." });
+    const intel = await runCompanyIntelAgent({
+      ...INPUT,
+      notes: "A recruiter call.",
+    });
 
     expect(CompanyIntelSchema.safeParse(intel).success).toBe(true);
   });
@@ -83,10 +94,17 @@ describe("what it produces", () => {
   // write intel onto somebody else's interview.
   it("stamps the session and time itself rather than trusting the model", async () => {
     setStructuredReplies([
-      { ...CLASSIFIED, sessionId: "somebody-else", createdAt: "1999-01-01T00:00:00.000Z" },
+      {
+        ...CLASSIFIED,
+        sessionId: "somebody-else",
+        createdAt: "1999-01-01T00:00:00.000Z",
+      },
     ]);
 
-    const intel = await runCompanyIntelAgent({ ...INPUT, notes: "A recruiter call." });
+    const intel = await runCompanyIntelAgent({
+      ...INPUT,
+      notes: "A recruiter call.",
+    });
 
     expect(intel.sessionId).toBe(INPUT.sessionId);
     expect(intel.createdAt).not.toBe("1999-01-01T00:00:00.000Z");
@@ -94,7 +112,10 @@ describe("what it produces", () => {
 
   // There is no search in v1 — this is always 0.
   it("always reports zero sources", async () => {
-    const intel = await runCompanyIntelAgent({ ...INPUT, notes: "A recruiter call." });
+    const intel = await runCompanyIntelAgent({
+      ...INPUT,
+      notes: "A recruiter call.",
+    });
 
     expect(intel.sourceCount).toBe(0);
   });
@@ -126,7 +147,8 @@ describe("what it produces", () => {
     ]);
 
     expect(
-      (await runCompanyIntelAgent({ ...INPUT, notes: "A recruiter call." })).style
+      (await runCompanyIntelAgent({ ...INPUT, notes: "A recruiter call." }))
+        .style,
     ).toBe("practical");
   });
 });

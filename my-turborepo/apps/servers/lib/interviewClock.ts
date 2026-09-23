@@ -47,7 +47,7 @@ export type NudgeSchedule = {
 // running session is shortened.
 export function effectiveTargetMinutes(
   plannedMinutes: number,
-  settings: ClockSettings = currentSettings()
+  settings: ClockSettings = currentSettings(),
 ): number {
   return settings.testMode ? settings.testTargetMinutes : plannedMinutes;
 }
@@ -74,7 +74,7 @@ const TEST_FINAL_CALL_REMAINING_FRACTION = 0.05;
 
 export function nudgeSchedule(
   targetMinutes: number,
-  settings: ClockSettings = currentSettings()
+  settings: ClockSettings = currentSettings(),
 ): NudgeSchedule {
   const targetMs = targetMinutes * 60_000;
 
@@ -111,13 +111,13 @@ export function nudgeSchedule(
 // "0 minutes or fewer remain" is an instruction that can never be satisfied.
 export function wrapUpAtRemainingMinutes(
   targetMinutes: number,
-  settings: ClockSettings = currentSettings()
+  settings: ClockSettings = currentSettings(),
 ): number {
   if (!settings.testMode) return INTERVIEW.WRAP_UP_AT_REMAINING_MIN;
 
   return Math.max(
     1,
-    Math.ceil(targetMinutes * TEST_WRAP_UP_REMAINING_FRACTION)
+    Math.ceil(targetMinutes * TEST_WRAP_UP_REMAINING_FRACTION),
   );
 }
 
@@ -149,7 +149,7 @@ export const QUESTIONS_REMAINING: Record<InterviewPhase, number | null> = {
 export function interviewPhase(
   elapsedMs: number,
   targetMinutes: number,
-  settings: ClockSettings = currentSettings()
+  settings: ClockSettings = currentSettings(),
 ): InterviewPhase {
   const schedule = nudgeSchedule(targetMinutes, settings);
 

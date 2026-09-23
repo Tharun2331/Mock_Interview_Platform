@@ -28,9 +28,8 @@ function encode(event: unknown): StreamChunk {
  */
 export class FakeSonicStream implements AsyncIterable<StreamChunk> {
   private readonly pending: StreamChunk[] = [];
-  private readonly waiting: ((
-    value: IteratorResult<StreamChunk>
-  ) => void)[] = [];
+  private readonly waiting: ((value: IteratorResult<StreamChunk>) => void)[] =
+    [];
   private failure: unknown = null;
   private ended = false;
 
@@ -80,7 +79,7 @@ export class FakeSonicStream implements AsyncIterable<StreamChunk> {
       if (this.ended) return;
 
       const next = await new Promise<IteratorResult<StreamChunk>>((resolve) =>
-        this.waiting.push(resolve)
+        this.waiting.push(resolve),
       );
       if (next.done) {
         if (this.failure !== null) throw this.failure;
@@ -122,7 +121,11 @@ export function tapOutbound(body: unknown): OutboundTap {
       if (bytes === undefined) continue;
 
       const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
-      if (typeof parsed !== "object" || parsed === null || !("event" in parsed)) {
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        !("event" in parsed)
+      ) {
         continue;
       }
       const envelope = (parsed as { event: Record<string, unknown> }).event;
@@ -140,7 +143,9 @@ export function tapOutbound(body: unknown): OutboundTap {
     events,
     names: () => events.map((event) => event.name),
     ofName: (name) =>
-      events.filter((event) => event.name === name).map((event) => event.payload),
+      events
+        .filter((event) => event.name === name)
+        .map((event) => event.payload),
     done,
   };
 }
@@ -180,15 +185,23 @@ export const inbound = {
     },
   }),
   textOutput: (content: string) => ({ event: { textOutput: { content } } }),
-  audioOutput: (base64: string) => ({ event: { audioOutput: { content: base64 } } }),
-  toolUse: (args: { toolName: string; toolUseId: string; content: string }) => ({
+  audioOutput: (base64: string) => ({
+    event: { audioOutput: { content: base64 } },
+  }),
+  toolUse: (args: {
+    toolName: string;
+    toolUseId: string;
+    content: string;
+  }) => ({
     event: { toolUse: { ...args } },
   }),
   contentEnd: (args: { type: string; stopReason?: string }) => ({
     event: {
       contentEnd: {
         type: args.type,
-        ...(args.stopReason === undefined ? {} : { stopReason: args.stopReason }),
+        ...(args.stopReason === undefined
+          ? {}
+          : { stopReason: args.stopReason }),
       },
     },
   }),

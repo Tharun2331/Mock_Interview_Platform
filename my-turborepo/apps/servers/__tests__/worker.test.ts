@@ -149,7 +149,7 @@ describe("scoring a queued answer", () => {
     await handleMessage(body());
 
     expect(ddb.commandCalls(PutCommand)[0]?.args[0].input.Item?.modelId).toBe(
-      "us.meta.llama4-scout-17b-instruct-v1:0"
+      "us.meta.llama4-scout-17b-instruct-v1:0",
     );
   });
 
@@ -161,7 +161,7 @@ describe("scoring a queued answer", () => {
     await handleMessage(body());
 
     expect(
-      ddb.commandCalls(PutCommand)[0]?.args[0].input.Item?.expiresAt
+      ddb.commandCalls(PutCommand)[0]?.args[0].input.Item?.expiresAt,
     ).toBeGreaterThan(0);
   });
 
@@ -174,7 +174,7 @@ describe("scoring a queued answer", () => {
     await handleMessage(body());
 
     expect(
-      ddb.commandCalls(PutCommand)[0]?.args[0].input.ConditionExpression
+      ddb.commandCalls(PutCommand)[0]?.args[0].input.ConditionExpression,
     ).toBeUndefined();
   });
 
@@ -239,7 +239,7 @@ describe("the duplicate guard", () => {
 
     expect(
       ddb.commandCalls(BatchGetCommand)[0]?.args[0].input.RequestItems?.[TABLE]
-        ?.ConsistentRead
+        ?.ConsistentRead,
     ).toBe(true);
   });
 
@@ -288,11 +288,11 @@ describe("messages with nothing to do", () => {
 
   it("reports a body that parses but is not a job", async () => {
     expect((await handleMessage(body({ nothing: "useful" }))).kind).toBe(
-      "unparseable"
+      "unparseable",
     );
-    expect((await handleMessage(body({ sessionId: "", questionId: "" }))).kind).toBe(
-      "unparseable"
-    );
+    expect(
+      (await handleMessage(body({ sessionId: "", questionId: "" }))).kind,
+    ).toBe("unparseable");
   });
 
   it("does not call the model for an unparseable message", async () => {
@@ -345,9 +345,11 @@ describe("completion detection", () => {
     const outcome = await handleMessage(body());
 
     expect(outcome).toMatchObject({ kind: "scored", finalized: "finalized" });
-    expect(finalizeUpdates()[0]?.args[0].input.ExpressionAttributeValues?.[
-      ":averages"
-    ]).toEqual({ correctness: 6, clarity: 7, depth: 5 });
+    expect(
+      finalizeUpdates()[0]?.args[0].input.ExpressionAttributeValues?.[
+        ":averages"
+      ],
+    ).toEqual({ correctness: 6, clarity: 7, depth: 5 });
   });
 
   it("moves the session out of evaluating only once the rollup is written", async () => {
@@ -387,7 +389,10 @@ describe("completion detection", () => {
 
   it("does not finalise twice when the rollup already has averages", async () => {
     itemsFound([ANSWER, META]);
-    summaryIs({ ...SUMMARY, averages: { correctness: 6, clarity: 7, depth: 5 } });
+    summaryIs({
+      ...SUMMARY,
+      averages: { correctness: 6, clarity: 7, depth: 5 },
+    });
     evaluationsScored(3);
 
     const outcome = await handleMessage(body());
@@ -474,9 +479,11 @@ describe("completion detection", () => {
 
     await handleMessage(body());
 
-    expect(statusUpdates()[0]?.args[0].input.ExpressionAttributeValues?.[
-      ":complete"
-    ]).toBe("complete");
+    expect(
+      statusUpdates()[0]?.args[0].input.ExpressionAttributeValues?.[
+        ":complete"
+      ],
+    ).toBe("complete");
   });
 
   it("still checks completion when there is no answer to score", async () => {
@@ -486,7 +493,10 @@ describe("completion detection", () => {
 
     const outcome = await handleMessage(body());
 
-    expect(outcome).toMatchObject({ kind: "no-answer", finalized: "finalized" });
+    expect(outcome).toMatchObject({
+      kind: "no-answer",
+      finalized: "finalized",
+    });
   });
 
   it("reports no-summary rather than failing when the rollup is absent", async () => {

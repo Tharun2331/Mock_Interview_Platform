@@ -119,7 +119,6 @@ second one.
 > shapes and status-code choices below are still the intended destination, and
 > because several routes here wait on Phases 5 and 6.
 
-
 ### `GET /health`
 
 Unauthenticated. Returns `200` with `{ status: "ok" }`. Used by the ALB target
@@ -256,13 +255,13 @@ shouldn't kill the connection.
 
 ### Client → server
 
-| `type`         | Payload      | Meaning                                                          |
-| -------------- | ------------ | ---------------------------------------------------------------- |
-| `audio.chunk`  | binary frame | 16 kHz 16-bit PCM mono, from an `AudioWorklet`                    |
-| `turn.end`     | `{}`         | Explicit "I'm done" override; Sonic detects turn end on its own   |
-| `turn.skip`    | `{}`         | Skip this question                                                |
-| `session.end`  | `{}`         | End the interview early                                           |
-| `ping`         | `{}`         | Keepalive                                                         |
+| `type`        | Payload      | Meaning                                                         |
+| ------------- | ------------ | --------------------------------------------------------------- |
+| `audio.chunk` | binary frame | 16 kHz 16-bit PCM mono, from an `AudioWorklet`                  |
+| `turn.end`    | `{}`         | Explicit "I'm done" override; Sonic detects turn end on its own |
+| `turn.skip`   | `{}`         | Skip this question                                              |
+| `session.end` | `{}`         | End the interview early                                         |
+| `ping`        | `{}`         | Keepalive                                                       |
 
 Audio arrives as binary frames, not base64 in JSON — base64 costs a third more
 bytes and forces a decode per chunk inside the latency budget.
@@ -278,8 +277,8 @@ only when the candidate explicitly presses a "done" control.
 
 ### Server → client
 
-| `type`               | Payload                             | Meaning                                                     |
-| -------------------- | ----------------------------------- | ----------------------------------------------------------- |
+| `type`               | Payload                             | Meaning                                                      |
+| -------------------- | ----------------------------------- | ------------------------------------------------------------ |
 | `transcript.partial` | `{ text }`                          | Sonic `textOutput`, `role: USER`, speculative — display only |
 | `transcript.final`   | `{ questionId, text }`              | Sonic `textOutput`, `role: USER`, final — persisted          |
 | `interviewer.text`   | `{ text }`                          | Sonic `textOutput`, `role: ASSISTANT` — display only         |
@@ -335,11 +334,11 @@ remaining options. Unresolved; decide before scaling past one task.
 
 | Scope              | Limit        | Why                                    |
 | ------------------ | ------------ | -------------------------------------- |
-| `POST /sessions`   | 5 / hour     | Each runs a Bedrock planning call       |
-| WebSocket connects | 5 / hour     | Each opens a billable Sonic stream      |
-| Interview turns    | 60 / session | Caps runaway loop cost                  |
-| Session wall-clock | 30 min       | Hard cap on a single open Sonic stream  |
-| All routes         | 100 / minute | General abuse floor                     |
+| `POST /sessions`   | 5 / hour     | Each runs a Bedrock planning call      |
+| WebSocket connects | 5 / hour     | Each opens a billable Sonic stream     |
+| Interview turns    | 60 / session | Caps runaway loop cost                 |
+| Session wall-clock | 30 min       | Hard cap on a single open Sonic stream |
+| All routes         | 100 / minute | General abuse floor                    |
 
 These are cost controls first and abuse controls second. A bug that reconnects
 in a loop can run up real Bedrock spend in minutes, and nothing else in the

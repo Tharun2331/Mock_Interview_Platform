@@ -1,10 +1,7 @@
 import { ulid } from "ulid";
 import { Router } from "express";
 import { isProfileComplete } from "@repo/shared";
-import {
-  ProfileStateError,
-  ServiceError,
-} from "../lib/errors";
+import { ProfileStateError, ServiceError } from "../lib/errors";
 import { MESSAGES } from "../lib/messages";
 import { getProfile } from "../lib/profile";
 import { createSession } from "../lib/sessions";
@@ -93,7 +90,7 @@ preInterviewRouter.post("/", async (req, res) => {
     }
 
     console.error(
-      `[pre-interview] ${error instanceof Error ? error.message : error}`
+      `[pre-interview] ${error instanceof Error ? error.message : error}`,
     );
     res.status(500).json({ message: MESSAGES.UNEXPECTED_FAILED });
   }

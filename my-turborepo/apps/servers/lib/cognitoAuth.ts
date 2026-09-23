@@ -16,7 +16,7 @@ export const verifier = CognitoJwtVerifier.create({
 export const AuthMiddleware = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   // 1. Extract token from the Authorization header (Format: Bearer <token>)
   const authHeader = req.headers.authorization;

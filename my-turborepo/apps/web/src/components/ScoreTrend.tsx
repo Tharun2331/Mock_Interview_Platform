@@ -110,7 +110,7 @@ export function ScoreTrend({ sessions }: { sessions: SessionHistoryItem[] }) {
           {MESSAGES.HISTORY_TREND_ALT(
             points.length,
             points[0]?.overallScore ?? 0,
-            points[points.length - 1]?.overallScore ?? 0
+            points[points.length - 1]?.overallScore ?? 0,
           )}
         </title>
 
@@ -199,7 +199,7 @@ export function ScoreTrend({ sessions }: { sessions: SessionHistoryItem[] }) {
           : MESSAGES.HISTORY_TREND_POINT(
               formatDate(active.completedAt),
               active.overallScore,
-              active.role
+              active.role,
             )}
       </figcaption>
     </figure>

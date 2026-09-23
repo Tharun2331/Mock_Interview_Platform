@@ -38,7 +38,9 @@ type ProfileContextValue = ProfileState & {
   clear: () => void;
 };
 
-const ProfileContext = createContext<ProfileContextValue | undefined>(undefined);
+const ProfileContext = createContext<ProfileContextValue | undefined>(
+  undefined,
+);
 
 export function ProfileProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<ProfileState>({ status: "loading" });

@@ -36,14 +36,14 @@ function parseProfileEnvelope(data: unknown): ProfileView {
   const parsed = ProfileViewSchema.safeParse(
     typeof data === "object" && data !== null && "profile" in data
       ? (data as { profile: unknown }).profile
-      : undefined
+      : undefined,
   );
   if (!parsed.success) throw new UnexpectedResponseError();
   return parsed.data;
 }
 
 export async function saveProfileDetails(
-  body: ProfileDetailsBody
+  body: ProfileDetailsBody,
 ): Promise<ProfileView> {
   const response = await api.put(PROFILE_URL, body);
   return parseProfileEnvelope(response.data);

@@ -55,7 +55,7 @@ function renderPage() {
         <Route path="/interview" element={<p>interview page</p>} />
         <Route path="/profile" element={<p>profile page</p>} />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -127,7 +127,7 @@ describe("what reaches POST /plan", () => {
     submit();
 
     expect((await planBody()).jobDescription).toBe(
-      "We need Kubernetes and Kafka experience."
+      "We need Kubernetes and Kafka experience.",
     );
   });
 
@@ -237,7 +237,7 @@ describe("a posting longer than the model will read", () => {
     submit();
 
     expect(String((await planBody()).jobDescription)).toHaveLength(
-      GAP_LIMITS.MAX_JOB_DESCRIPTION_CHARS
+      GAP_LIMITS.MAX_JOB_DESCRIPTION_CHARS,
     );
   });
 });
@@ -283,7 +283,7 @@ describe("the company fields", () => {
     pasteJd();
 
     expect(
-      screen.queryByLabelText(MESSAGES.START_COMPANY_NOTES_LABEL)
+      screen.queryByLabelText(MESSAGES.START_COMPANY_NOTES_LABEL),
     ).toBeNull();
 
     fireEvent.change(screen.getByLabelText(MESSAGES.START_COMPANY_LABEL), {
@@ -291,7 +291,7 @@ describe("the company fields", () => {
     });
 
     expect(
-      screen.getByLabelText(MESSAGES.START_COMPANY_NOTES_LABEL)
+      screen.getByLabelText(MESSAGES.START_COMPANY_NOTES_LABEL),
     ).toBeDefined();
   });
 
@@ -312,9 +312,12 @@ describe("the company fields", () => {
     fireEvent.change(screen.getByLabelText(MESSAGES.START_COMPANY_LABEL), {
       target: { value: "  Stripe  " },
     });
-    fireEvent.change(screen.getByLabelText(MESSAGES.START_COMPANY_NOTES_LABEL), {
-      target: { value: "Recruiter said two rounds." },
-    });
+    fireEvent.change(
+      screen.getByLabelText(MESSAGES.START_COMPANY_NOTES_LABEL),
+      {
+        target: { value: "Recruiter said two rounds." },
+      },
+    );
     submit();
 
     const body = await planBody();

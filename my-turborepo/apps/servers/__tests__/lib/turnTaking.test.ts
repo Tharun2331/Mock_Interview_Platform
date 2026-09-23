@@ -1,9 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { ExchangeBuffer } from "../../lib/exchangeBuffer";
-import {
-  QUESTIONS_REMAINING,
-  interviewPhase,
-} from "../../lib/interviewClock";
+import { QUESTIONS_REMAINING, interviewPhase } from "../../lib/interviewClock";
 import { classifyAnswer } from "../../lib/scoreableAnswer";
 
 const TEST_SETTINGS = { testMode: false, testTargetMinutes: 6 };
@@ -41,7 +38,7 @@ describe("a question the candidate never answered", () => {
     const exchange = buffer.take();
 
     expect(exchange?.questionText).toBe(
-      "One quick final question: what about security?"
+      "One quick final question: what about security?",
     );
     expect(exchange?.questionText).not.toContain("Terraform");
   });
@@ -71,7 +68,7 @@ describe("a question the candidate never answered", () => {
     buffer.appendQuestion("Next.");
 
     expect(buffer.take()?.questionText).toBe(
-      "Thanks for that. Now, how did you handle retries?"
+      "Thanks for that. Now, how did you handle retries?",
     );
   });
 

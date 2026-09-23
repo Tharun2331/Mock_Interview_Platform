@@ -21,7 +21,7 @@ import {
 // tests exercise the actual parser rather than a hand-rolled approximation.
 async function multipartRequest(
   form: FormData,
-  overrides: Record<string, string> = {}
+  overrides: Record<string, string> = {},
 ): Promise<ExpressRequest> {
   const encoded = new Response(form);
   const contentType = encoded.headers.get("content-type") ?? "";
@@ -47,18 +47,22 @@ function pdfBytes(sizeBytes: number): Uint8Array {
 }
 
 function headersOnly(contentType: string | undefined): ExpressRequest {
-  return { headers: { "content-type": contentType } } as unknown as ExpressRequest;
+  return {
+    headers: { "content-type": contentType },
+  } as unknown as ExpressRequest;
 }
 
 describe("isMultipart", () => {
   it("accepts a multipart content type with its boundary", () => {
     expect(
-      isMultipart(headersOnly("multipart/form-data; boundary=----abc123"))
+      isMultipart(headersOnly("multipart/form-data; boundary=----abc123")),
     ).toBe(true);
   });
 
   it("is case-insensitive, because header casing is the client's choice", () => {
-    expect(isMultipart(headersOnly("MULTIPART/FORM-DATA; boundary=x"))).toBe(true);
+    expect(isMultipart(headersOnly("MULTIPART/FORM-DATA; boundary=x"))).toBe(
+      true,
+    );
   });
 
   it("rejects JSON and an absent content type", () => {
@@ -78,7 +82,7 @@ describe("readMultipart", () => {
 
     expect(parsed.has(UPLOAD.RESUME_FIELD)).toBe(true);
     expect(readTextField(parsed, UPLOAD.GITHUB_FIELD)).toBe(
-      "https://github.com/Tharun2331"
+      "https://github.com/Tharun2331",
     );
   });
 
@@ -102,7 +106,9 @@ describe("readMultipart", () => {
     form.set(UPLOAD.RESUME_FIELD, new Blob([pdfBytes(512)]), "resume.pdf");
 
     const req = await multipartRequest(form, {
-      "content-length": String(UPLOAD.MAX_RESUME_BYTES + UPLOAD.BODY_OVERHEAD_BYTES),
+      "content-length": String(
+        UPLOAD.MAX_RESUME_BYTES + UPLOAD.BODY_OVERHEAD_BYTES,
+      ),
     });
 
     await expect(readMultipart(req)).resolves.toBeDefined();
@@ -118,7 +124,11 @@ describe("readMultipart", () => {
 
   it("caps the stream when the client understates the body size", async () => {
     const form = new FormData();
-    form.set(UPLOAD.RESUME_FIELD, new Blob([pdfBytes(OVER_BUDGET)]), "resume.pdf");
+    form.set(
+      UPLOAD.RESUME_FIELD,
+      new Blob([pdfBytes(OVER_BUDGET)]),
+      "resume.pdf",
+    );
     // A believable declared size that the body then blows straight past.
     const req = await multipartRequest(form, { "content-length": "10" });
 
@@ -127,7 +137,11 @@ describe("readMultipart", () => {
 
   it("still caps a body that declares no length at all", async () => {
     const form = new FormData();
-    form.set(UPLOAD.RESUME_FIELD, new Blob([pdfBytes(OVER_BUDGET)]), "resume.pdf");
+    form.set(
+      UPLOAD.RESUME_FIELD,
+      new Blob([pdfBytes(OVER_BUDGET)]),
+      "resume.pdf",
+    );
     const encoded = new Response(form);
     const buffer = Buffer.from(await encoded.arrayBuffer());
     const stream = Readable.from(buffer);
@@ -182,34 +196,39 @@ describe("readPdf", () => {
   // whatever the client wrote, so a renamed executable arrives claiming
   // application/pdf just as readily as a real PDF does.
   it("rejects a non-PDF that claims to be one", async () => {
-    const disguised = new TextEncoder().encode("MZ\x90\x00 this is an executable");
+    const disguised = new TextEncoder().encode(
+      "MZ\x90\x00 this is an executable",
+    );
 
     await expect(
-      readPdf(formWith(blobFile(disguised, "application/pdf")), "resume")
+      readPdf(formWith(blobFile(disguised, "application/pdf")), "resume"),
     ).rejects.toThrow(MESSAGES.UPLOAD_NOT_PDF);
   });
 
   it("accepts a real PDF even when the client declared the wrong type", async () => {
     await expect(
-      readPdf(formWith(blobFile(pdfBytes(1024), "application/octet-stream")), "resume")
+      readPdf(
+        formWith(blobFile(pdfBytes(1024), "application/octet-stream")),
+        "resume",
+      ),
     ).resolves.toBeDefined();
   });
 
   it("rejects a text field where a file was expected", async () => {
     await expect(readPdf(formWith("just a string"), "resume")).rejects.toThrow(
-      MESSAGES.UPLOAD_NOT_A_FILE
+      MESSAGES.UPLOAD_NOT_A_FILE,
     );
   });
 
   it("rejects an absent part", async () => {
     await expect(readPdf(formWith(null), "resume")).rejects.toThrow(
-      MESSAGES.UPLOAD_NOT_A_FILE
+      MESSAGES.UPLOAD_NOT_A_FILE,
     );
   });
 
   it("rejects an empty file", async () => {
     await expect(
-      readPdf(formWith(blobFile(new Uint8Array(0))), "resume")
+      readPdf(formWith(blobFile(new Uint8Array(0))), "resume"),
     ).rejects.toThrow(MESSAGES.UPLOAD_NOT_A_FILE);
   });
 
@@ -218,7 +237,9 @@ describe("readPdf", () => {
   it("rejects a file over the per-file cap and quotes the limit", async () => {
     const oversized = blobFile(pdfBytes(UPLOAD.MAX_RESUME_BYTES + 1));
 
-    await expect(readPdf(formWith(oversized), "resume")).rejects.toThrow(UploadError);
+    await expect(readPdf(formWith(oversized), "resume")).rejects.toThrow(
+      UploadError,
+    );
   });
 
   it("accepts a file exactly at the cap", async () => {
@@ -237,7 +258,9 @@ describe("readPdf", () => {
       arrayBuffer: () => blob.arrayBuffer(),
     };
 
-    expect((await readPdf(formWith(nameless), "resume")).filename).toBe("resume.pdf");
+    expect((await readPdf(formWith(nameless), "resume")).filename).toBe(
+      "resume.pdf",
+    );
   });
 });
 
@@ -248,7 +271,7 @@ describe("readTextField", () => {
 
   it("returns a non-empty string", () => {
     expect(readTextField(formWith("https://github.com/x"), "gitHub")).toBe(
-      "https://github.com/x"
+      "https://github.com/x",
     );
   });
 
@@ -260,9 +283,13 @@ describe("readTextField", () => {
     expect(readTextField(formWith(null), "gitHub")).toBeUndefined();
     expect(
       readTextField(
-        formWith({ size: 1, type: "application/pdf", arrayBuffer: async () => new ArrayBuffer(1) }),
-        "gitHub"
-      )
+        formWith({
+          size: 1,
+          type: "application/pdf",
+          arrayBuffer: async () => new ArrayBuffer(1),
+        }),
+        "gitHub",
+      ),
     ).toBeUndefined();
   });
 });

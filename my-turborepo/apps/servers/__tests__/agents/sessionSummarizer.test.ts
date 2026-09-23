@@ -39,7 +39,9 @@ function answer(overrides: Partial<EvaluationView> = {}): EvaluationView {
 }
 
 /** A weak answer that already carries the Evaluator's rewrite. */
-function weakWithRewrite(overrides: Partial<EvaluationView> = {}): EvaluationView {
+function weakWithRewrite(
+  overrides: Partial<EvaluationView> = {},
+): EvaluationView {
   return answer({
     correctness: 2,
     clarity: 2,
@@ -97,7 +99,7 @@ describe("a session with no weak answers", () => {
 describe("a session with no scored answers at all", () => {
   it("returns null rather than an empty summary", async () => {
     expect(
-      await runSessionSummarizer({ role: "Backend Engineer", evaluations: [] })
+      await runSessionSummarizer({ role: "Backend Engineer", evaluations: [] }),
     ).toBeNull();
   });
 
@@ -113,7 +115,12 @@ describe("a session mixing all three categories", () => {
     return [
       answer({ questionType: "technical", correctness: 3, depth: 3 }),
       answer({ questionType: "role_specific", correctness: 4, depth: 4 }),
-      answer({ questionType: "behavioural", correctness: 3, clarity: 3, depth: 9 }),
+      answer({
+        questionType: "behavioural",
+        correctness: 3,
+        clarity: 3,
+        depth: 9,
+      }),
       answer({ questionType: "technical", correctness: 9, depth: 9 }),
     ];
   }
@@ -131,14 +138,19 @@ describe("a session mixing all three categories", () => {
   // A category with no questions has no weakness — reporting it as zero would
   // invent a failure in something the interview never covered.
   it("omits a category that was never asked", () => {
-    const breakdown = categoryBreakdown([answer({ questionType: "technical" })]);
+    const breakdown = categoryBreakdown([
+      answer({ questionType: "technical" }),
+    ]);
 
     expect(breakdown).toHaveLength(1);
     expect(breakdown[0]?.category).toBe("technical");
   });
 
   it("puts the per-category scores in the prompt", async () => {
-    await runSessionSummarizer({ role: "Backend Engineer", evaluations: mixed() });
+    await runSessionSummarizer({
+      role: "Backend Engineer",
+      evaluations: mixed(),
+    });
 
     const call = lastStructuredCall() as { prompt: string };
     expect(call.prompt).toContain("technical:");
@@ -152,9 +164,19 @@ describe("a session mixing all three categories", () => {
   it("judges each category by its own dimensions", () => {
     const weak = weakestAnswers([
       // Strong behaviourally despite depth 0 — depth is not in its pair.
-      answer({ questionType: "behavioural", correctness: 9, clarity: 9, depth: 0 }),
+      answer({
+        questionType: "behavioural",
+        correctness: 9,
+        clarity: 9,
+        depth: 0,
+      }),
       // Weak technically despite clarity 10 — clarity is not in its pair.
-      answer({ questionType: "technical", correctness: 2, clarity: 10, depth: 2 }),
+      answer({
+        questionType: "technical",
+        correctness: 2,
+        clarity: 10,
+        depth: 2,
+      }),
     ]);
 
     expect(weak).toHaveLength(1);
@@ -174,7 +196,7 @@ describe("a session mixing all three categories", () => {
     });
 
     expect(summary?.flaggedExamples.length).toBeLessThanOrEqual(
-      SESSION_SUMMARY_LIMITS.MAX_FLAGGED
+      SESSION_SUMMARY_LIMITS.MAX_FLAGGED,
     );
   });
 
@@ -202,7 +224,7 @@ describe("reusing the Evaluator's rewrites", () => {
     });
 
     expect(summary?.flaggedExamples[0]?.improvedAnswer).toBe(
-      "At EY I put the tax export behind SQS because it timed out."
+      "At EY I put the tax export behind SQS because it timed out.",
     );
   });
 
@@ -225,7 +247,10 @@ describe("reusing the Evaluator's rewrites", () => {
       {
         summaryText: PARAGRAPH.summaryText,
         rewrites: [
-          { questionId: "01J000000000000000000001", improvedAnswer: "Filled the gap." },
+          {
+            questionId: "01J000000000000000000001",
+            improvedAnswer: "Filled the gap.",
+          },
         ],
       },
     ]);
@@ -247,7 +272,10 @@ describe("reusing the Evaluator's rewrites", () => {
       {
         summaryText: PARAGRAPH.summaryText,
         rewrites: [
-          { questionId: "01J000000000000000000001", improvedAnswer: "A second opinion." },
+          {
+            questionId: "01J000000000000000000001",
+            improvedAnswer: "A second opinion.",
+          },
         ],
       },
     ]);
@@ -257,7 +285,9 @@ describe("reusing the Evaluator's rewrites", () => {
       evaluations: [weakWithRewrite()],
     });
 
-    expect(summary?.flaggedExamples[0]?.improvedAnswer).not.toBe("A second opinion.");
+    expect(summary?.flaggedExamples[0]?.improvedAnswer).not.toBe(
+      "A second opinion.",
+    );
   });
 
   // Same guard the Coach applies to topics: anything the input did not name is
@@ -267,7 +297,10 @@ describe("reusing the Evaluator's rewrites", () => {
       {
         summaryText: PARAGRAPH.summaryText,
         rewrites: [
-          { questionId: "a-question-that-does-not-exist", improvedAnswer: "Invented." },
+          {
+            questionId: "a-question-that-does-not-exist",
+            improvedAnswer: "Invented.",
+          },
         ],
       },
     ]);
@@ -305,7 +338,9 @@ describe("what it produces", () => {
   it("carries the category on every flagged example", async () => {
     const summary = await runSessionSummarizer({
       role: "Backend Engineer",
-      evaluations: [weakWithRewrite({ questionType: "behavioural", clarity: 1 })],
+      evaluations: [
+        weakWithRewrite({ questionType: "behavioural", clarity: 1 }),
+      ],
     });
 
     expect(summary?.flaggedExamples[0]?.category).toBe("behavioural");
@@ -334,12 +369,14 @@ describe("what it produces", () => {
     });
 
     expect(summary?.summaryText.length).toBe(
-      SESSION_SUMMARY_LIMITS.MAX_SUMMARY_CHARS
+      SESSION_SUMMARY_LIMITS.MAX_SUMMARY_CHARS,
     );
   });
 
   it("parses a reply the model wrote as prose", async () => {
-    setStructuredTextReplies(["```json\n" + JSON.stringify(PARAGRAPH) + "\n```"]);
+    setStructuredTextReplies([
+      "```json\n" + JSON.stringify(PARAGRAPH) + "\n```",
+    ]);
 
     const summary = await runSessionSummarizer({
       role: "Backend Engineer",
@@ -360,7 +397,7 @@ describe("a failed generation", () => {
       await runSessionSummarizer({
         role: "Backend Engineer",
         evaluations: [answer()],
-      })
+      }),
     ).toBeNull();
   });
 
@@ -371,7 +408,7 @@ describe("a failed generation", () => {
       await runSessionSummarizer({
         role: "Backend Engineer",
         evaluations: [answer()],
-      })
+      }),
     ).toBeNull();
   });
 
@@ -410,7 +447,7 @@ describe("the prompt it builds", () => {
 
     const call = lastStructuredCall() as { prompt: string };
     expect(call.prompt.indexOf("MY ANSWER TEXT")).toBeGreaterThan(
-      call.prompt.indexOf("question:")
+      call.prompt.indexOf("question:"),
     );
   });
 
@@ -420,12 +457,17 @@ describe("the prompt it builds", () => {
       await runSessionSummarizer({
         role: "Backend Engineer",
         evaluations: [
-          weakWithRewrite({ questionType, correctness: 1, clarity: 1, depth: 1 }),
+          weakWithRewrite({
+            questionType,
+            correctness: 1,
+            clarity: 1,
+            depth: 1,
+          }),
         ],
       });
 
       const call = lastStructuredCall() as { prompt: string };
       expect(call.prompt).toContain(`category: ${questionType}`);
-    }
+    },
   );
 });

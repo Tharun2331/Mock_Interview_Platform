@@ -24,7 +24,8 @@ export type ConverseArgs = {
   exampleTurns?: Array<{ user: string; assistant: string }>;
 };
 
-type Behaviour = { kind: "reply"; text: string } | { kind: "error"; error: Error };
+type Behaviour =
+  { kind: "reply"; text: string } | { kind: "error"; error: Error };
 
 // Mirrors lib/bedrock's ConverseResult. `modelId` is part of the contract, not
 // a detail: the Evaluator persists it on every EVAL# item.
@@ -41,7 +42,7 @@ export const converseText = mock(
     lastArgs = args;
     if (behaviour.kind === "error") throw behaviour.error;
     return { text: behaviour.text, modelId };
-  }
+  },
 );
 
 // The structured (tool-use) half of the same module.
@@ -76,16 +77,14 @@ export const converseStructured = mock(
     // The last entry repeats once the queue is exhausted, so a test that wants
     // the same answer every time configures one.
     const next =
-      structuredQueue.length > 1
-        ? structuredQueue.shift()
-        : structuredQueue[0];
+      structuredQueue.length > 1 ? structuredQueue.shift() : structuredQueue[0];
 
     if (next === undefined) {
       throw new Error("converseStructured called with no behaviour configured");
     }
     if (next.kind === "error") throw next.error;
     return next.result;
-  }
+  },
 );
 
 // Relative to THIS file, so it resolves to apps/servers/lib/bedrock.

@@ -70,7 +70,7 @@ coachRouter.get("/", async (req, res) => {
       console.warn(
         `[coach] cache read failed, regenerating — ${
           error instanceof Error ? error.message : "unknown"
-        }`
+        }`,
       );
     }
 
@@ -95,7 +95,7 @@ coachRouter.get("/", async (req, res) => {
         console.warn(
           `[coach] cache write failed, report still served — ${
             error instanceof Error ? error.message : "unknown"
-          }`
+          }`,
         );
       }
     }

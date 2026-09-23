@@ -1,4 +1,12 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from "bun:test";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient,
@@ -89,8 +97,8 @@ async function profileBody(response: Response) {
 }
 
 function updateExpression(index = 0): string {
-  const expression = ddb.commandCalls(UpdateCommand)[index]?.args[0].input
-    .UpdateExpression;
+  const expression =
+    ddb.commandCalls(UpdateCommand)[index]?.args[0].input.UpdateExpression;
   return expression ?? "";
 }
 
@@ -185,16 +193,16 @@ describe("GET /api/v1/profile", () => {
 
     expect(response.status).toBe(401);
     expect((await errorBody(response)).error).toBe(
-      MESSAGES.UNAUTHORIZED_INVALID_TOKEN
+      MESSAGES.UNAUTHORIZED_INVALID_TOKEN,
     );
   });
 
   // ServiceError messages can carry AWS internals, so the route must answer
   // with its own generic copy and keep the detail in the log.
   it("maps a DynamoDB failure to a generic 500 without quoting it", async () => {
-    ddb.on(GetCommand).rejects(
-      new Error("ResourceNotFoundException: table prepilot-x")
-    );
+    ddb
+      .on(GetCommand)
+      .rejects(new Error("ResourceNotFoundException: table prepilot-x"));
     const { url } = await start();
 
     const response = await fetch(`${url}/api/v1/profile`);
@@ -202,7 +210,7 @@ describe("GET /api/v1/profile", () => {
 
     expect(response.status).toBe(500);
     expect(ErrorBody.parse(JSON.parse(raw)).message).toBe(
-      MESSAGES.PROFILE_UNAVAILABLE
+      MESSAGES.PROFILE_UNAVAILABLE,
     );
     expect(raw).not.toContain("ResourceNotFoundException");
     expect(raw).not.toContain("prepilot-x");
@@ -219,12 +227,18 @@ describe("GET /api/v1/profile", () => {
     const response = await fetch(`${url}/api/v1/profile`);
 
     expect(response.status).toBe(500);
-    expect((await errorBody(response)).message).toBe(MESSAGES.PROFILE_UNAVAILABLE);
+    expect((await errorBody(response)).message).toBe(
+      MESSAGES.PROFILE_UNAVAILABLE,
+    );
   });
 });
 
 describe("PUT /api/v1/profile", () => {
-  const DETAILS = { username: "tharun", firstName: "Tharun", lastName: "Sekar" };
+  const DETAILS = {
+    username: "tharun",
+    firstName: "Tharun",
+    lastName: "Sekar",
+  };
 
   async function put(url: string, body: unknown) {
     return fetch(`${url}/api/v1/profile`, {
@@ -274,7 +288,10 @@ describe("PUT /api/v1/profile", () => {
   // saying what is wrong leaks nothing and the candidate needs to know.
   it("409s when the account is mid-erasure", async () => {
     ddb.on(UpdateCommand).rejects(
-      new ConditionalCheckFailedException({ $metadata: {}, message: "failed" })
+      new ConditionalCheckFailedException({
+        $metadata: {},
+        message: "failed",
+      }),
     );
     const { url } = await start();
 
@@ -325,7 +342,7 @@ describe("PUT /api/v1/profile/github", () => {
     // The upstream detail stays in the log, not the response.
     expect(raw).not.toContain("rate limited by GitHub");
     expect(ErrorBody.parse(JSON.parse(raw)).message).toBe(
-      MESSAGES.GITHUB_FETCH_FAILED
+      MESSAGES.GITHUB_FETCH_FAILED,
     );
   });
 
@@ -337,7 +354,9 @@ describe("PUT /api/v1/profile/github", () => {
     });
 
     expect(response.status).toBe(400);
-    expect((await errorBody(response)).message).toBe(MESSAGES.INVALID_GITHUB_URL);
+    expect((await errorBody(response)).message).toBe(
+      MESSAGES.INVALID_GITHUB_URL,
+    );
     expect(fetchRepos).not.toHaveBeenCalled();
   });
 
@@ -379,7 +398,7 @@ describe("DELETE /api/v1/profile", () => {
 
     expect(response.status).toBe(500);
     expect(ErrorBody.parse(JSON.parse(raw)).message).toBe(
-      MESSAGES.ACCOUNT_DELETE_FAILED
+      MESSAGES.ACCOUNT_DELETE_FAILED,
     );
     expect(raw).not.toContain("throughput exceeded");
   });
@@ -404,7 +423,9 @@ describe("POST /api/v1/profile/resume", () => {
     });
 
     expect(response.status).toBe(415);
-    expect((await errorBody(response)).message).toBe(MESSAGES.EXPECTED_MULTIPART);
+    expect((await errorBody(response)).message).toBe(
+      MESSAGES.EXPECTED_MULTIPART,
+    );
   });
 
   it("400s multipart that carries no resume part", async () => {
@@ -448,17 +469,21 @@ describe("uploading a resume that works", () => {
 
   function upload(args: { pdf?: Uint8Array; gitHub?: string } = {}) {
     const form = new FormData();
-    const bytes = args.pdf ?? minimalPdf("Tharun Sekar backend engineer Kafka Postgres");
+    const bytes =
+      args.pdf ?? minimalPdf("Tharun Sekar backend engineer Kafka Postgres");
     form.set(
       "resume",
-      new File([bytes], "resume.pdf", { type: "application/pdf" })
+      new File([bytes], "resume.pdf", { type: "application/pdf" }),
     );
     if (args.gitHub !== undefined) form.set("gitHub", args.gitHub);
     return form;
   }
 
   async function post(url: string, form: FormData) {
-    return fetch(`${url}/api/v1/profile/resume`, { method: "POST", body: form });
+    return fetch(`${url}/api/v1/profile/resume`, {
+      method: "POST",
+      body: form,
+    });
   }
 
   beforeEach(() => {
@@ -527,7 +552,12 @@ describe("uploading a resume that works", () => {
   it("stores text that went through the redactor", async () => {
     comprehend.on(DetectPiiEntitiesCommand).resolves({
       Entities: [
-        { Type: PiiEntityType.NAME, Score: 0.99, BeginOffset: 0, EndOffset: 13 },
+        {
+          Type: PiiEntityType.NAME,
+          Score: 0.99,
+          BeginOffset: 0,
+          EndOffset: 13,
+        },
       ],
     });
     const { url } = await start();
@@ -575,7 +605,10 @@ describe("uploading a resume that works", () => {
 describe("an upload that fails part-way", () => {
   function pdfForm(bytes: Uint8Array) {
     const form = new FormData();
-    form.set("resume", new File([bytes], "resume.pdf", { type: "application/pdf" }));
+    form.set(
+      "resume",
+      new File([bytes], "resume.pdf", { type: "application/pdf" }),
+    );
     return form;
   }
 
@@ -588,7 +621,9 @@ describe("an upload that fails part-way", () => {
     });
 
     expect(response.status).toBe(422);
-    expect((await errorBody(response)).message).toBe(MESSAGES.RESUME_PARSE_FAILED);
+    expect((await errorBody(response)).message).toBe(
+      MESSAGES.RESUME_PARSE_FAILED,
+    );
   });
 
   it("stores nothing when the PDF cannot be read", async () => {
@@ -607,7 +642,9 @@ describe("an upload that fails part-way", () => {
   // would put names and addresses in DynamoDB with nothing downstream able to
   // tell — so the upload is rejected instead.
   it("503s rather than storing unscanned text", async () => {
-    comprehend.on(DetectPiiEntitiesCommand).rejects(new Error("ThrottlingException"));
+    comprehend
+      .on(DetectPiiEntitiesCommand)
+      .rejects(new Error("ThrottlingException"));
     const { url } = await start();
 
     const response = await fetch(`${url}/api/v1/profile/resume`, {
@@ -617,12 +654,14 @@ describe("an upload that fails part-way", () => {
 
     expect(response.status).toBe(503);
     expect((await errorBody(response)).message).toBe(
-      MESSAGES.REDACTION_UNAVAILABLE
+      MESSAGES.REDACTION_UNAVAILABLE,
     );
   });
 
   it("stores nothing at all when redaction fails", async () => {
-    comprehend.on(DetectPiiEntitiesCommand).rejects(new Error("ThrottlingException"));
+    comprehend
+      .on(DetectPiiEntitiesCommand)
+      .rejects(new Error("ThrottlingException"));
     const { url } = await start();
 
     await fetch(`${url}/api/v1/profile/resume`, {

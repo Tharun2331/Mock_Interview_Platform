@@ -144,7 +144,7 @@ export async function createSession(args: {
                 repos: args.repos.slice(0, PLAN_LIMITS.MAX_REPOS),
                 resumeText: args.resumeText.slice(
                   0,
-                  PLAN_LIMITS.MAX_RESUME_CHARS
+                  PLAN_LIMITS.MAX_RESUME_CHARS,
                 ),
                 resumeKey: args.resumeKey,
               },
@@ -168,7 +168,7 @@ export async function createSession(args: {
             },
           },
         ],
-      })
+      }),
     );
   } catch (error) {
     if (error instanceof TransactionCanceledException) {
@@ -176,13 +176,13 @@ export async function createSession(args: {
         `${MESSAGES.SESSION_CREATE_FAILED} — ${
           error.CancellationReasons?.map((reason) => reason.Code).join(", ") ??
           "unknown"
-        }`
+        }`,
       );
     }
     throw new ServiceError(
       `${MESSAGES.SESSION_CREATE_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 }
@@ -219,13 +219,13 @@ export async function listUserSessionIds(args: {
           // attributes this never looks at, on every page.
           ProjectionExpression: "sessionId",
           ExclusiveStartKey: cursor,
-        })
+        }),
       );
     } catch (error) {
       throw new ServiceError(
         `${MESSAGES.SESSION_READ_FAILED} — ${
           error instanceof Error ? error.message : "unknown"
-        }`
+        }`,
       );
     }
 
@@ -267,18 +267,18 @@ export async function deleteSessionData(args: {
           // Keys only — a transcript can be large and none of it is read here.
           ProjectionExpression: "PK, SK",
           ExclusiveStartKey: cursor,
-        })
+        }),
       );
     } catch (error) {
       throw new ServiceError(
         `${MESSAGES.SESSION_READ_FAILED} — ${
           error instanceof Error ? error.message : "unknown"
-        }`
+        }`,
       );
     }
 
     const keys = (response.Items ?? []).filter(
-      (item) => typeof item.PK === "string" && typeof item.SK === "string"
+      (item) => typeof item.PK === "string" && typeof item.SK === "string",
     );
 
     // BatchWriteItem caps at 25 per call.
@@ -313,7 +313,10 @@ export async function deleteUserSessionRefs(args: {
   }));
 
   for (let start = 0; start < keys.length; start += DELETE_BATCH_SIZE) {
-    await deleteKeyChunk(TableName, keys.slice(start, start + DELETE_BATCH_SIZE));
+    await deleteKeyChunk(
+      TableName,
+      keys.slice(start, start + DELETE_BATCH_SIZE),
+    );
   }
 
   return keys.length;
@@ -324,7 +327,7 @@ export async function deleteUserSessionRefs(args: {
 // that is how a deletion silently leaves data behind.
 export async function deleteKeyChunk(
   TableName: string,
-  keys: Record<string, unknown>[]
+  keys: Record<string, unknown>[],
 ): Promise<void> {
   let pending = keys.map((Key) => ({ DeleteRequest: { Key } }));
 
@@ -332,13 +335,13 @@ export async function deleteKeyChunk(
     let response;
     try {
       response = await dynamoClient.send(
-        new BatchWriteCommand({ RequestItems: { [TableName]: pending } })
+        new BatchWriteCommand({ RequestItems: { [TableName]: pending } }),
       );
     } catch (error) {
       throw new ServiceError(
         `${MESSAGES.SESSION_DELETE_FAILED} — ${
           error instanceof Error ? error.message : "unknown"
-        }`
+        }`,
       );
     }
 
@@ -348,7 +351,7 @@ export async function deleteKeyChunk(
     pending = unprocessed.flatMap((request) =>
       request.DeleteRequest === undefined
         ? []
-        : [{ DeleteRequest: { Key: request.DeleteRequest.Key ?? {} } }]
+        : [{ DeleteRequest: { Key: request.DeleteRequest.Key ?? {} } }],
     );
   }
 
@@ -392,13 +395,13 @@ export async function loadPlannerInputs(args: {
             ConsistentRead: true,
           },
         },
-      })
+      }),
     );
   } catch (error) {
     throw new ServiceError(
       `${MESSAGES.SESSION_READ_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 
@@ -479,7 +482,7 @@ export async function recordAnswer(args: {
         durationMs: args.durationMs,
         interrupted: args.interrupted,
       },
-    })
+    }),
   );
 }
 
@@ -509,7 +512,7 @@ export async function finishInterview(args: {
         ":status": args.status,
         ":inProgress": "in_progress",
       },
-    })
+    }),
   );
 }
 
@@ -540,14 +543,14 @@ export async function completeEvaluation(args: {
           ":complete": "complete",
           ":evaluating": "evaluating",
         },
-      })
+      }),
     );
   } catch (error) {
     if (error instanceof ConditionalCheckFailedException) return false;
     throw new ServiceError(
       `${MESSAGES.SESSION_UPDATE_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 
@@ -575,13 +578,13 @@ export async function putGapAnalysis(args: {
           // deletes.
           expiresAt: sessionExpiresAt(),
         },
-      })
+      }),
     );
   } catch (error) {
     throw new ServiceError(
       `${MESSAGES.GAP_WRITE_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 }
@@ -602,13 +605,13 @@ export async function loadGapAnalysis(args: {
       new GetCommand({
         TableName: requireTable(),
         Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.GAP },
-      })
+      }),
     );
   } catch (error) {
     console.warn(
       `[sessions] ${args.sessionId} gap read failed, continuing without it — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
     return null;
   }
@@ -620,7 +623,7 @@ export async function loadGapAnalysis(args: {
     // Same reasoning as a read failure: a stored analysis that no longer
     // matches its schema is not worth ending an interview over.
     console.warn(
-      `[sessions] ${args.sessionId} gap analysis did not parse, continuing without it`
+      `[sessions] ${args.sessionId} gap analysis did not parse, continuing without it`,
     );
     return null;
   }
@@ -658,7 +661,7 @@ export async function startInterview(args: {
         // read — the plan is needed immediately to build the system prompt.
         ReturnValues: "ALL_NEW",
         ReturnValuesOnConditionCheckFailure: "ALL_OLD",
-      })
+      }),
     );
 
     return parseItem(SessionMetaSchema, response.Attributes, "META");
@@ -673,7 +676,7 @@ export async function startInterview(args: {
     throw new ServiceError(
       `${MESSAGES.SESSION_UPDATE_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 }
@@ -734,7 +737,7 @@ export async function attachPlan(args: {
         // otherwise, and they deserve different responses. Costs nothing on the
         // success path.
         ReturnValuesOnConditionCheckFailure: "ALL_OLD",
-      })
+      }),
     );
   } catch (error) {
     // Missing session and someone else's session are deliberately the same
@@ -762,7 +765,7 @@ export async function attachPlan(args: {
     throw new ServiceError(
       `${MESSAGES.SESSION_UPDATE_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 }
@@ -786,13 +789,13 @@ export async function putCompanyIntel(args: {
           ...args.intel,
           expiresAt: sessionExpiresAt(),
         },
-      })
+      }),
     );
   } catch (error) {
     throw new ServiceError(
       `${MESSAGES.INTEL_WRITE_FAILED} — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
   }
 }
@@ -812,13 +815,13 @@ export async function loadCompanyIntel(args: {
       new GetCommand({
         TableName: requireTable(),
         Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.INTEL },
-      })
+      }),
     );
   } catch (error) {
     console.warn(
       `[sessions] ${args.sessionId} intel read failed, continuing without it — ${
         error instanceof Error ? error.message : "unknown"
-      }`
+      }`,
     );
     return null;
   }
@@ -828,7 +831,7 @@ export async function loadCompanyIntel(args: {
   const parsed = CompanyIntelSchema.safeParse(response.Item);
   if (!parsed.success) {
     console.warn(
-      `[sessions] ${args.sessionId} company intel did not parse, continuing without it`
+      `[sessions] ${args.sessionId} company intel did not parse, continuing without it`,
     );
     return null;
   }

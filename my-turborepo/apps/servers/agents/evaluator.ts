@@ -47,7 +47,7 @@ const SYSTEM_PROMPT = [
   "The rationale is read by the candidate as coaching. Say what was missing and",
   "what would have made the answer stronger, concretely enough to act on. Be",
   "direct about weaknesses without being unkind — they are already nervous.",
-  "Address them as \"you\". Two or three sentences.",
+  'Address them as "you". Two or three sentences.',
   "",
   "Reply with a single JSON object and nothing else, matching exactly:",
   '{"correctness":N,"clarity":N,"depth":N,"rationale":"string","sampleAnswer":"string"}',
@@ -124,7 +124,9 @@ function buildPrompt(input: EvaluatorInput): string {
     `Answer duration: ${formatDuration(input.durationMs)}`,
     "",
     "Answer:",
-    input.transcript.length > 0 ? input.transcript : "(the candidate said nothing)",
+    input.transcript.length > 0
+      ? input.transcript
+      : "(the candidate said nothing)",
   ].join("\n");
 }
 
@@ -137,7 +139,7 @@ export type EvaluationResult = EvaluationScores & {
 // the Planner, so v2 can wrap both as LangGraph nodes without touching either
 // call site.
 export async function runEvaluator(
-  input: EvaluatorInput
+  input: EvaluatorInput,
 ): Promise<EvaluationResult> {
   const { text: raw, modelId } = await converseText({
     system: SYSTEM_PROMPT,
@@ -148,7 +150,7 @@ export async function runEvaluator(
   });
 
   const parsed = EvaluationScoresSchema.safeParse(
-    extractJsonObject(raw, "Evaluator")
+    extractJsonObject(raw, "Evaluator"),
   );
 
   if (!parsed.success) {
@@ -156,7 +158,7 @@ export async function runEvaluator(
       `Evaluator output failed validation — ${parsed.error.issues
         .map((issue) => `${issue.path.join(".") || "root"}: ${issue.message}`)
         .join("; ")}`,
-      [modelId]
+      [modelId],
     );
   }
 
@@ -179,7 +181,7 @@ export async function runEvaluator(
 
   if (!wanted && offered.length > 0) {
     console.log(
-      `[evaluator] dropped an unrequested sample answer for a ${input.questionType} question`
+      `[evaluator] dropped an unrequested sample answer for a ${input.questionType} question`,
     );
   }
 

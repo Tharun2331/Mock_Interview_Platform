@@ -22,7 +22,11 @@ import {
   userPk,
 } from "@repo/shared";
 import { SECONDS_PER_DAY, SESSION_RETENTION } from "../../lib/constants";
-import { ServiceError, SessionAccessError, SessionStateError } from "../../lib/errors";
+import {
+  ServiceError,
+  SessionAccessError,
+  SessionStateError,
+} from "../../lib/errors";
 import { MESSAGES } from "../../lib/messages";
 import {
   attachPlan,
@@ -159,7 +163,7 @@ describe("createSession", () => {
     await createSession(ARGS);
 
     expect(transactItems()[0]?.Put?.ConditionExpression).toBe(
-      "attribute_not_exists(PK)"
+      "attribute_not_exists(PK)",
     );
   });
 
@@ -185,7 +189,12 @@ describe("createSession", () => {
   // a stored item can never be too large for its own validator.
   it("caps repos and resume text on the way in", async () => {
     ddb.on(TransactWriteCommand).resolves({});
-    const repo = { description: null, name: "x", fullName: "u/x", starCount: 0 };
+    const repo = {
+      description: null,
+      name: "x",
+      fullName: "u/x",
+      starCount: 0,
+    };
 
     await createSession({
       ...ARGS,
@@ -204,7 +213,10 @@ describe("createSession", () => {
       message: "cancelled",
     });
     Object.assign(cancelled, {
-      CancellationReasons: [{ Code: "ConditionalCheckFailed" }, { Code: "None" }],
+      CancellationReasons: [
+        { Code: "ConditionalCheckFailed" },
+        { Code: "None" },
+      ],
     });
     ddb.on(TransactWriteCommand).rejects(cancelled);
 
@@ -231,7 +243,7 @@ describe("listUserSessionIds", () => {
 
     const input = ddb.commandCalls(QueryCommand)[0]?.args[0].input;
     expect(input?.KeyConditionExpression).toBe(
-      "PK = :pk AND begins_with(SK, :prefix)"
+      "PK = :pk AND begins_with(SK, :prefix)",
     );
     expect(input?.ExpressionAttributeValues?.[":prefix"]).toBe("SESSION#");
     // Only the id is needed; projecting the whole ref reads attributes this
@@ -268,7 +280,7 @@ describe("listUserSessionIds", () => {
     ddb.on(QueryCommand).rejects(new Error("throttled"));
 
     await expect(listUserSessionIds({ userId: USER_ID })).rejects.toThrow(
-      ServiceError
+      ServiceError,
     );
   });
 });
@@ -287,8 +299,9 @@ describe("deleteSessionData", () => {
 
     await deleteSessionData({ sessionId: SESSION_ID });
 
-    expect(ddb.commandCalls(QueryCommand)[0]?.args[0].input.ProjectionExpression)
-      .toBe("PK, SK");
+    expect(
+      ddb.commandCalls(QueryCommand)[0]?.args[0].input.ProjectionExpression,
+    ).toBe("PK, SK");
   });
 
   // BatchWriteItem caps at 25. Sending 26 is a validation error, not a slower
@@ -347,7 +360,7 @@ describe("deleteSessionData", () => {
     });
 
     await expect(deleteSessionData({ sessionId: SESSION_ID })).rejects.toThrow(
-      MESSAGES.SESSION_DELETE_INCOMPLETE
+      MESSAGES.SESSION_DELETE_INCOMPLETE,
     );
     expect(ddb.commandCalls(BatchWriteCommand)).toHaveLength(3);
   });
@@ -367,8 +380,9 @@ describe("deleteUserSessionRefs", () => {
 
     expect(count).toBe(2);
     const batch =
-      ddb.commandCalls(BatchWriteCommand)[0]?.args[0].input.RequestItems?.[TABLE] ??
-      [];
+      ddb.commandCalls(BatchWriteCommand)[0]?.args[0].input.RequestItems?.[
+        TABLE
+      ] ?? [];
     expect(batch.map((request) => request.DeleteRequest?.Key)).toEqual([
       { PK: userPk(USER_ID), SK: "SESSION#s1" },
       { PK: userPk(USER_ID), SK: "SESSION#s2" },
@@ -379,14 +393,18 @@ describe("deleteUserSessionRefs", () => {
     ddb.on(BatchWriteCommand).resolves({});
     const ids = Array.from({ length: 30 }, (_unused, i) => `s${i}`);
 
-    expect(await deleteUserSessionRefs({ userId: USER_ID, sessionIds: ids })).toBe(30);
+    expect(
+      await deleteUserSessionRefs({ userId: USER_ID, sessionIds: ids }),
+    ).toBe(30);
     expect(ddb.commandCalls(BatchWriteCommand)).toHaveLength(2);
   });
 
   it("does nothing for a candidate with no sessions", async () => {
     ddb.on(BatchWriteCommand).resolves({});
 
-    expect(await deleteUserSessionRefs({ userId: USER_ID, sessionIds: [] })).toBe(0);
+    expect(
+      await deleteUserSessionRefs({ userId: USER_ID, sessionIds: [] }),
+    ).toBe(0);
     expect(ddb.commandCalls(BatchWriteCommand)).toHaveLength(0);
   });
 });
@@ -419,7 +437,10 @@ describe("loadPlannerInputs", () => {
   it("returns the material and the version it was snapshotted at", async () => {
     respond([META, INPUTS]);
 
-    const result = await loadPlannerInputs({ sessionId: SESSION_ID, userId: USER_ID });
+    const result = await loadPlannerInputs({
+      sessionId: SESSION_ID,
+      userId: USER_ID,
+    });
 
     expect(result.repos).toEqual(INPUTS.repos);
     expect(result.resumeText).toBe("redacted text");
@@ -431,7 +452,10 @@ describe("loadPlannerInputs", () => {
   it("finds each item by sort key, not by position", async () => {
     respond([INPUTS, META]);
 
-    const result = await loadPlannerInputs({ sessionId: SESSION_ID, userId: USER_ID });
+    const result = await loadPlannerInputs({
+      sessionId: SESSION_ID,
+      userId: USER_ID,
+    });
 
     expect(result.resumeText).toBe("redacted text");
     expect(result.profileVersion).toBe(3);
@@ -451,7 +475,10 @@ describe("loadPlannerInputs", () => {
   it("reports an empty resume as absent rather than as an empty string", async () => {
     respond([META, { ...INPUTS, resumeText: "" }]);
 
-    const result = await loadPlannerInputs({ sessionId: SESSION_ID, userId: USER_ID });
+    const result = await loadPlannerInputs({
+      sessionId: SESSION_ID,
+      userId: USER_ID,
+    });
 
     expect(result.resumeText).toBeUndefined();
   });
@@ -462,7 +489,7 @@ describe("loadPlannerInputs", () => {
     respond([{ ...META, userId: "someone-else" }, INPUTS]);
 
     await expect(
-      loadPlannerInputs({ sessionId: SESSION_ID, userId: USER_ID })
+      loadPlannerInputs({ sessionId: SESSION_ID, userId: USER_ID }),
     ).rejects.toThrow(SessionAccessError);
   });
 
@@ -470,7 +497,7 @@ describe("loadPlannerInputs", () => {
     respond([]);
 
     await expect(
-      loadPlannerInputs({ sessionId: SESSION_ID, userId: USER_ID })
+      loadPlannerInputs({ sessionId: SESSION_ID, userId: USER_ID }),
     ).rejects.toThrow(MESSAGES.SESSION_NOT_FOUND);
   });
 
@@ -482,18 +509,21 @@ describe("loadPlannerInputs", () => {
       respond([{ ...META, status }, INPUTS]);
 
       await expect(
-        loadPlannerInputs({ sessionId: SESSION_ID, userId: USER_ID })
+        loadPlannerInputs({ sessionId: SESSION_ID, userId: USER_ID }),
       ).rejects.toThrow(SessionStateError);
-    }
+    },
   );
 
-  it.each(["planning", "ready"] as const)("allows replanning while %s", async (status) => {
-    respond([{ ...META, status }, INPUTS]);
+  it.each(["planning", "ready"] as const)(
+    "allows replanning while %s",
+    async (status) => {
+      respond([{ ...META, status }, INPUTS]);
 
-    await expect(
-      loadPlannerInputs({ sessionId: SESSION_ID, userId: USER_ID })
-    ).resolves.toBeDefined();
-  });
+      await expect(
+        loadPlannerInputs({ sessionId: SESSION_ID, userId: USER_ID }),
+      ).resolves.toBeDefined();
+    },
+  );
 });
 
 describe("recordAnswer", () => {
@@ -527,8 +557,9 @@ describe("recordAnswer", () => {
 
     await recordAnswer(ARGS);
 
-    expect(ddb.commandCalls(PutCommand)[0]?.args[0].input.Item?.expiresAt)
-      .toBeGreaterThan(0);
+    expect(
+      ddb.commandCalls(PutCommand)[0]?.args[0].input.Item?.expiresAt,
+    ).toBeGreaterThan(0);
   });
 
   // Nullable, not absent: "we tried and there is none" is a real state the
@@ -538,7 +569,9 @@ describe("recordAnswer", () => {
 
     await recordAnswer(ARGS);
 
-    expect(ddb.commandCalls(PutCommand)[0]?.args[0].input.Item?.audioKey).toBeNull();
+    expect(
+      ddb.commandCalls(PutCommand)[0]?.args[0].input.Item?.audioKey,
+    ).toBeNull();
   });
 });
 
@@ -561,9 +594,8 @@ describe("finishInterview", () => {
     await finishInterview({ sessionId: SESSION_ID, status: "failed" });
 
     expect(
-      ddb.commandCalls(UpdateCommand)[0]?.args[0].input.ExpressionAttributeValues?.[
-        ":status"
-      ]
+      ddb.commandCalls(UpdateCommand)[0]?.args[0].input
+        .ExpressionAttributeValues?.[":status"],
     ).toBe("failed");
   });
 
@@ -605,7 +637,7 @@ describe("startInterview", () => {
 
     const input = ddb.commandCalls(UpdateCommand)[0]?.args[0].input;
     expect(input?.ConditionExpression).toBe(
-      "attribute_exists(PK) AND userId = :userId AND #status = :ready"
+      "attribute_exists(PK) AND userId = :userId AND #status = :ready",
     );
     // The whole item comes back so the caller gets the plan without a second
     // read — it is needed immediately to build the system prompt.
@@ -615,7 +647,10 @@ describe("startInterview", () => {
   it("returns the parsed meta including the plan", async () => {
     ddb.on(UpdateCommand).resolves({ Attributes: READY_META });
 
-    const meta = await startInterview({ sessionId: SESSION_ID, userId: USER_ID });
+    const meta = await startInterview({
+      sessionId: SESSION_ID,
+      userId: USER_ID,
+    });
 
     expect(meta.status).toBe("in_progress");
     expect(meta.plan?.targetMinutes).toBe(30);
@@ -623,19 +658,23 @@ describe("startInterview", () => {
 
   // Ownership proven, so the message can say what actually happened.
   it("tells the owner their session is not interviewable", async () => {
-    ddb.on(UpdateCommand).rejects(conditionalFailure({ userId: { S: USER_ID } }));
+    ddb
+      .on(UpdateCommand)
+      .rejects(conditionalFailure({ userId: { S: USER_ID } }));
 
     await expect(
-      startInterview({ sessionId: SESSION_ID, userId: USER_ID })
+      startInterview({ sessionId: SESSION_ID, userId: USER_ID }),
     ).rejects.toThrow(MESSAGES.SESSION_NOT_INTERVIEWABLE);
   });
 
   // Someone else's session and a missing one stay indistinguishable.
   it("gives a non-owner the same answer as for a missing session", async () => {
-    ddb.on(UpdateCommand).rejects(conditionalFailure({ userId: { S: "someone-else" } }));
+    ddb
+      .on(UpdateCommand)
+      .rejects(conditionalFailure({ userId: { S: "someone-else" } }));
 
     await expect(
-      startInterview({ sessionId: SESSION_ID, userId: USER_ID })
+      startInterview({ sessionId: SESSION_ID, userId: USER_ID }),
     ).rejects.toThrow(SessionAccessError);
   });
 
@@ -643,7 +682,7 @@ describe("startInterview", () => {
     ddb.on(UpdateCommand).rejects(conditionalFailure());
 
     await expect(
-      startInterview({ sessionId: SESSION_ID, userId: USER_ID })
+      startInterview({ sessionId: SESSION_ID, userId: USER_ID }),
     ).rejects.toThrow(MESSAGES.SESSION_NOT_FOUND);
   });
 });
@@ -664,7 +703,8 @@ describe("attachPlan", () => {
     await attachPlan(ARGS);
 
     const values =
-      ddb.commandCalls(UpdateCommand)[0]?.args[0].input.ExpressionAttributeValues;
+      ddb.commandCalls(UpdateCommand)[0]?.args[0].input
+        .ExpressionAttributeValues;
     expect(values?.[":questionCount"]).toBe(10);
   });
 
@@ -675,10 +715,11 @@ describe("attachPlan", () => {
 
     await attachPlan(ARGS);
 
-    expect(ddb.commandCalls(UpdateCommand)[0]?.args[0].input.ConditionExpression)
-      .toBe(
-        "attribute_exists(PK) AND userId = :userId AND #status IN (:planning, :ready)"
-      );
+    expect(
+      ddb.commandCalls(UpdateCommand)[0]?.args[0].input.ConditionExpression,
+    ).toBe(
+      "attribute_exists(PK) AND userId = :userId AND #status IN (:planning, :ready)",
+    );
   });
 
   it("moves the session to ready and records the role", async () => {
@@ -687,7 +728,8 @@ describe("attachPlan", () => {
     await attachPlan(ARGS);
 
     const values =
-      ddb.commandCalls(UpdateCommand)[0]?.args[0].input.ExpressionAttributeValues;
+      ddb.commandCalls(UpdateCommand)[0]?.args[0].input
+        .ExpressionAttributeValues;
     expect(values?.[":status"]).toBe("ready");
     expect(values?.[":role"]).toBe("Backend Engineer");
   });
@@ -698,20 +740,28 @@ describe("attachPlan", () => {
 
     await attachPlan(ARGS);
 
-    expect(ddb.commandCalls(UpdateCommand)[0]?.args[0].input.ExpressionAttributeNames)
-      .toEqual({ "#plan": "plan", "#role": "role", "#status": "status" });
+    expect(
+      ddb.commandCalls(UpdateCommand)[0]?.args[0].input
+        .ExpressionAttributeNames,
+    ).toEqual({ "#plan": "plan", "#role": "role", "#status": "status" });
   });
 
   // The interview started while the Planner was running — a window of several
   // seconds that only the condition expression closes.
   it("tells the owner the interview already started", async () => {
-    ddb.on(UpdateCommand).rejects(conditionalFailure({ userId: { S: USER_ID } }));
+    ddb
+      .on(UpdateCommand)
+      .rejects(conditionalFailure({ userId: { S: USER_ID } }));
 
-    await expect(attachPlan(ARGS)).rejects.toThrow(MESSAGES.SESSION_ALREADY_STARTED);
+    await expect(attachPlan(ARGS)).rejects.toThrow(
+      MESSAGES.SESSION_ALREADY_STARTED,
+    );
   });
 
   it("does not confirm that someone else's session id exists", async () => {
-    ddb.on(UpdateCommand).rejects(conditionalFailure({ userId: { S: "someone-else" } }));
+    ddb
+      .on(UpdateCommand)
+      .rejects(conditionalFailure({ userId: { S: "someone-else" } }));
 
     await expect(attachPlan(ARGS)).rejects.toThrow(SessionAccessError);
     await expect(attachPlan(ARGS)).rejects.toThrow(MESSAGES.SESSION_NOT_FOUND);

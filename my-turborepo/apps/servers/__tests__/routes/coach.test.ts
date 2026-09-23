@@ -1,4 +1,11 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "bun:test";
 import {
   DynamoDBDocumentClient,
   GetCommand,
@@ -160,7 +167,9 @@ describe("GET /api/v1/coach", () => {
   });
 
   it("500s a failed read without leaking the cause", async () => {
-    ddb.on(QueryCommand).rejects(new Error("ProvisionedThroughputExceeded on table x"));
+    ddb
+      .on(QueryCommand)
+      .rejects(new Error("ProvisionedThroughputExceeded on table x"));
     const { url } = await start();
 
     const response = await fetch(`${url}/api/v1/coach`);
@@ -170,7 +179,7 @@ describe("GET /api/v1/coach", () => {
     expect(raw).not.toContain("ProvisionedThroughput");
     expect(raw).not.toContain("table x");
     expect(ErrorBody.parse(JSON.parse(raw)).message).toBe(
-      MESSAGES.SESSION_UNAVAILABLE
+      MESSAGES.SESSION_UNAVAILABLE,
     );
   });
 
@@ -277,7 +286,7 @@ describe("GET /api/v1/coach cache", () => {
     const { url } = await start();
 
     const report = CoachReportSchema.parse(
-      await (await fetch(`${url}/api/v1/coach`)).json()
+      await (await fetch(`${url}/api/v1/coach`)).json(),
     );
 
     expect(report.trends[0]?.direction).toBe("improving");
@@ -291,7 +300,7 @@ describe("GET /api/v1/coach cache", () => {
     const { url } = await start();
 
     const report = CoachReportSchema.parse(
-      await (await fetch(`${url}/api/v1/coach`)).json()
+      await (await fetch(`${url}/api/v1/coach`)).json(),
     );
 
     expect(structuredCallCount()).toBe(1);

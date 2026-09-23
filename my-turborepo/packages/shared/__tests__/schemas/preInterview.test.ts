@@ -14,13 +14,13 @@ import {
 describe("extractGithubUsername", () => {
   it("returns the owner of a canonical profile URL", () => {
     expect(extractGithubUsername("https://github.com/Tharun2331")).toBe(
-      "Tharun2331"
+      "Tharun2331",
     );
   });
 
   it("accepts the www host and surrounding whitespace", () => {
     expect(extractGithubUsername("  https://www.github.com/octocat  ")).toBe(
-      "octocat"
+      "octocat",
     );
   });
 
@@ -43,11 +43,15 @@ describe("extractGithubUsername", () => {
   });
 
   it("rejects a subdomain of an attacker's domain", () => {
-    expect(extractGithubUsername("https://github.com.evil.com/octocat")).toBeNull();
+    expect(
+      extractGithubUsername("https://github.com.evil.com/octocat"),
+    ).toBeNull();
   });
 
   it("rejects a repository URL — a profile has exactly one path segment", () => {
-    expect(extractGithubUsername("https://github.com/octocat/hello-world")).toBeNull();
+    expect(
+      extractGithubUsername("https://github.com/octocat/hello-world"),
+    ).toBeNull();
   });
 
   it("rejects the bare host with no username", () => {

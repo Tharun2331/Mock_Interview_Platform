@@ -48,9 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, []);
 
-  return (
-    <AuthContext.Provider value={status}>{children}</AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={status}>{children}</AuthContext.Provider>;
 }
 
 export function useAuthStatus(): AuthStatus {

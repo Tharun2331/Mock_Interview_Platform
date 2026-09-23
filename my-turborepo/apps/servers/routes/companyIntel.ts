@@ -35,13 +35,13 @@ export async function researchCompany(args: {
     console.log(
       `[intel] ${args.sessionId} ${args.company} — style=${intel.style} focus=${intel.focus} ` +
         `seniority=${intel.seniority} sources=${intel.sourceCount}` +
-        (intelIsEmpty(intel) ? " (nothing usable, interview unaffected)" : "")
+        (intelIsEmpty(intel) ? " (nothing usable, interview unaffected)" : ""),
     );
   } catch (error) {
     console.error(
       `[intel] ${args.sessionId} research failed, interview runs without it — ${
         error instanceof Error ? error.message : error
-      }`
+      }`,
     );
   }
 }

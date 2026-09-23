@@ -35,7 +35,8 @@ import { requireEvalQueue, sqsClient } from "./lib/sqs";
 // What the completion check concluded. Present on every outcome that reached
 // DynamoDB, because every one of them is a chance to notice the session is
 // done — including the ones that did no scoring.
-type FinalizedKind = "incomplete" | "finalized" | "already-finalized" | "no-summary";
+type FinalizedKind =
+  "incomplete" | "finalized" | "already-finalized" | "no-summary";
 
 export type MessageOutcome =
   | {
@@ -147,7 +148,7 @@ export async function handleMessage(body: string): Promise<MessageOutcome> {
 // reads a session without one perfectly well.
 async function summariseSession(
   sessionId: string,
-  historyRow: { userId: string; completedAt: string }
+  historyRow: { userId: string; completedAt: string },
 ): Promise<void> {
   try {
     const evaluation = await loadSessionEvaluations({
@@ -167,18 +168,21 @@ async function summariseSession(
 
     await attachSessionSummary({ ...historyRow, summary });
     console.log(
-      `[summarizer] ${sessionId} summarised, ${summary.flaggedExamples.length} examples flagged`
+      `[summarizer] ${sessionId} summarised, ${summary.flaggedExamples.length} examples flagged`,
     );
   } catch (error) {
     console.error(
       `[summarizer] ${sessionId} failed, session closed without a summary — ${
         error instanceof Error ? error.message : error
-      }`
+      }`,
     );
   }
 }
 
-async function processMessage(message: Message, QueueUrl: string): Promise<void> {
+async function processMessage(
+  message: Message,
+  QueueUrl: string,
+): Promise<void> {
   const { Body, ReceiptHandle } = message;
   if (Body === undefined || ReceiptHandle === undefined) return;
 
@@ -192,7 +196,7 @@ async function processMessage(message: Message, QueueUrl: string): Promise<void>
     console.error(
       `[worker] scoring failed, leaving for redelivery — ${
         error instanceof Error ? error.message : error
-      }`
+      }`,
     );
     return;
   }
@@ -203,11 +207,11 @@ async function processMessage(message: Message, QueueUrl: string): Promise<void>
     console.error("[worker] dropping unparseable message");
   } else if (outcome.kind === "scored") {
     console.log(
-      `[worker] scored ${outcome.questionId} with ${outcome.modelId} (${outcome.finalized})`
+      `[worker] scored ${outcome.questionId} with ${outcome.modelId} (${outcome.finalized})`,
     );
   } else {
     console.log(
-      `[worker] ${outcome.kind} ${outcome.questionId} (${outcome.finalized})`
+      `[worker] ${outcome.kind} ${outcome.questionId} (${outcome.finalized})`,
     );
   }
 
@@ -236,7 +240,7 @@ export async function runWorker(shouldStop: () => boolean): Promise<void> {
         // generation is paid for twice. This is the number that makes the
         // single-model configuration matter.
         VisibilityTimeout: WORKER.VISIBILITY_TIMEOUT_SECONDS,
-      })
+      }),
     );
 
     const messages = response.Messages ?? [];

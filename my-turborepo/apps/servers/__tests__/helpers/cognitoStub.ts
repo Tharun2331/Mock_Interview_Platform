@@ -36,7 +36,7 @@ export const verifier = { verify };
 export const AuthMiddleware = async (
   _req: unknown,
   _res: unknown,
-  next: () => void
+  next: () => void,
 ): Promise<void> => next();
 
 mock.module("../../lib/cognitoAuth", () => ({ verifier, AuthMiddleware }));

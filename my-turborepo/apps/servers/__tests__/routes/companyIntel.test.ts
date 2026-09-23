@@ -1,17 +1,16 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   BatchGetCommand,
   DynamoDBDocumentClient,
   PutCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
-import { CompanyIntelSchema, ITEM_TYPE, SORT_KEY, sessionPk } from "@repo/shared";
+import {
+  CompanyIntelSchema,
+  ITEM_TYPE,
+  SORT_KEY,
+  sessionPk,
+} from "@repo/shared";
 import { z } from "zod";
 import {
   resetStructuredStub,
@@ -62,7 +61,11 @@ function sessionFound(meta: Record<string, unknown> = META) {
 let app: MountedApp | undefined;
 
 async function start(user: { id: string; username: string } | null = USER) {
-  app = await mount({ path: "/api/v1/company", router: companyIntelRouter, user });
+  app = await mount({
+    path: "/api/v1/company",
+    router: companyIntelRouter,
+    user,
+  });
   return app;
 }
 
@@ -129,14 +132,16 @@ describe("POST /api/v1/company", () => {
 
     expect(response.status).toBe(400);
     expect(ErrorBody.parse(await response.json()).message).toBe(
-      MESSAGES.INVALID_INTEL_BODY
+      MESSAGES.INVALID_INTEL_BODY,
     );
   });
 
   it("400s a whitespace-only company name", async () => {
     const { url } = await start();
 
-    expect((await postIntel(url, { ...BODY, companyName: "   " })).status).toBe(400);
+    expect((await postIntel(url, { ...BODY, companyName: "   " })).status).toBe(
+      400,
+    );
   });
 
   it("401s a request carrying no user", async () => {
@@ -173,7 +178,9 @@ describe("a reading that found nothing", () => {
     const response = await postIntel(url, BODY);
 
     expect(response.status).toBe(200);
-    expect(CompanyIntelSchema.parse(await response.json()).style).toBe("unknown");
+    expect(CompanyIntelSchema.parse(await response.json()).style).toBe(
+      "unknown",
+    );
   });
 
   it("still returns 200 when the model fails", async () => {
@@ -199,7 +206,9 @@ describe("a reading that found nothing", () => {
 describe("failures that are ours", () => {
   it("500s a failed write without leaking the cause", async () => {
     sessionFound();
-    ddb.on(PutCommand).rejects(new Error("ProvisionedThroughputExceeded on table x"));
+    ddb
+      .on(PutCommand)
+      .rejects(new Error("ProvisionedThroughputExceeded on table x"));
     const { url } = await start();
 
     const response = await postIntel(url, BODY);
