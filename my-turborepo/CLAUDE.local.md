@@ -3,7 +3,7 @@
 > and public on GitHub — deliberately, as a record of how the build progressed.
 > The `.claude.local.md` entry in `.gitignore` is a different file and does not
 > match this one. Write nothing here you would not publish.
-> Updated as work progresses. Last updated: 2026-09-22 (voice loop under test)
+> Updated as work progresses. Last updated: 2026-09-22 (worker loop + resume upload under test)
 
 ---
 
@@ -43,7 +43,7 @@ ECS, so nothing runs outside a laptop. That is the whole of what remains.
 | 5.5 — Gap + Company Intel agents | ✅ Complete — not in the original plan |
 | 6 — Coach | ✅ Complete **without RAG**, deliberately — see the phase below |
 | 7 — Deploy + CI/CD + Observability | 🔸 ~40% — CI gates every PR; no ECS, no CD, no alarms, prod empty |
-| Testing (cross-cutting) | 🟢 1044 tests: 794 backend, 153 web, 97 shared. Backend 93.6% funcs / 94.2% lines |
+| Testing (cross-cutting) | 🟢 1107 tests: 857 backend, 153 web, 97 shared. Backend 93.1% funcs / 95.3% lines (source only) |
 
 **Next highest-leverage step: the `ecs` module.** It is the only thing between
 this and a URL somebody else can open, and it blocks every other Phase 7 item.
@@ -805,20 +805,91 @@ Cases worth knowing:
 - [ ] **Mount-time wiring.** `testApp.ts` mounts routers without the
       `helmet` / `cors` / `AuthMiddleware` / `apiRateLimiter` chain that
       `index.ts` wraps them in. Handler behaviour is covered; the wiring is not
-- [x] ~~`lib/sonic.ts` and `routes/interview.ts`~~ — **done (2026-09-22).**
-      `lib/sonic.ts` 0 → **100% lines**, `routes/interview.ts` 0 → **90.25%**.
-      Backend overall 89.1 → **93.57% funcs / 94.16% lines**. See the pass below
+- [x] ~~`lib/sonic.ts` and `routes/interview.ts`~~ — **done (2026-09-22),**
+      Pass 5. `lib/sonic.ts` 0 → 100% lines, `routes/interview.ts` 0 → 90.25%
+- [x] ~~`worker.ts`, `lib/resume.ts`, `lib/s3.ts`, the resume upload path~~ —
+      **done (2026-09-22),** Pass 6
+- [ ] **`lib/cognitoAuth.ts` (0% / 20%) is now the weakest file, and it is
+      BLOCKED.** `__tests__/helpers/cognitoStub.ts` replaces the module process
+      wide for the WebSocket tests, so a `cognitoAuth.test.ts` would load the
+      stub instead of the real verifier. Testing it means stubbing
+      `aws-jwt-verify` underneath instead, or putting the stub behind a flag
+      first. See the hazard note in that helper's header
 - [ ] What is left in `routes/interview.ts` is genuinely time-bound: the three
       nudge timers and the hard stop fire 17+ minutes in, and the heartbeat
       sweep every 30s. Exercising those needs injectable offsets the way
       `SonicConversation` takes `renewAfterMs` — `nudgeSchedule` is already pure
       and tested directly, so what is missing is only that the route arms it
-- [ ] `lib/s3.ts` (45%), `lib/resume.ts` (13%), `lib/erasure.ts`,
-      `lib/cognitoAdmin.ts` (76%)
-- [ ] `routes/profile.ts` is at 68% — the resume upload path is the gap
-- [ ] `routes/preInterview.ts`
+- [ ] `worker.ts`'s `import.meta.main` block, which only runs when the file is
+      executed directly. Untestable by construction rather than by omission
+- [ ] **Mount-time wiring** (see above), `routes/preInterview.ts`
 - [ ] The resume upload state machine in the UI (`ResumeField`)
 - [ ] `packages/shared/src/schemas/auth.ts`
+
+### The coverage figure was inflated until Pass 6 — read this before quoting one
+
+`bun test --coverage` counts the TEST FILES as covered source unless told not
+to, and forty-odd files sitting at 100% drag the average up by roughly four
+points. Every figure recorded in passes 1–5 above was measured that way, so
+they are comparable with each other and **about four points higher than the
+truth**. `apps/servers/bunfig.toml` now sets `coverageSkipTestFiles = true`,
+so the number reported from here describes the source.
+
+The correction, measured on the same tree: what Pass 5 recorded as 93.57% funcs
+/ 94.16% lines was really **89.48% / 90.28%**.
+
+### Pass 6 ✅ — the worker loop and the resume upload (1107 tests total)
+
+Source-only coverage **89.48 → 93.11% funcs, 90.28 → 95.33% lines**.
+
+| File | Before | After |
+|------|--------|-------|
+| `lib/resume.ts` | 0 / 13.3 | **100 / 100** |
+| `lib/s3.ts` | 80 / 45.1 | **100 / 97.8** |
+| `routes/profile.ts` | 100 / 68.3 | **100 / 94.1** |
+| `lib/profile.ts` | 95.7 / 74.1 | **100 / 97.6** |
+| `worker.ts` | 28.6 / 31.2 | **80 / 91.0** |
+
+- `__tests__/workerLoop.test.ts` (19) — `runWorker`, and the delete-vs-redeliver
+  decision inside `processMessage`. `worker.test.ts` already covered
+  `handleMessage`; this covers what the LOOP does with the result, which is the
+  decision that cannot be walked back
+- `__tests__/lib/resume.test.ts` (11), `__tests__/lib/s3.test.ts` (19)
+- `__tests__/routes/profile.test.ts` extended (+14) — the successful upload,
+  which nothing exercised before
+
+**`__tests__/helpers/pdf.ts` builds a real PDF rather than committing a binary.**
+Every other test in the repo fakes one with `UPLOAD.PDF_MAGIC` plus junk, which
+satisfies the magic-byte check and nothing else; `lib/resume.ts` hands its bytes
+to pdf.js, so covering it needs a document with a real catalog, page tree,
+content stream and a correct xref.
+
+Cases worth knowing:
+- **The archived object must be over 100 bytes.** pdf.js TRANSFERS its input
+  buffer, so without the copy in `lib/resume.ts` the route stores a zero-byte
+  object in S3 and reports success. Asserted at both layers — the unit test
+  checks the caller's bytes survive a parse AND a failed parse, the route test
+  checks what actually reached `PutObjectCommand`
+- Every outcome that finishes with a message deletes it, including the ones that
+  did no work; an exhausted model chain, a failed read and a failed evaluation
+  write all leave it for SQS redrive. That redrive IS the Evaluator's retry
+  mechanism, which is why the worker runs a single model rather than a chain
+- Redaction fails closed: a Comprehend outage 503s the upload and writes nothing
+  to S3 or DynamoDB, rather than storing text only the deterministic pass saw
+- `resumeKey` refuses traversal, separators and spaces. Cognito subs and ULIDs
+  are already safe; the guard exists because the IAM policy scopes writes to the
+  `resumes/` prefix and would not notice a stray segment
+
+**Three fixture bugs, all found by failing tests and none in production code.**
+Worth recording because each cost a debugging round and each will recur:
+1. The worker asks `shouldStop()` once per while-pass AND again before every
+   message, so a naive call counter trips mid-batch and abandons the messages
+   the test is about. Drive it from the receive count instead
+2. A catch-all `GetCommand` matcher fed the rollup to `putSessionSummary`'s META
+   read, so `historyRow` came back undefined and the summariser silently never
+   ran — silently, because that failure is caught by design. Match by sort key
+3. The Evaluator calls `converseText` and the Session Summarizer calls
+   `converseStructured`, so one `setModelReply` cannot drive both
 
 ### Pass 5 ✅ — the voice loop (1044 tests total)
 
