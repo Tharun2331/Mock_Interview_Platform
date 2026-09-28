@@ -14,9 +14,16 @@ import {
   resetProfileStub,
   setProfileState,
 } from "../helpers/profileStub";
-// The SHARED sonner stub, for the same one-registration reason. Error paths on
-// this page report through a toast, so without it the message is unobservable.
-import { messagesAt, resetToasts } from "../helpers/toastStub";
+// No sonner stub. The error paths on this page report through a toast, and the
+// obvious move is to `mock.module("sonner")` and read the calls — which is what
+// this did, and it failed on Linux CI while passing on Windows.
+//
+// The real toaster is rendered into the tree instead and the assertion reads the
+// DOM. That removes a GLOBAL, permanent module mock from a process shared by
+// every test file, which is the thing CLAUDE.md warns about most loudly, and it
+// makes these tests independent of which file the runner happened to load first.
+// It also tests something truer: that the message reaches the screen, not merely
+// that a function was called with it.
 
 // `@/lib/api` is the leaf that talks to the outside world, which is the right
 // thing to mock — the page itself is the subject here.
@@ -50,8 +57,24 @@ const post = mock(async (url: string, body?: unknown) => {
 mock.module("@/lib/api", () => ({ api: { post } }));
 
 const { StartInterview } = await import("@/pages/startInterview");
+const { AppToaster } = await import("@/components/AppToaster");
 const { MESSAGES } = await import("@/lib/messages");
 const { MemoryRouter, Route, Routes } = await import("react-router");
+
+// Every message the toaster is currently showing.
+//
+// Sonner marks each toast with `data-sonner-toast`, so this reads what a person
+// would see rather than what a spy recorded.
+function toastMessages(): string[] {
+  return Array.from(document.querySelectorAll("[data-sonner-toast]")).map(
+    (node) => node.textContent ?? "",
+  );
+}
+
+/** True when some toast on screen contains `text`. */
+function toastShown(text: string): boolean {
+  return toastMessages().some((message) => message.includes(text));
+}
 
 function renderPage() {
   return render(
@@ -61,6 +84,8 @@ function renderPage() {
         <Route path="/interview" element={<p>interview page</p>} />
         <Route path="/profile" element={<p>profile page</p>} />
       </Routes>
+      {/* The real toaster, so a toast is observable as text on screen. */}
+      <AppToaster />
     </MemoryRouter>,
   );
 }
@@ -91,7 +116,6 @@ beforeEach(() => {
   planFailure = null;
   preInterviewFailure = null;
   post.mockClear();
-  resetToasts();
   resetProfileStub();
   setProfileState({ status: "ready", profile: COMPLETE_PROFILE });
 });
@@ -430,9 +454,11 @@ describe("when the interview quota is exhausted", () => {
     submit();
 
     await waitFor(() => {
-      expect(messagesAt("error")).toContain(
-        "You have used all of your interview sessions. Ask for more access to continue.",
-      );
+      expect(
+        toastShown(
+          "You have used all of your interview sessions. Ask for more access to continue.",
+        ),
+      ).toBe(true);
     });
   });
 
@@ -451,12 +477,14 @@ describe("when the interview quota is exhausted", () => {
     submit();
 
     await waitFor(() => {
-      expect(messagesAt("error").length).toBeGreaterThan(0);
+      expect(toastMessages().length).toBeGreaterThan(0);
     });
-    expect(messagesAt("error")).not.toContain(MESSAGES.FORM_FAILED);
-    for (const message of messagesAt("error")) {
+    // The assertion that actually encodes the bug: whatever is on screen, it does
+    // not mention GitHub.
+    for (const message of toastMessages()) {
       expect(message).not.toContain("GitHub");
     }
+    expect(toastShown(MESSAGES.FORM_FAILED)).toBe(false);
   });
 
   it("falls back to its own copy when the server sends no message", async () => {
@@ -471,7 +499,7 @@ describe("when the interview quota is exhausted", () => {
     submit();
 
     await waitFor(() => {
-      expect(messagesAt("error")).toContain(MESSAGES.START_SESSION_LIMIT);
+      expect(toastShown(MESSAGES.START_SESSION_LIMIT)).toBe(true);
     });
   });
 
@@ -488,7 +516,7 @@ describe("when the interview quota is exhausted", () => {
     submit();
 
     await waitFor(() => {
-      expect(messagesAt("error").length).toBeGreaterThan(0);
+      expect(toastMessages().length).toBeGreaterThan(0);
     });
     expect(screen.queryByText("profile page")).toBeNull();
   });
@@ -510,8 +538,8 @@ describe("when the interview quota is exhausted", () => {
     submit();
 
     await waitFor(() => {
-      expect(messagesAt("error")).toContain(MESSAGES.START_FAILED_GENERIC);
+      expect(toastShown(MESSAGES.START_FAILED_GENERIC)).toBe(true);
     });
-    expect(messagesAt("error")).not.toContain(MESSAGES.FORM_FAILED);
+    expect(toastShown(MESSAGES.FORM_FAILED)).toBe(false);
   });
 });
