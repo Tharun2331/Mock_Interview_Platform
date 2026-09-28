@@ -2,12 +2,17 @@ import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import { ExchangeBuffer, type CompletedExchange } from "../lib/exchangeBuffer";
-import { INTERVIEW, INTERVIEW_TOOL_NAMES, SONIC } from "../lib/constants";
+import {
+  INTERVIEW,
+  INTERVIEW_CLOSE,
+  INTERVIEW_TOOL_NAMES,
+  SONIC,
+} from "../lib/constants";
 import { verifier } from "../lib/cognitoAuth";
 import { SessionAccessError, SessionStateError } from "../lib/errors";
 import { MESSAGES } from "../lib/messages";
 import { config } from "../lib/config";
-import type { QuestionType } from "@repo/shared";
+import type { QuestionType, SessionEndReason } from "@repo/shared";
 import {
   QUESTIONS_REMAINING,
   effectiveTargetMinutes,
@@ -15,6 +20,8 @@ import {
   nudgeSchedule,
   type InterviewPhase,
 } from "../lib/interviewClock";
+import { recordSonicError, recordSonicStream } from "../lib/metrics";
+import { chargeConductedSession } from "../lib/profile";
 import { classifyAnswer } from "../lib/scoreableAnswer";
 import { SonicConversation } from "../lib/sonic";
 import { startEvaluationSummary } from "../lib/evaluations";
@@ -23,6 +30,7 @@ import {
   finishInterview,
   loadCompanyIntel,
   loadGapAnalysis,
+  markSessionCharged,
   recordAnswer,
   startInterview,
 } from "../lib/sessions";
@@ -286,6 +294,34 @@ type InterviewState = {
   history: CompletedExchange[];
 };
 
+// The stored `endReason`, from the string `shutdown()` was called with.
+//
+// A mapping rather than a cast, because the two vocabularies are not the same
+// shape: `shutdown` also receives close reasons invented by the Sonic stream (an
+// idle timeout, a transport error, a renewal that failed), which are not in
+// INTERVIEW_CLOSE and never will be exhaustively.
+//
+// Anything unrecognised buckets as `disconnected` — "the connection ended and
+// nobody asked it to", which is what those cases have in common. Deliberately not
+// `error`: an idle timeout is the commonest of them and is a candidate walking
+// away, not a fault, and reporting it as an error would make the Sonic error
+// alarm fire on ordinary abandonment.
+function endReasonOf(reason: string): SessionEndReason {
+  switch (reason) {
+    case INTERVIEW_CLOSE.INTERVIEWER_ENDED:
+      return "interviewer_ended";
+    case INTERVIEW_CLOSE.TIME_LIMIT:
+      return "time_limit";
+    case INTERVIEW_CLOSE.CANDIDATE_ENDED:
+      return "candidate_ended";
+    case INTERVIEW_CLOSE.SOCKET_ERROR:
+    case INTERVIEW_CLOSE.STARTUP_FAILED:
+      return "error";
+    default:
+      return "disconnected";
+  }
+}
+
 async function handleConnection(
   socket: WebSocket,
   userId: string,
@@ -293,6 +329,13 @@ async function handleConnection(
 ): Promise<void> {
   let sonic: SonicConversation | null = null;
   let closing = false;
+  // How long the first stream took to become usable. Measured around
+  // `sonic.start()` rather than inside SonicConversation because the interesting
+  // span is the one the candidate waits through, which begins when this handler
+  // decides to open a stream. Stays 0 if start() throws — a stream that never
+  // opened has no open latency, and reporting the failed attempt's duration as
+  // latency would drag the metric toward whatever the timeout is.
+  let streamOpenLatencyMs = 0;
 
   // Joined lifetimes. Whatever ends first must end the other, or a closed
   // browser tab leaves a Sonic stream billing until the idle timeout.
@@ -336,6 +379,16 @@ async function handleConnection(
         await finishInterview({
           sessionId,
           status: questionIds.length > 0 ? "evaluating" : "complete",
+          // Both persisted now, where they used to exist only in a log line.
+          //
+          // Without them `complete` means either "scored and finished" or
+          // "abandoned with nothing to score", because an interview that produced
+          // no answers has genuinely finished its scoring pipeline the moment it
+          // ends. `endReason: "disconnected"` with `answerCount: 0` is what
+          // "closed the tab immediately" actually looks like, and nothing could
+          // say that before.
+          endReason: endReasonOf(reason),
+          answerCount: questionIds.length,
         });
 
         // After the status write, deliberately. A message consumed before the
@@ -382,7 +435,28 @@ async function handleConnection(
       }
     }
 
-    if (sonic !== null) await sonic.close(reason);
+    if (sonic !== null) {
+      await sonic.close(reason);
+
+      // Emitted AFTER the close, so `elapsedMs` reports the full billed span
+      // rather than stopping short of the closing sequence — which takes a
+      // documented 300ms drain and is billed like everything else.
+      //
+      // This is the only place the cost of an interview is reported. Sonic bills
+      // by open stream duration whether or not anyone is speaking, so a leaked
+      // stream is invisible in every other signal this service produces until the
+      // bill arrives. `openLatencyMs` is the one number here that is about
+      // experience rather than money: it is the silence a candidate hears before
+      // the interviewer's first word.
+      recordSonicStream({
+        openLatencyMs: streamOpenLatencyMs,
+        durationMs: sonic.elapsedMs,
+        inputTokens: sonic.tokenUsage.inputTokens,
+        outputTokens: sonic.tokenUsage.outputTokens,
+        renewals: sonic.renewalCount,
+      });
+    }
+
     if (socket.readyState === socket.OPEN) {
       sendEvent(socket, { type: "closed", reason });
       socket.close();
@@ -481,6 +555,38 @@ async function handleConnection(
         const verdict = classifyAnswer(exchange.transcript);
         if (verdict.scoreable) {
           recorded.push(exchange.questionId);
+
+          // THE quota charge, on the first scoreable answer and only then.
+          //
+          // Here rather than at session creation, which is where it used to be:
+          // pressing "Build my interview" and closing the tab spent a slot before
+          // the plan had rendered. And scoreable rather than any answer, because a
+          // courtesy sign-off is recorded to the transcript but is not an attempt
+          // at a question — charging for "thanks, bye" would reintroduce the same
+          // unfairness one layer down.
+          //
+          // `markSessionCharged` is a conditional write that exactly one caller
+          // can win, so this is once per session however many answers land.
+          //
+          // Awaited, but its failure never reaches the candidate: a quota that
+          // failed to record costs a free interview, and throwing here would abort
+          // the answer write path mid-interview over an accounting problem.
+          void (async () => {
+            try {
+              if (await markSessionCharged({ sessionId })) {
+                await chargeConductedSession({ userId });
+                console.log(
+                  `[interview] ${sessionId} charged one session to ${userId}`,
+                );
+              }
+            } catch (error) {
+              console.error(
+                `[interview] ${sessionId} quota charge failed — ${
+                  error instanceof Error ? error.message : error
+                }`,
+              );
+            }
+          })();
         } else {
           console.log(
             `[interview] ${sessionId} not scoring ${exchange.questionId} (${verdict.reason})`,
@@ -655,11 +761,18 @@ async function handleConnection(
             break;
 
           case "completionEnd":
-            if (state.endRequested) void shutdown("interview complete");
+            if (state.endRequested)
+              void shutdown(INTERVIEW_CLOSE.INTERVIEWER_ENDED);
             break;
 
           case "error":
             console.error(`[interview] ${sessionId} ${event.message}`);
+            // Counted as well as logged. A log line is only found by someone
+            // already looking, and the failures that matter here — a renewal that
+            // did not take, a stream Bedrock refused — are exactly the ones nobody
+            // is watching for at the time. This is the series the Terraform alarm
+            // fires on.
+            recordSonicError();
             sendEvent(socket, {
               type: "error",
               message: MESSAGES.INTERVIEW_FAILED,
@@ -671,7 +784,10 @@ async function handleConnection(
 
     flushOnClose = flushExchange;
 
+    const openBegan = performance.now();
     await sonic.start();
+    streamOpenLatencyMs = performance.now() - openBegan;
+
     sendEvent(socket, {
       type: "ready",
       sessionId,
@@ -740,7 +856,7 @@ async function handleConnection(
       nudge("time expired", MESSAGES.INTERVIEW_TIME_EXPIRED)();
     }, schedule.timeUpAtMs);
     const hardStopTimer = setTimeout(
-      () => void shutdown("time limit reached"),
+      () => void shutdown(INTERVIEW_CLOSE.TIME_LIMIT),
       schedule.hardStopAtMs,
     );
     clearOnClose.push(wrapUpTimer, finalCallTimer, timeUpTimer, hardStopTimer);
@@ -753,11 +869,11 @@ async function handleConnection(
       // The only control message the client sends today. Stopping must always
       // be reachable, so it is handled unconditionally.
       if (data.toString() === "stop")
-        void shutdown("candidate ended interview");
+        void shutdown(INTERVIEW_CLOSE.CANDIDATE_ENDED);
     });
 
-    socket.on("close", () => void shutdown("client disconnected"));
-    socket.on("error", () => void shutdown("socket error"));
+    socket.on("close", () => void shutdown(INTERVIEW_CLOSE.DISCONNECTED));
+    socket.on("error", () => void shutdown(INTERVIEW_CLOSE.SOCKET_ERROR));
   } catch (error) {
     if (error instanceof SessionAccessError) {
       sendEvent(socket, { type: "error", message: error.message });
@@ -769,7 +885,7 @@ async function handleConnection(
       );
       sendEvent(socket, { type: "error", message: MESSAGES.INTERVIEW_FAILED });
     }
-    await shutdown("startup failed");
+    await shutdown(INTERVIEW_CLOSE.STARTUP_FAILED);
   }
 }
 

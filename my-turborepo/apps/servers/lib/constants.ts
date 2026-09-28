@@ -189,6 +189,99 @@ export const SQS = {
   SEND_BATCH_SIZE: 10,
 } as const;
 
+// The reasons `shutdown()` is called with in routes/interview.ts.
+//
+// Named here rather than left inline because they are now read as well as
+// written: they used to reach only a log line, where a typo cost nothing, and
+// they are now mapped to the stored `endReason` that says whether a candidate sat
+// an interview or closed the tab. A string that drifts on one side of that
+// mapping silently reclassifies every session ending that way.
+//
+// The Sonic stream can also close for reasons of its own — an idle timeout, a
+// stream error — which arrive as strings that are not in this list. `endReasonOf`
+// buckets those rather than guessing; see its comment.
+export const INTERVIEW_CLOSE = {
+  INTERVIEWER_ENDED: "interview complete",
+  TIME_LIMIT: "time limit reached",
+  CANDIDATE_ENDED: "candidate ended interview",
+  DISCONNECTED: "client disconnected",
+  SOCKET_ERROR: "socket error",
+  STARTUP_FAILED: "startup failed",
+} as const;
+
+// CloudWatch metric names and dimensions.
+//
+// Named here rather than inlined because three things have to agree on every one
+// of these strings and they live in three places: the emitter in lib/metrics.ts,
+// the reader in routes/adminMetrics.ts, and the alarms in
+// infra/terraform/modules/cloudwatch. A typo in any one of them does not fail —
+// it produces an empty series or an alarm stuck in INSUFFICIENT_DATA, which looks
+// exactly like "nothing has happened yet".
+//
+// **Dimension design is a cost decision, not a modelling one.** Every distinct
+// combination of namespace + metric name + dimension values is a separate custom
+// metric billed monthly. That makes some obvious-looking dimensions actively
+// dangerous:
+//
+//   - A `StatusCode` dimension would create one metric per (route, status) pair
+//     and grow every time a route learns a new failure mode. 4xx and 5xx are
+//     separate metric NAMES here instead, which is a flat two rather than a
+//     multiplier.
+//   - A `UserId` dimension would create one metric per user, forever, including
+//     for deleted accounts. Per-user numbers come from DynamoDB session records,
+//     which is where they are exact and free.
+//   - An un-bucketed request path would be unbounded and attacker-controlled —
+//     `GET /<random>` on a 404 would mint a metric per request. See
+//     `UNMATCHED_ROUTE` below, which is the guard against exactly that.
+export const METRICS = {
+  // The only dimension carried by every metric. One value per environment, so the
+  // aggregate series stay cheap and dev never pollutes prod's alarms.
+  DIMENSION_ENVIRONMENT: "Environment",
+  // Added only to the per-request metrics, and only ever a matched route
+  // TEMPLATE (`/api/v1/sessions/:sessionId`), never a real path.
+  DIMENSION_ROUTE: "Route",
+
+  // The bucket every request that matched no route falls into.
+  //
+  // This is the cost guard. Without it the Route dimension takes `req.path`
+  // verbatim on a 404, and since that is whatever the caller typed, a loop over
+  // random URLs would create an unbounded number of billed metrics — a denial of
+  // wallet with no rate limit in front of it, because unmatched paths never reach
+  // the authenticated routers the limiter is mounted on.
+  UNMATCHED_ROUTE: "unmatched",
+
+  REQUEST_COUNT: "RequestCount",
+  REQUEST_LATENCY: "RequestLatency",
+  REQUEST_4XX: "Requests4xx",
+  REQUEST_5XX: "Requests5xx",
+
+  // Sonic. Carried WITHOUT the Route dimension: the voice loop is one WebSocket
+  // upgrade, not a route, and tagging it with a path would imply a breakdown that
+  // does not exist.
+  //
+  // Token counts are the real cost driver on this path and the reason this group
+  // exists at all — Sonic bills by open stream duration and by tokens, and
+  // neither is visible in a latency graph.
+  SONIC_STREAM_LATENCY: "SonicStreamLatency",
+  SONIC_STREAM_DURATION: "SonicStreamDuration",
+  SONIC_INPUT_TOKENS: "SonicInputTokens",
+  SONIC_OUTPUT_TOKENS: "SonicOutputTokens",
+  SONIC_STREAM_ERRORS: "SonicStreamErrors",
+  SONIC_STREAM_RENEWALS: "SonicStreamRenewals",
+
+  INTERVIEW_SESSIONS_STARTED: "InterviewSessionsStarted",
+  INTERVIEW_SESSIONS_REFUSED: "InterviewSessionsRefused",
+
+  // EMF's documented ceiling on metric definitions in one log event. Nothing here
+  // approaches it — the largest emission is four values — but the emitter refuses
+  // rather than writing an event CloudWatch would silently drop whole.
+  MAX_METRICS_PER_EVENT: 100,
+  // EMF dimension-value limit. A longer value invalidates the whole event, so an
+  // over-long route template is truncated rather than allowed to discard the
+  // metrics it was attached to.
+  MAX_DIMENSION_VALUE_CHARS: 255,
+} as const;
+
 export const SECONDS_PER_DAY = 24 * 60 * 60;
 
 // How long a session's items live before DynamoDB removes them.

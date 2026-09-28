@@ -124,6 +124,82 @@ data "aws_iam_policy_document" "bedrock_invoke" {
     resources = [var.cognito_user_pool_arn]
   }
 
+  # The admin surface's user directory: email -> sub lookup, and the user table.
+  #
+  # `ListUsers` and nothing else. Notably NOT `AdminGetUser`, which would also
+  # resolve an email — ListUsers with a filter answers the same question and is the
+  # one call that ALSO serves the paginated table, so granting both would be a
+  # second way to do something already covered.
+  #
+  # **Still no AdminUpdateUserAttributes, AdminAddUserToGroup or
+  # AdminSetUserPassword.** The admin API grants interview quota, which lives on a
+  # DynamoDB item — it never mutates a Cognito identity. Group membership is
+  # deliberately an operational act performed with the AWS CLI rather than
+  # something this service can do, which is what stops a compromised API token
+  # from making its holder an admin. See the note on aws_cognito_user_group in the
+  # cognito module.
+  #
+  # This grant is the concrete cost of choosing Cognito over a DynamoDB GSI for
+  # email lookup: one read action on the pool, against a GSI's doubled write cost
+  # on every profile save plus an email attribute and a backfill. It is also the
+  # only way to enumerate users at all — the sessions table has no keyed listing,
+  # so the alternative was a Scan, which the statement below deliberately withholds.
+  statement {
+    sid       = "CognitoListUsersForAdmin"
+    effect    = "Allow"
+    actions   = ["cognito-idp:ListUsers"]
+    resources = [var.cognito_user_pool_arn]
+  }
+
+  # Reading custom metrics back for GET /api/v1/admin/metrics.
+  #
+  # Read-only, and the omission that matters is `cloudwatch:PutMetricData`. The
+  # service publishes metrics as EMF on stdout — see apps/servers/lib/metrics.ts —
+  # so it never calls the metrics API to write. Granting PutMetricData "because it
+  # does metrics" would hand a compromised task the ability to forge the very
+  # series these alarms fire on, which is the one thing that would make the alarms
+  # worse than useless.
+  #
+  # `"*"` is unavoidable here and this is the comment naming why: neither
+  # GetMetricData nor ListMetrics supports resource-level permissions. CloudWatch
+  # metrics are not resources with ARNs, and there is no namespace condition key
+  # for these actions — `cloudwatch:namespace` applies to PutMetricData only, which
+  # is precisely the action not granted. The control is therefore the action list,
+  # and it is two read calls.
+  statement {
+    sid    = "CloudWatchReadMetrics"
+    effect = "Allow"
+    actions = [
+      "cloudwatch:GetMetricData",
+      "cloudwatch:ListMetrics",
+    ]
+    resources = ["*"]
+  }
+
+  # Writing logs, which is also how metrics come into existence.
+  #
+  # Worth stating plainly because it is not obvious: this is not just a logging
+  # grant. Custom metrics are emitted as EMF log lines and extracted by CloudWatch
+  # Logs at ingestion, so `logs:PutLogEvents` on this group IS the metric-publishing
+  # permission. Remove it and every alarm in the cloudwatch module goes to
+  # INSUFFICIENT_DATA while the service keeps running perfectly.
+  #
+  # Scoped to the one log group and its streams. No `logs:CreateLogGroup`:
+  # Terraform owns the group, and a service that can create groups can create them
+  # outside the retention policy — which is the quiet way a log bill grows.
+  statement {
+    sid    = "ApiLogWrite"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = [
+      var.api_log_group_arn,
+      "${var.api_log_group_arn}:*",
+    ]
+  }
+
   # PII detection on resume text, run once at profile save before the text is
   # stored or reaches a model.
   #
@@ -249,6 +325,30 @@ data "aws_iam_policy_document" "evaluator_worker" {
       "sqs:ChangeMessageVisibility",
     ]
     resources = [var.eval_queue_arn]
+  }
+
+  # Its OWN log group, not the API's.
+  #
+  # This is the logging half of the two-roles separation, and it is load-bearing
+  # rather than tidy. Custom metrics are EMF log lines extracted at ingestion, so
+  # write access to the API's log group is write access to the API's metrics — and
+  # the alarms in the cloudwatch module fire on those. A worker granted the API's
+  # group could suppress a 5xx alarm or manufacture one. It has no reason to write
+  # there and does not.
+  #
+  # Also absent, as everywhere else on this role: no cloudwatch:GetMetricData. The
+  # worker produces no dashboard and reads no metrics.
+  statement {
+    sid    = "WorkerLogWrite"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = [
+      var.worker_log_group_arn,
+      "${var.worker_log_group_arn}:*",
+    ]
   }
 }
 

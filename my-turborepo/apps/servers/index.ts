@@ -9,8 +9,12 @@ import { companyIntelRouter } from "./routes/companyIntel";
 import { coachRouter } from "./routes/coach";
 import { profileRouter } from "./routes/profile";
 import { sessionsRouter } from "./routes/sessions";
+import { adminRouter } from "./routes/admin";
+import { adminMetricsRouter } from "./routes/adminMetrics";
 import { attachInterviewSocket } from "./routes/interview";
 import { AuthMiddleware } from "./lib/cognitoAuth";
+import { RequireAdmin } from "./lib/adminAuth";
+import { metricsMiddleware } from "./lib/metrics";
 import { apiRateLimiter } from "./lib/rateLimit";
 const app = express();
 
@@ -19,6 +23,19 @@ const app = express();
 // limiting. The limiter keys on the Cognito subject so this barely matters
 // today, but the IP fallback and future IP logging both depend on it.
 app.set("trust proxy", 1);
+
+// FIRST in the chain, ahead of helmet and cors, so the timer spans the whole
+// request rather than only the part after the middleware finished.
+//
+// The two things this ordering buys are both things a later mount would hide: the
+// latency of the middleware itself (a slow JSON parse on a large body is real
+// latency a candidate waits through), and requests that never reach a router at
+// all — a 429 from the rate limiter, a CORS rejection, a 404. Those are exactly
+// the responses worth counting, and a timer mounted after them would report a
+// perfectly healthy service while every request was being refused.
+//
+// It never throws and never blocks: see the wrapper in lib/metrics.ts.
+app.use(metricsMiddleware);
 
 app.use(helmet());
 app.use(cors({ origin: config.corsOrigins }));
@@ -52,6 +69,35 @@ app.use("/api/v1/company", AuthMiddleware, apiRateLimiter, companyIntelRouter);
 // Reads only this candidate's own history, proven by the token rather than by
 // anything in the request — there is no id in the path to get wrong.
 app.use("/api/v1/coach", AuthMiddleware, apiRateLimiter, coachRouter);
+
+// The admin surface. Three things about this mount are load-bearing:
+//
+//   1. `RequireAdmin` sits AFTER AuthMiddleware and BEFORE the router. The group
+//      claim it reads only exists once a token has been verified, and mounting it
+//      first would make it refuse every request — safely, but silently.
+//   2. Both routers mount on the same path behind the same guard, so there is one
+//      admin check rather than one per feature. No handler re-checks.
+//   3. The rate limiter stays. An admin is not exempt: these routes fan out to
+//      Cognito and CloudWatch, and a dashboard left polling in an open tab is the
+//      most likely source of accidental load on either. It keys on the Cognito
+//      subject, so an admin's budget is their own.
+//
+// `/metrics` is mounted before the user-management router because Express 5
+// matches in order and a bare `/` route on the latter would otherwise shadow it.
+app.use(
+  "/api/v1/admin/metrics",
+  AuthMiddleware,
+  RequireAdmin,
+  apiRateLimiter,
+  adminMetricsRouter,
+);
+app.use(
+  "/api/v1/admin",
+  AuthMiddleware,
+  RequireAdmin,
+  apiRateLimiter,
+  adminRouter,
+);
 
 // The HTTP server is captured rather than discarded: the interview WebSocket
 // attaches to its `upgrade` event, which is the only place a handshake can be

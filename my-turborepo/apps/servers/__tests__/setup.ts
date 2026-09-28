@@ -33,6 +33,25 @@ process.env.AWS_REGION = "us-east-1";
 process.env.INTERVIEW_TEST_MODE = "";
 process.env.INTERVIEW_TEST_TARGET_MINUTES = "6";
 
+// Admin surface and observability. Pinned for the same reason everything above
+// is: `lib/config.ts` reads all four, so an unpinned one is inherited from a
+// developer's `.env` and the suite describes a different world per machine. The
+// rule from the INTERVIEW_TEST_MODE leak is that setup.ts names EVERY variable
+// config.ts reads, not only the ones that throw when missing.
+process.env.APP_ENV = "test";
+process.env.ADMIN_GROUP_NAME = "admins";
+process.env.ADMIN_USER_PAGE_SIZE = "60";
+process.env.METRICS_NAMESPACE = "PrepPilot/Test";
+
+// Emission OFF for the whole suite.
+//
+// Not a correctness concern — EMF is stdout and nothing reads it here — but the
+// route suites drive real Express servers over hundreds of requests, and each one
+// would print a JSON metric line. That buries the actual test output and makes a
+// failure genuinely hard to find. Tests that care about the emitter assert on it
+// directly rather than by reading stdout.
+process.env.METRICS_ENABLED = "false";
+
 // Nonsense credentials, deliberately. The SDK resolves lazily, so an unmocked
 // command would otherwise pick up the machine's real profile or hang on IMDS in
 // CI. These make such a call fail fast and locally rather than reach AWS.

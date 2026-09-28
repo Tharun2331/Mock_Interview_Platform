@@ -33,6 +33,14 @@ function profile(overrides: Partial<UserProfile> = {}): UserProfile {
     resumeText: "redacted resume text",
     repos: [],
     profileVersion: 3,
+    // The quota fields. Present here even though the schema defaults them,
+    // because `UserProfile` is the OUTPUT type — a `.default()` makes a field
+    // optional on the way in and required on the way out, so a fixture typed as
+    // the parsed shape has to carry them. Set to the ungranted state, which is
+    // what every account looks like until an admin touches it.
+    sessionsConducted: 0,
+    sessionsCreated: 0,
+    unlimitedAccess: false,
     ...overrides,
   };
 }

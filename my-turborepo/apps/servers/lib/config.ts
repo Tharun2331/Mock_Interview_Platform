@@ -143,4 +143,49 @@ export const config = {
   rateLimitMaxRequests: Number(env("RATE_LIMIT_MAX_REQUESTS", "20")),
   cognitoUserPoolId: requireEnv("COGNITO_USER_POOL_ID"),
   cognitoUserPoolClientId: requireEnv("COGNITO_USER_POOL_CLIENT_ID"),
+
+  // Which environment this process believes it is. Used as the only dimension on
+  // every custom metric and to scope the admin surface in logs.
+  //
+  // Deliberately NOT derived from NODE_ENV: that is a two-valued flag the
+  // framework and the test runner both set, and overloading it would make a
+  // `dev` deploy publish metrics under whatever value happened to be there.
+  // Same reasoning as `sessionsTable` never being derived from an environment
+  // name — see the note on that field.
+  appEnvironment: env("APP_ENV", "dev"),
+
+  // ---------------------------------------------------------------------------
+  // Admin surface
+  // ---------------------------------------------------------------------------
+
+  // The Cognito group whose members reach /api/v1/admin. Membership lives in
+  // Cognito rather than in this config or in DynamoDB, so granting or revoking
+  // it is one API call against the pool and needs no deploy — and the claim
+  // arrives on a token the server already verifies, so there is nothing extra to
+  // read or cache per request.
+  //
+  // Matches `aws_cognito_user_group.admins` in infra/terraform/modules/cognito.
+  // A name here that does not exist there is not an error at boot: it silently
+  // means nobody is an admin, which is the safe direction to fail.
+  adminGroupName: env("ADMIN_GROUP_NAME", "admins"),
+
+  // How many users one page of GET /admin/users asks Cognito for. 60 is
+  // ListUsers' documented maximum; a smaller page would mean more round trips
+  // for the same table.
+  adminUserPageSize: Number(env("ADMIN_USER_PAGE_SIZE", "60")),
+
+  // ---------------------------------------------------------------------------
+  // Observability
+  // ---------------------------------------------------------------------------
+
+  // CloudWatch namespace for every custom metric this service emits. Also what
+  // the Terraform alarms and GET /admin/metrics query against, so the three have
+  // to agree — a mismatch produces alarms in INSUFFICIENT_DATA forever and a
+  // dashboard of empty series, neither of which fails loudly.
+  metricsNamespace: env("METRICS_NAMESPACE", "PrepPilot/API"),
+
+  // Emission is on by default and switched off in tests. EMF metrics are written
+  // to stdout, so leaving this on under `bun test` would interleave metric JSON
+  // with test output for every request the route suites make.
+  metricsEnabled: env("METRICS_ENABLED", "true") === "true",
 } as const;

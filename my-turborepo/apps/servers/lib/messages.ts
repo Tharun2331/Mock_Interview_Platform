@@ -143,6 +143,50 @@ export const MESSAGES = {
   UPLOAD_STORE_FAILED: "Could not store the resume. Try again.",
   RESUME_PARSE_FAILED:
     "That PDF could not be read. It may be corrupt or password-protected.",
+
+  // The interview quota. Client-facing, and deliberately does not say "upgrade"
+  // or name a price — there is no payment path, and the actual remedy is asking
+  // for more, which is what the copy says.
+  SESSION_LIMIT_REACHED:
+    "You have used all of your interview sessions. Ask for more access to continue.",
+
+  // ---------------------------------------------------------------------------
+  // Admin surface
+  // ---------------------------------------------------------------------------
+
+  // What a non-admin gets from every /admin route: a plain 404, identical to the
+  // one an unrouted path produces.
+  //
+  // Not a 403, on the same reasoning SessionAccessError documents for sessions.
+  // A 403 confirms the route exists, which tells an authenticated candidate that
+  // there is an admin surface here and what its path is. A 404 tells them
+  // nothing they did not already know.
+  NOT_FOUND: "Not found.",
+  INVALID_ADMIN_BODY: "Provide an email or a username, and an access grant.",
+  // Admin-facing, and it names the remedy rather than just the problem. Reached
+  // when a federated sign-in has created a second Cognito identity on an email an
+  // account already used — so the address genuinely does not identify one person,
+  // and the grant is refused rather than aimed at a guess.
+  ADMIN_USER_AMBIGUOUS:
+    "More than one account uses that email. Copy the username of the one you mean from the table below and grant by username instead.",
+  // Admin-facing, so it can be specific: whoever sees this is the operator, and
+  // "no account with that email" is the useful answer rather than a leak.
+  ADMIN_USER_NOT_FOUND: "No account exists with that email address.",
+  // Reached when Cognito has the user but DynamoDB has no profile — they signed
+  // up and never onboarded. Worth distinguishing: there is nothing to grant
+  // against yet, and saying "not found" would send the operator hunting for a
+  // typo in an email that was correct.
+  ADMIN_PROFILE_MISSING:
+    "That account exists but has not completed onboarding, so it has no profile to grant access on.",
+  // Log-facing.
+  ADMIN_DIRECTORY_FAILED: "Could not read the Cognito user directory.",
+  ADMIN_ACCESS_WRITE_FAILED: "Could not update the access grant.",
+  METRICS_READ_FAILED: "Could not read metrics from CloudWatch.",
+  // Admin-facing.
+  ADMIN_UNAVAILABLE:
+    "That admin action could not be completed. Check the server log.",
+  METRICS_UNAVAILABLE:
+    "Metrics could not be loaded from CloudWatch. Check the server log.",
 } as const;
 
 // States the limit in the same breath as the violation, so the user knows what

@@ -1,4 +1,5 @@
 import z from "zod";
+import { resolveSessionAllowance } from "./admin";
 import { PLAN_LIMITS, PlanResponseSchema } from "./plan";
 import { PreInterviewRepo } from "./preInterview";
 import { ITEM_TYPE } from "./session";
@@ -67,6 +68,60 @@ export const UserProfileSchema = z.object({
   // nothing. This is the sole staleness signal: a cached plan is reusable if and
   // only if the version it was generated from still matches.
   profileVersion: z.number().int().min(0),
+
+  // ---- Interview quota -----------------------------------------------------
+  //
+  // See `INTERVIEW_QUOTA` and `resolveSessionAllowance` in admin.ts, which owns
+  // what these three mean together. They live on the PROFILE item rather than in
+  // a separate QUOTA item so the enforcement check is part of the profile read
+  // that `POST /pre-interview` already performs — a second item would add a
+  // round trip to the interview start path to hold two numbers.
+
+  // Interviews this account has actually CONDUCTED — the number the quota meters.
+  //
+  // Incremented once per session, on the first SCOREABLE answer, not when the
+  // session is created. That distinction is the fix for a real defect: the
+  // counter used to increment at `POST /pre-interview`, so pressing "Build my
+  // interview" and closing the tab burned a slot before the plan had rendered, let
+  // alone before anyone spoke. What costs money is the Sonic stream, and a
+  // candidate who never answered a question never opened one worth billing.
+  //
+  // "Scoreable" rather than "any answer" because a courtesy sign-off is recorded
+  // to the transcript but is not an attempt at a question — charging a slot for
+  // "thanks, bye" would reintroduce the same unfairness one layer down.
+  //
+  // `chargedAt` on the session is what makes this once-per-session: `recordAnswer`
+  // runs per answer, so the session-level marker is the idempotency key.
+  //
+  // Deliberately not derived from the `USER#<uid>/SESSION#<sid>` rows. Those carry
+  // `expiresAt` and are removed by TTL after SESSION_RETENTION.DAYS, so a quota
+  // counted from them would silently reset itself six months in — the account
+  // would be back to three free sessions with nothing in the logs saying why. A
+  // counter that only ever goes up cannot do that.
+  //
+  // **Replaces `sessionsStarted`**, which counted mints. That attribute is no
+  // longer read; rows still carrying it parse fine because Zod strips unknown
+  // keys, and the practical effect is that accounts metered under the old rule
+  // start again from zero. That is the correct direction — those counts were
+  // taken by a rule that charged for sessions nobody conducted.
+  sessionsConducted: z.number().int().min(0).default(0),
+
+  // Sessions MINTED, including ones never conducted. Display only — nothing gates
+  // on it.
+  //
+  // Kept because the gap between this and `sessionsConducted` is itself the
+  // signal: an account with 12 created and 1 conducted is someone repeatedly
+  // bouncing off the interview screen, which is worth seeing whether it is
+  // confusion, a broken microphone, or abuse. Collapsing the two into one number
+  // is what hid the original bug.
+  sessionsCreated: z.number().int().min(0).default(0),
+
+  // Admin grant. Absent/false is the ungranted state, NOT a zero limit — the
+  // three-state reasoning is in AccessGrantSchema. Both default rather than being
+  // required, for the same backfill reason as `sessionsStarted`: an account that
+  // predates the quota has no grant and must read as ungranted rather than fail.
+  unlimitedAccess: z.boolean().default(false),
+  sessionLimit: z.number().int().min(0).optional(),
 });
 
 export type UserProfile = z.infer<typeof UserProfileSchema>;
@@ -87,6 +142,53 @@ export function isProfileComplete(profile: UserProfile): boolean {
     profile.resumeText !== undefined
   );
 }
+
+// The slice of a PROFILE item the admin user table needs, and the projection that
+// fetches it.
+//
+// A projection rather than the whole item because `resumeText` is up to
+// PLAN_LIMITS.MAX_RESUME_CHARS and the admin table has no use for a single
+// character of it: at a 60-row page that is over a megabyte of redacted resume
+// crossing the wire to render a quota column. Every name is listed here so the
+// schema and the projection cannot drift — a field added to one and not the other
+// fails validation rather than silently reading as absent.
+//
+// `complete` is NOT derived by calling `isProfileComplete` on this, because this
+// shape deliberately lacks `resumeText` and that function requires it. The admin
+// table asks a coarser question — has this account onboarded — and `resumeKey`
+// answers it: `saveResumeAndRepos` writes the key and the text in one atomic
+// UpdateItem, so one cannot exist without the other. Worth knowing if that write
+// is ever split: this would start reading as complete a fraction earlier.
+export const ADMIN_PROFILE_FIELDS = [
+  "userId",
+  "status",
+  "firstName",
+  "lastName",
+  "resumeKey",
+  "sessionsConducted",
+  "sessionsCreated",
+  "unlimitedAccess",
+  "sessionLimit",
+] as const;
+
+export const AdminProfileProjectionSchema = z.object({
+  userId: z.string().min(1),
+  status: ProfileStatusSchema,
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  resumeKey: z.string().min(1).optional(),
+  // Defaulted for the same backfill reason the stored item defaults them: an
+  // account that predates the quota projects these as absent, and a required
+  // field here would fail every such row out of the admin table.
+  sessionsConducted: z.number().int().min(0).default(0),
+  sessionsCreated: z.number().int().min(0).default(0),
+  unlimitedAccess: z.boolean().default(false),
+  sessionLimit: z.number().int().min(0).optional(),
+});
+
+export type AdminProfileProjection = z.infer<
+  typeof AdminProfileProjectionSchema
+>;
 
 // PUT /api/v1/profile — the editable display fields, and only those. A resume
 // arrives as multipart on its own route, and `profileVersion` is the server's to
@@ -137,6 +239,28 @@ export const ProfileViewSchema = z.object({
   // implementations of it would eventually disagree about who gets sent where.
   complete: z.boolean(),
   updatedAt: z.iso.datetime(),
+
+  // The candidate's own interview quota, resolved server-side.
+  //
+  // Included because enforcement without visibility is a trap: a candidate who
+  // cannot see a count gets a 409 at the moment they try to start their fourth
+  // interview, which reads as the product breaking rather than as a limit. This
+  // is their own allowance and nobody else's, so it carries no more information
+  // than the sessions they already know they have held.
+  //
+  // Resolved here rather than sent as the three raw fields, so the browser never
+  // reimplements `resolveSessionAllowance` — the defect that would produce is a
+  // UI saying "1 remaining" over a server that refuses.
+  sessions: z.object({
+    unlimited: z.boolean(),
+    limit: z.number().int().min(0),
+    used: z.number().int().min(0),
+    remaining: z.number().int().min(0).nullable(),
+    exhausted: z.boolean(),
+    // Sessions minted, conducted or not. Carried so a candidate whose count looks
+    // wrong to them can be shown the difference rather than argued with.
+    created: z.number().int().min(0),
+  }),
 });
 
 export type ProfileView = z.infer<typeof ProfileViewSchema>;
@@ -153,6 +277,14 @@ export function toProfileView(profile: UserProfile): ProfileView {
     profileVersion: profile.profileVersion,
     complete: isProfileComplete(profile),
     updatedAt: profile.updatedAt,
+    sessions: {
+      ...resolveSessionAllowance({
+        unlimitedAccess: profile.unlimitedAccess,
+        sessionLimit: profile.sessionLimit,
+        sessionsConducted: profile.sessionsConducted,
+      }),
+      created: profile.sessionsCreated,
+    },
   };
 }
 

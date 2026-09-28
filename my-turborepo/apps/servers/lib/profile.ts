@@ -1,11 +1,14 @@
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
+  BatchGetCommand,
   DeleteCommand,
   GetCommand,
   PutCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import {
+  ADMIN_PROFILE_FIELDS,
+  AdminProfileProjectionSchema,
   CachedCoachSchema,
   CachedPlanSchema,
   ITEM_TYPE,
@@ -13,6 +16,7 @@ import {
   SORT_KEY,
   UserProfileSchema,
   userPk,
+  type AdminProfileProjection,
   type CachedCoach,
   type CachedPlan,
   type CoachCacheStamp,
@@ -23,6 +27,7 @@ import {
 } from "@repo/shared";
 import { dynamoClient, parseItem, requireTable } from "./dynamo";
 import { ProfileStateError, ServiceError } from "./errors";
+import { aliasedProjection } from "./evaluations";
 import { MESSAGES } from "./messages";
 
 // Every DynamoDB command for the user-scoped items lives here, matching how
@@ -32,6 +37,16 @@ import { MESSAGES } from "./messages";
 const PROFILE_CONTEXT = "PROFILE";
 const PLAN_CONTEXT = "PLAN";
 const COACH_CONTEXT = "COACH";
+
+// BatchGetItem's hard cap on keys per call. Not a tuning value — asking for 101
+// is a validation error, not a slower request. Same shape as DELETE_BATCH_SIZE's
+// 25 for BatchWriteItem in lib/sessions.ts and SQS.SEND_BATCH_SIZE's 10.
+//
+// The admin table never reaches it: its page size is Cognito's ListUsers maximum
+// of 60. `getAdminProfiles` throws rather than chunking if that ever stops being
+// true, because a silently chunked read would double the request count of an
+// admin page load without anyone noticing.
+const BATCH_GET_LIMIT = 100;
 
 const profileKey = (userId: string) => ({
   PK: userPk(userId),
@@ -386,6 +401,264 @@ export async function saveGithubRepos(args: {
   }
 
   return parseItem(UserProfileSchema, response.Attributes, PROFILE_CONTEXT);
+}
+
+// ---------------------------------------------------------------------------
+// Interview quota
+//
+// Three attributes on the PROFILE item, resolved by `resolveSessionAllowance` in
+// @repo/shared. This module owns the writes; the shared function owns what they
+// mean; routes own the status codes.
+// ---------------------------------------------------------------------------
+
+// Reads the admin-table slice of many profiles in one request.
+//
+// Returns a Map keyed by userId, and an id simply missing from it is the answer
+// for an account that signed up and never onboarded — a real and common state,
+// not an error. BatchGetItem omits misses rather than reporting them, which is
+// the same property `loadPlannerInputs` relies on and the reason this returns a
+// Map instead of an array the caller would have to align by position.
+//
+// Bounded by the caller's page size, which is Cognito's ListUsers maximum of 60 —
+// comfortably under BatchGetItem's own limit of 100 keys, so this never has to
+// chunk. The assertion below is what will notice if either limit changes.
+export async function getAdminProfiles(args: {
+  userIds: string[];
+}): Promise<Map<string, AdminProfileProjection>> {
+  const found = new Map<string, AdminProfileProjection>();
+  if (args.userIds.length === 0) return found;
+
+  const TableName = requireTable();
+
+  if (args.userIds.length > BATCH_GET_LIMIT) {
+    throw new ServiceError(
+      `${MESSAGES.ADMIN_DIRECTORY_FAILED} — asked for ${args.userIds.length} ` +
+        `profiles in one BatchGetItem, which caps at ${BATCH_GET_LIMIT}`,
+    );
+  }
+
+  let response;
+  try {
+    response = await dynamoClient.send(
+      new BatchGetCommand({
+        RequestItems: {
+          [TableName]: {
+            Keys: args.userIds.map((userId) => profileKey(userId)),
+            // Every name aliased, unconditionally. `status` is a DynamoDB
+            // reserved word and so is `type`; aliasing only the ones that look
+            // reserved is how the history page and the completion query have both
+            // already broken. See aliasedProjection's own comment.
+            ...aliasedProjection(ADMIN_PROFILE_FIELDS),
+          },
+        },
+      }),
+    );
+  } catch (error) {
+    throw readFailure(error, MESSAGES.PROFILE_READ_FAILED);
+  }
+
+  // Not retried. Unlike the erasure sweep, which must finish, an unprocessed key
+  // here costs one row in the admin table showing as un-onboarded — visibly odd
+  // and fixed by a refresh, against a retry loop on a read-only listing. Logged so
+  // the odd row has an explanation somewhere.
+  const unprocessed = response.UnprocessedKeys?.[TableName]?.Keys?.length ?? 0;
+  if (unprocessed > 0) {
+    console.warn(
+      `[admin] BatchGetItem left ${unprocessed} profile keys unprocessed; ` +
+        `those rows will show as not onboarded`,
+    );
+  }
+
+  for (const item of response.Responses?.[TableName] ?? []) {
+    // Validated per item rather than over the batch, so one row written by an
+    // older deploy cannot fail the whole page. A row that does not parse is
+    // dropped to un-onboarded and logged — the admin table is a read-only view,
+    // and failing it entirely over one bad row would hide the other fifty-nine.
+    const parsed = AdminProfileProjectionSchema.safeParse(item);
+    if (!parsed.success) {
+      console.warn(
+        `[admin] skipped an unparseable PROFILE row — ` +
+          `${parsed.error.issues
+            .map((issue) => issue.path.join(".") || "root")
+            .join(", ")}`,
+      );
+      continue;
+    }
+    found.set(parsed.data.userId, parsed.data);
+  }
+
+  return found;
+}
+
+// Writes an admin's grant. The only mutating path in this module whose caller is
+// not the account's own owner, which is why it takes a userId it did not get from
+// a token — `routes/admin.ts` resolves that from an email through Cognito, behind
+// RequireAdmin.
+//
+// Does NOT touch `profileVersion`. A quota grant changes nothing the Planner
+// reads, so bumping it would discard a good cached plan and buy a Bedrock call
+// for an administrative act — the same reasoning `saveProfileDetails` carries for
+// a display name.
+//
+// `attribute_exists(PK)` rather than an upsert, unlike every other write here.
+// A grant against an account with no profile must fail rather than conjure a
+// PROFILE item holding nothing but a quota: that item would fail
+// `UserProfileSchema` on the next read (no `userId`, no `status`, no timestamps)
+// and would make an un-onboarded account indistinguishable from an onboarded one
+// in the admin table. The route turns this into ADMIN_PROFILE_MISSING, which says
+// what actually happened.
+export async function setAccessGrant(args: {
+  userId: string;
+  unlimitedAccess: boolean;
+  sessionLimit: number | undefined;
+}): Promise<UserProfile | null> {
+  const TableName = requireTable();
+
+  const setClauses = ["unlimitedAccess = :unlimited", "updatedAt = :now"];
+  const values: Record<string, unknown> = {
+    ":unlimited": args.unlimitedAccess,
+    ":now": new Date().toISOString(),
+    ":deleting": "deleting",
+  };
+
+  // Removed rather than written as null when the grant carries no number, for
+  // the reason `githubUsername` is: the schema reads absence as "no override"
+  // and a stored null would have to be spelled optional-and-nullable everywhere.
+  // This is also what makes revoking a numeric grant possible at all — without
+  // the REMOVE, lowering someone from 50 back to the default would need the
+  // admin to type 3 and would silently break if the default ever changed.
+  const removeClauses: string[] = [];
+  if (args.sessionLimit === undefined) {
+    removeClauses.push("sessionLimit");
+  } else {
+    setClauses.push("sessionLimit = :limit");
+    values[":limit"] = args.sessionLimit;
+  }
+
+  const expression = [
+    `SET ${setClauses.join(", ")}`,
+    ...(removeClauses.length > 0 ? [`REMOVE ${removeClauses.join(", ")}`] : []),
+  ].join(" ");
+
+  let response;
+  try {
+    response = await dynamoClient.send(
+      new UpdateCommand({
+        TableName,
+        Key: profileKey(args.userId),
+        UpdateExpression: expression,
+        ConditionExpression: `attribute_exists(PK) AND (${NOT_DELETING})`,
+        ExpressionAttributeNames: { "#status": "status" },
+        ExpressionAttributeValues: values,
+        ReturnValues: "ALL_NEW",
+      }),
+    );
+  } catch (error) {
+    // Null covers both conditions the expression can fail on: no profile, and a
+    // profile mid-erasure. Collapsed on purpose — an account being deleted has
+    // nothing an admin should be granting sessions to, and telling the operator
+    // "this one is mid-erasure" invites them to try to keep it alive.
+    if (error instanceof ConditionalCheckFailedException) return null;
+    throw readFailure(error, MESSAGES.ADMIN_ACCESS_WRITE_FAILED);
+  }
+
+  return parseItem(UserProfileSchema, response.Attributes, PROFILE_CONTEXT);
+}
+
+// Two counters, deliberately separate, and the split is the fix for a real bug.
+//
+// The quota used to be claimed atomically at `POST /pre-interview` — at the moment
+// a session was MINTED. So pressing "Build my interview" and closing the tab spent
+// a slot before the plan had rendered and before anyone had spoken. What actually
+// costs money is the Sonic stream, and a candidate who never answered a question
+// never opened one worth billing.
+//
+// So:
+//   recordSessionCreated  — every mint. Display only; meters nothing.
+//   chargeConductedSession — once per session, on the first SCOREABLE answer.
+//                            This is what the quota reads.
+//
+// The pre-flight refusal is now a plain read in the route rather than a
+// conditional write here. That loses the atomic claim, and the trade is worth
+// naming: two tabs racing can both pass the check and both start. Neither the
+// COUNT nor the spend ceiling is wrong as a result — each session still charges
+// exactly once when it is conducted — so the failure mode is one extra interview
+// at the boundary, against charging every abandoned session to everybody.
+
+// Counts a session being minted. Display only.
+//
+// Unconditional beyond the erasure guard: this must never refuse, because it is
+// not an enforcement point. A failure here costs a wrong number in the admin
+// table, so the caller logs and continues rather than failing the request.
+export async function recordSessionCreated(args: {
+  userId: string;
+}): Promise<void> {
+  const TableName = requireTable();
+
+  try {
+    await dynamoClient.send(
+      new UpdateCommand({
+        TableName,
+        Key: profileKey(args.userId),
+        UpdateExpression: "SET updatedAt = :now ADD sessionsCreated :one",
+        ConditionExpression: NOT_DELETING,
+        ExpressionAttributeNames: { "#status": "status" },
+        ExpressionAttributeValues: {
+          ":one": 1,
+          ":now": new Date().toISOString(),
+          ":deleting": "deleting",
+        },
+      }),
+    );
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException) return;
+    throw readFailure(error, MESSAGES.PROFILE_SAVE_FAILED);
+  }
+}
+
+// Charges one interview against the quota.
+//
+// `ADD`, not a read-then-write: two answers landing at once would otherwise both
+// read the same count and both write the same successor, and the interview would
+// bill once instead of twice — or, in the reverse race, not at all. The same
+// reasoning `ADD profileVersion` carries on the resume path.
+//
+// **Idempotency is NOT this function's job.** It adds one every time it is called.
+// Calling it once per session is guaranteed by `markSessionCharged` in
+// lib/sessions.ts, which wins a conditional write on the session item before this
+// runs — `recordAnswer` fires per answer, so without that marker a fifteen-question
+// interview would spend fifteen slots. Keeping the two apart means the marker is
+// the single place the once-per-session rule lives, rather than being half-stated
+// in a condition here that could not see the session anyway.
+//
+// No cap condition. The limit was already checked before the interview started;
+// re-checking here would refuse to record an interview that has already happened,
+// which loses the count without giving anyone their time back.
+export async function chargeConductedSession(args: {
+  userId: string;
+}): Promise<void> {
+  const TableName = requireTable();
+
+  try {
+    await dynamoClient.send(
+      new UpdateCommand({
+        TableName,
+        Key: profileKey(args.userId),
+        UpdateExpression: "SET updatedAt = :now ADD sessionsConducted :one",
+        ConditionExpression: NOT_DELETING,
+        ExpressionAttributeNames: { "#status": "status" },
+        ExpressionAttributeValues: {
+          ":one": 1,
+          ":now": new Date().toISOString(),
+          ":deleting": "deleting",
+        },
+      }),
+    );
+  } catch (error) {
+    // An account mid-erasure is not charged. Its quota is about to stop existing.
+    if (error instanceof ConditionalCheckFailedException) return;
+    throw readFailure(error, MESSAGES.PROFILE_SAVE_FAILED);
+  }
 }
 
 // Null when nothing is cached — a first interview, or a plan already evicted.

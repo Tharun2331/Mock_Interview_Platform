@@ -132,6 +132,26 @@ function readString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
+// NaN and Infinity are rejected rather than passed through. Both survive
+// `typeof === "number"`, and either one reaching a metric value invalidates the
+// whole EMF event — so a malformed usage field would silently cost the token
+// numbers it was meant to supply.
+function readNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+// Cumulative token usage for one stream.
+//
+// Sonic reports these as running TOTALS on every `usageEvent`, not as deltas, so
+// they are overwritten rather than summed — adding them would count every earlier
+// turn again on each event and overstate a long interview enormously. Across a
+// renewal the counters restart, because a renewal is a new prompt, which is why
+// SonicConversation sums per-stream totals rather than reading one.
+export type SonicUsage = {
+  inputTokens: number;
+  outputTokens: number;
+};
+
 export class SonicSession {
   private readonly queue = new EventQueue();
   private readonly promptName = randomUUID();
@@ -144,12 +164,34 @@ export class SonicSession {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private maxTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Cost accounting for this stream. Both are observations rather than decisions:
+  // nothing in this class reads them, and no behaviour changes based on them.
+  // They exist so the caller can report what a stream cost after it ends.
+  private usage: SonicUsage = { inputTokens: 0, outputTokens: 0 };
+  private readonly openedAt = performance.now();
+
   constructor(args: SonicSessionArgs) {
     this.args = args;
   }
 
   get isActive(): boolean {
     return this.active;
+  }
+
+  // Latest cumulative totals reported by Sonic for this stream. Zeroes mean no
+  // `usageEvent` arrived — a stream that failed before its first turn — not a
+  // stream that cost nothing to open.
+  get tokenUsage(): SonicUsage {
+    return { ...this.usage };
+  }
+
+  // Wall-clock milliseconds this stream has been open. THE billable number:
+  // Sonic charges by open duration whether or not anyone is speaking. Measured
+  // from construction rather than from `start()` because the HTTP/2 stream is
+  // what bills, and it opens inside start() — timing from after it returned
+  // would omit the open itself.
+  get openDurationMs(): number {
+    return performance.now() - this.openedAt;
   }
 
   // Opens the stream and starts consuming responses. Resolves once the stream
@@ -543,9 +585,38 @@ export class SonicSession {
           (completionEnd as Record<string, unknown>).stopReason,
         ),
       });
+      return;
     }
-    // usageEvent and completionStart are intentionally dropped — nothing
-    // downstream reads them yet, and forwarding them would be noise.
+
+    // `usageEvent` is now read, where it used to be dropped alongside
+    // `completionStart`. It is the only place Sonic reports token counts, and
+    // tokens are half of what this stream costs — the other half being the open
+    // duration, which the session times itself.
+    //
+    // Recorded rather than forwarded as a SonicEvent. Nothing in the interview
+    // loop should branch on cost, and adding a member to the event union would
+    // put a number in front of every existing `switch` over it for no behavioural
+    // reason. The caller reads `tokenUsage` once, after the stream ends.
+    //
+    // Assigned, not accumulated: these are running totals for the prompt. Summing
+    // them would re-count every earlier turn on each event, which on a
+    // six-minute stream overstates usage by roughly the number of turns.
+    const usageEvent = event.usageEvent;
+    if (typeof usageEvent === "object" && usageEvent !== null) {
+      const payload = usageEvent as Record<string, unknown>;
+      const input = readNumber(payload.totalInputTokens);
+      const output = readNumber(payload.totalOutputTokens);
+
+      // Each guarded separately, and an absent field leaves the previous total
+      // in place rather than resetting it to zero. A usage event that carried only
+      // one of the two would otherwise wipe the other — and since these are
+      // monotonic, a zero written late is indistinguishable from a stream that
+      // never ran.
+      if (input !== null) this.usage.inputTokens = input;
+      if (output !== null) this.usage.outputTokens = output;
+    }
+    // `completionStart` is still intentionally dropped — nothing downstream reads
+    // it, and forwarding it would be noise.
   }
 
   // Idempotent, and safe to call from any exit path. The documented closing
@@ -599,6 +670,20 @@ export class SonicConversation {
   private renewals = 0;
   private kickoffNote: string | undefined;
 
+  // Token usage from streams that have already been retired.
+  //
+  // Summed across streams, unlike within one stream where the totals are
+  // overwritten — a renewal is a new prompt, so Sonic's counters restart at zero
+  // and the interview's real cost is the sum of what each stream reported. Missing
+  // this distinction would report a 40-minute interview as costing whatever its
+  // last six minutes did.
+  //
+  // Retired streams are banked here at handover rather than read at the end,
+  // because a closed SonicSession is not retained — `this.current` is overwritten
+  // by the replacement and the old one becomes garbage.
+  private retiredUsage: SonicUsage = { inputTokens: 0, outputTokens: 0 };
+  private readonly startedAt = performance.now();
+
   constructor(
     private readonly args: Omit<
       SonicSessionArgs,
@@ -625,6 +710,38 @@ export class SonicConversation {
 
   get renewalCount(): number {
     return this.renewals;
+  }
+
+  // What this interview has cost in tokens: every retired stream plus the current
+  // one.
+  //
+  // Safe to read after close(), which is the only moment anything does. `close()`
+  // closes the current stream but does not clear the reference, so the final
+  // stream's totals are still reachable through it — the retired bank covers only
+  // streams replaced by a renewal. Worth knowing if close() ever starts nulling
+  // `current`: this would then silently drop the last stream's usage, which on a
+  // short interview is all of it.
+  get tokenUsage(): SonicUsage {
+    const live = this.current?.tokenUsage ?? {
+      inputTokens: 0,
+      outputTokens: 0,
+    };
+    return {
+      inputTokens: this.retiredUsage.inputTokens + live.inputTokens,
+      outputTokens: this.retiredUsage.outputTokens + live.outputTokens,
+    };
+  }
+
+  // Wall clock across the whole interview, renewals included.
+  //
+  // NOT the sum of the streams' open durations, which would double-count the
+  // overlap: renewal deliberately opens the replacement before closing the
+  // original, so for a few hundred milliseconds two streams are open and both are
+  // billing. Summing would report that overlap once per renewal as if it were
+  // conversation. This is the honest span of the interview; the overlap is real
+  // spend and small, and the renewal COUNT is what makes it visible.
+  get elapsedMs(): number {
+    return performance.now() - this.startedAt;
   }
 
   async start(): Promise<void> {
@@ -699,6 +816,16 @@ export class SonicConversation {
       // ending — killing the session at the first renewal. The test caught this
       // as a stray "closed: renewed" that would have been fatal in the route.
       if (previous !== null && previous !== this.current) {
+        // Banked BEFORE the close, not after. `close()` awaits a 300ms drain and
+        // the reference is dropped once this block ends, so reading afterwards
+        // would work today and would silently return zeroes the moment close()
+        // learns to reset anything. Reading it here is reading it while the object
+        // is unambiguously still the stream that produced the numbers.
+        const spent = previous.tokenUsage;
+        this.retiredUsage = {
+          inputTokens: this.retiredUsage.inputTokens + spent.inputTokens,
+          outputTokens: this.retiredUsage.outputTokens + spent.outputTokens,
+        };
         await previous.close("renewed");
       }
       this.renewing = false;

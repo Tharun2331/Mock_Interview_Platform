@@ -8,6 +8,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router";
 import { Result } from "./pages/result";
 import { SessionHistory } from "./pages/history";
 import { Coach } from "./pages/coach";
+import { RequireAdminPage } from "./pages/admin";
 import { Interview } from "./pages/interview";
 import { Signup } from "./pages/signup";
 import { SignIn } from "./pages/signin";
@@ -90,6 +91,18 @@ export function App() {
               there is nothing in the path that could name the wrong one. */}
                   <Route path="/coach" element={<Coach />} />
                 </Route>
+
+                {/* Outside RequireProfile, deliberately. An admin has no reason to
+            have onboarded as a candidate — uploading a resume is not a
+            prerequisite for granting someone else access — and putting this
+            behind that guard would bounce an operator into candidate onboarding
+            to read a dashboard.
+
+            Inside RequireAuth, because the group claim lives on an access token
+            and there is nothing to read without a session. The real enforcement
+            is the server's RequireAdmin middleware; RequireAdminPage only decides
+            what to render. */}
+                <Route path="/admin" element={<RequireAdminPage />} />
               </Route>
             </Route>
 

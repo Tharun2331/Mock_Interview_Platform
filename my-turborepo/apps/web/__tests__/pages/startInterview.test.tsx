@@ -14,6 +14,9 @@ import {
   resetProfileStub,
   setProfileState,
 } from "../helpers/profileStub";
+// The SHARED sonner stub, for the same one-registration reason. Error paths on
+// this page report through a toast, so without it the message is unobservable.
+import { messagesAt, resetToasts } from "../helpers/toastStub";
 
 // `@/lib/api` is the leaf that talks to the outside world, which is the right
 // thing to mock — the page itself is the subject here.
@@ -21,6 +24,8 @@ type PostCall = { url: string; body: unknown };
 
 const posted: PostCall[] = [];
 let planFailure: Error | null = null;
+// Lets a test make POST /pre-interview fail, which is what the quota refusal is.
+let preInterviewFailure: unknown = null;
 
 const PLAN: PlanResponse = {
   focusAreas: [
@@ -35,6 +40,7 @@ const PLAN: PlanResponse = {
 const post = mock(async (url: string, body?: unknown) => {
   posted.push({ url, body });
   if (url.endsWith("/pre-interview")) {
+    if (preInterviewFailure !== null) throw preInterviewFailure;
     return { data: { sessionId: "01J000000000000000000000" } };
   }
   if (planFailure !== null) throw planFailure;
@@ -83,7 +89,9 @@ async function planBody(): Promise<Record<string, unknown>> {
 beforeEach(() => {
   posted.length = 0;
   planFailure = null;
+  preInterviewFailure = null;
   post.mockClear();
+  resetToasts();
   resetProfileStub();
   setProfileState({ status: "ready", profile: COMPLETE_PROFILE });
 });
@@ -377,5 +385,133 @@ describe("the role field it sits beside", () => {
     submit();
 
     expect((await planBody()).targetRole).toBe("Backend Engineer");
+  });
+});
+
+// A candidate who has used their three interviews clicks Start.
+//
+// The regression these pin is not subtle and it reached a real user: POST
+// /pre-interview answers 403 with the quota message, the page had no 403 branch,
+// and the refusal fell through to the catch-all — which was FORM_FAILED, the
+// GITHUB copy. So "you have run out of interviews" was reported as "we could not
+// read that GitHub profile, check the URL and retry", sending someone to fix a URL
+// that was correct, on a route that has not read a GitHub profile since ingestion
+// moved to the profile page.
+describe("when the interview quota is exhausted", () => {
+  // Shaped like an axios error, because `statusOf` and `serverMessage` both read
+  // it through `axios.isAxiosError`. A plain Error would take the generic branch
+  // and the test would pass against the bug.
+  function quotaRefusal(body?: unknown) {
+    return {
+      isAxiosError: true,
+      response: { status: 403, data: body },
+      message: "Request failed with status code 403",
+      toJSON: () => ({}),
+    };
+  }
+
+  it("shows the server's quota message", async () => {
+    preInterviewFailure = quotaRefusal({
+      message:
+        "You have used all of your interview sessions. Ask for more access to continue.",
+      sessions: {
+        unlimited: false,
+        limit: 3,
+        used: 3,
+        remaining: 0,
+        exhausted: true,
+      },
+    });
+
+    renderPage();
+    fireEvent.change(screen.getByLabelText(MESSAGES.FORM_ROLE_LABEL), {
+      target: { value: "Backend Engineer" },
+    });
+    submit();
+
+    await waitFor(() => {
+      expect(messagesAt("error")).toContain(
+        "You have used all of your interview sessions. Ask for more access to continue.",
+      );
+    });
+  });
+
+  it("never blames GitHub", async () => {
+    // The assertion that actually encodes the bug. Kept separate from the one
+    // above so it survives a rewording of the server's copy — the property is
+    // that GitHub is not mentioned, whatever the message turns out to say.
+    preInterviewFailure = quotaRefusal({
+      message: "You have used all of your interview sessions.",
+    });
+
+    renderPage();
+    fireEvent.change(screen.getByLabelText(MESSAGES.FORM_ROLE_LABEL), {
+      target: { value: "Backend Engineer" },
+    });
+    submit();
+
+    await waitFor(() => {
+      expect(messagesAt("error").length).toBeGreaterThan(0);
+    });
+    expect(messagesAt("error")).not.toContain(MESSAGES.FORM_FAILED);
+    for (const message of messagesAt("error")) {
+      expect(message).not.toContain("GitHub");
+    }
+  });
+
+  it("falls back to its own copy when the server sends no message", async () => {
+    // A 403 with an empty body is reachable through a proxy that strips it. The
+    // fallback still has to be about the quota rather than about GitHub.
+    preInterviewFailure = quotaRefusal(undefined);
+
+    renderPage();
+    fireEvent.change(screen.getByLabelText(MESSAGES.FORM_ROLE_LABEL), {
+      target: { value: "Backend Engineer" },
+    });
+    submit();
+
+    await waitFor(() => {
+      expect(messagesAt("error")).toContain(MESSAGES.START_SESSION_LIMIT);
+    });
+  });
+
+  it("does not send the candidate to the profile page", async () => {
+    // 409 means "finish onboarding" and navigates to /profile. A quota refusal
+    // must not, because there is nothing on that page that fixes it — and being
+    // bounced into onboarding you already completed reads as data loss.
+    preInterviewFailure = quotaRefusal({ message: "out of sessions" });
+
+    renderPage();
+    fireEvent.change(screen.getByLabelText(MESSAGES.FORM_ROLE_LABEL), {
+      target: { value: "Backend Engineer" },
+    });
+    submit();
+
+    await waitFor(() => {
+      expect(messagesAt("error").length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText("profile page")).toBeNull();
+  });
+
+  it("uses neutral copy for a genuine server failure too", async () => {
+    // The neighbouring half of the same defect: every unmapped failure on this
+    // route used to blame GitHub, not just the quota one.
+    preInterviewFailure = {
+      isAxiosError: true,
+      response: { status: 500, data: {} },
+      message: "Request failed with status code 500",
+      toJSON: () => ({}),
+    };
+
+    renderPage();
+    fireEvent.change(screen.getByLabelText(MESSAGES.FORM_ROLE_LABEL), {
+      target: { value: "Backend Engineer" },
+    });
+    submit();
+
+    await waitFor(() => {
+      expect(messagesAt("error")).toContain(MESSAGES.START_FAILED_GENERIC);
+    });
+    expect(messagesAt("error")).not.toContain(MESSAGES.FORM_FAILED);
   });
 });

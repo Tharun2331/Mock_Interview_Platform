@@ -154,6 +154,38 @@ export const SessionStatusSchema = z.enum([
 
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 
+// Why an interview ended.
+//
+// **`status` alone cannot answer this, and that was a real defect.** A session
+// that recorded answers goes `in_progress` → `evaluating` → `complete`; one that
+// connected and was abandoned goes `in_progress` → `complete` directly, because
+// there is nothing to score and the scoring pipeline is genuinely finished. Both
+// land on `complete`, so "did this candidate sit a full interview or close the tab
+// after two seconds" was unanswerable from the record — the admin table counted
+// both identically.
+//
+// The route has always known the answer: `shutdown(reason)` receives it on every
+// exit path and wrote it to a log line and nowhere else. This is that value,
+// stored.
+export const SessionEndReasonSchema = z.enum([
+  // The interviewer called endInterview — a natural close, the intended ending.
+  "interviewer_ended",
+  // The candidate pressed stop. A deliberate ending, but possibly an early one:
+  // pair it with `answerCount` to tell "finished early" from "gave up".
+  "candidate_ended",
+  // The hard timer fired. The interview ran its full planned length.
+  "time_limit",
+  // The socket closed without anyone asking it to — a closed tab, a dropped
+  // connection, a sleeping laptop. THE signal for "exited immediately" when it
+  // arrives with `answerCount: 0`.
+  "disconnected",
+  // The stream or the socket errored out. Distinct from `disconnected` because
+  // the candidate did nothing wrong and may deserve the slot back.
+  "error",
+]);
+
+export type SessionEndReason = z.infer<typeof SessionEndReasonSchema>;
+
 export const QuestionTypeSchema = z.enum([
   "behavioural",
   "technical",
@@ -200,7 +232,59 @@ export const SessionMetaSchema = z.object({
   // Optional because sessions created before profiles existed have none, and an
   // absent version simply never matches a cached plan — a replan, not a crash.
   profileVersion: z.number().int().min(0).optional(),
+
+  // ---- Outcome ------------------------------------------------------------
+  //
+  // What actually happened, as opposed to where the scoring pipeline got to.
+  // `status` answers the second and was being read as if it answered the first:
+  // an abandoned interview and a fully scored one both end at `complete`, so the
+  // admin table counted a candidate who closed the tab after two seconds
+  // identically to one who sat the whole thing.
+  //
+  // All optional. Every session written before these existed has none, and
+  // validate-on-read would reject all of them otherwise — the same reasoning the
+  // `type` attribute carries. An absent value means "recorded before this was
+  // tracked", which is different from zero and must stay distinguishable.
+
+  // When the WebSocket connected and the interview actually began. NOT `createdAt`,
+  // which is when the session was minted — the gap between them is a candidate
+  // reading their plan, and can be days.
+  startedAt: z.iso.datetime().optional(),
+  endedAt: z.iso.datetime().optional(),
+
+  // Answers persisted to DynamoDB. The single most useful number here: with
+  // `endReason` it separates "sat a full interview" from "connected and left",
+  // which is the question `status` cannot answer.
+  answerCount: z.number().int().min(0).optional(),
+
+  endReason: SessionEndReasonSchema.optional(),
+
+  // When this session was charged against the candidate's quota, written once.
+  //
+  // Its presence is the idempotency key: the quota is charged on the FIRST
+  // scoreable answer, and `recordAnswer` runs per answer, so without a marker a
+  // fifteen-question interview would bill fifteen slots. Conditioned on
+  // `attribute_not_exists`, so exactly one write can win no matter how many
+  // answers land at once.
+  chargedAt: z.iso.datetime().optional(),
 });
+
+// Did this session produce a real interview, or was it abandoned?
+//
+// Derived rather than stored, so it cannot drift from the fields it reads — and
+// so a session recorded before these fields existed answers honestly rather than
+// claiming to be complete. One definition, used by the admin table and anything
+// else that asks.
+//
+// "Conducted" is `answerCount > 0`: at least one genuine attempt at a question.
+// Deliberately NOT `status === "complete"`, which is true for both an abandoned
+// session and a scored one, and not "reached in_progress", which is true the
+// instant a socket opens and says nothing about whether anyone spoke.
+export function wasInterviewConducted(meta: {
+  answerCount?: number | undefined;
+}): boolean {
+  return (meta.answerCount ?? 0) > 0;
+}
 
 export type SessionMeta = z.infer<typeof SessionMetaSchema>;
 
