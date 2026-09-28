@@ -16,6 +16,15 @@ export type TestUser = {
   id: string;
   username: string;
   scopes?: string[];
+  // Cognito group memberships. Optional and defaulting to none, which is what a
+  // candidate's token carries — so every existing caller keeps the behaviour it
+  // had, and a test that wants the admin surface has to say so explicitly.
+  //
+  // Passing the real group name here is how an admin-route test is set up. That
+  // means these tests exercise RequireAdmin against the same claim shape
+  // AuthMiddleware produces, rather than against a second stub of the guard —
+  // the guard itself is real, only the token verification is stubbed.
+  groups?: string[];
 };
 
 // Stands in for AuthMiddleware. Passing `null` exercises the requireUserId()
@@ -28,6 +37,7 @@ function stubAuth(user: TestUser | null): RequestHandler {
         id: user.id,
         username: user.username,
         scopes: user.scopes ?? [],
+        groups: user.groups ?? [],
       };
     }
     next();
@@ -43,10 +53,23 @@ export function buildApp(args: {
   path: string;
   router: express.Router;
   user: TestUser | null;
+  // Extra middleware mounted between the stubbed auth and the router, in order.
+  //
+  // Added for the admin routes, which are the first in this codebase whose
+  // authorisation lives in middleware rather than in the handler. Mounting
+  // `RequireAdmin` here means the tests exercise the real guard over a stubbed
+  // token, which is the same split every other test in this suite uses — stub the
+  // boundary that talks outside, run the real logic.
+  middleware?: RequestHandler[];
 }): Express {
   const app = express();
   app.use(express.json());
-  app.use(args.path, stubAuth(args.user), args.router);
+  app.use(
+    args.path,
+    stubAuth(args.user),
+    ...(args.middleware ?? []),
+    args.router,
+  );
   return app;
 }
 
@@ -76,6 +99,7 @@ export async function mount(args: {
   path: string;
   router: express.Router;
   user: TestUser | null;
+  middleware?: RequestHandler[];
 }): Promise<MountedApp> {
   return serve(buildApp(args));
 }

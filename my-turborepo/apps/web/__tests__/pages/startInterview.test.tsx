@@ -14,6 +14,16 @@ import {
   resetProfileStub,
   setProfileState,
 } from "../helpers/profileStub";
+// No sonner stub. The error paths on this page report through a toast, and the
+// obvious move is to `mock.module("sonner")` and read the calls — which is what
+// this did, and it failed on Linux CI while passing on Windows.
+//
+// The real toaster is rendered into the tree instead and the assertion reads the
+// DOM. That removes a GLOBAL, permanent module mock from a process shared by
+// every test file, which is the thing CLAUDE.md warns about most loudly, and it
+// makes these tests independent of which file the runner happened to load first.
+// It also tests something truer: that the message reaches the screen, not merely
+// that a function was called with it.
 
 // `@/lib/api` is the leaf that talks to the outside world, which is the right
 // thing to mock — the page itself is the subject here.
@@ -21,6 +31,8 @@ type PostCall = { url: string; body: unknown };
 
 const posted: PostCall[] = [];
 let planFailure: Error | null = null;
+// Lets a test make POST /pre-interview fail, which is what the quota refusal is.
+let preInterviewFailure: unknown = null;
 
 const PLAN: PlanResponse = {
   focusAreas: [
@@ -35,6 +47,7 @@ const PLAN: PlanResponse = {
 const post = mock(async (url: string, body?: unknown) => {
   posted.push({ url, body });
   if (url.endsWith("/pre-interview")) {
+    if (preInterviewFailure !== null) throw preInterviewFailure;
     return { data: { sessionId: "01J000000000000000000000" } };
   }
   if (planFailure !== null) throw planFailure;
@@ -44,8 +57,24 @@ const post = mock(async (url: string, body?: unknown) => {
 mock.module("@/lib/api", () => ({ api: { post } }));
 
 const { StartInterview } = await import("@/pages/startInterview");
+const { AppToaster } = await import("@/components/AppToaster");
 const { MESSAGES } = await import("@/lib/messages");
 const { MemoryRouter, Route, Routes } = await import("react-router");
+
+// Every message the toaster is currently showing.
+//
+// Sonner marks each toast with `data-sonner-toast`, so this reads what a person
+// would see rather than what a spy recorded.
+function toastMessages(): string[] {
+  return Array.from(document.querySelectorAll("[data-sonner-toast]")).map(
+    (node) => node.textContent ?? "",
+  );
+}
+
+/** True when some toast on screen contains `text`. */
+function toastShown(text: string): boolean {
+  return toastMessages().some((message) => message.includes(text));
+}
 
 function renderPage() {
   return render(
@@ -55,6 +84,8 @@ function renderPage() {
         <Route path="/interview" element={<p>interview page</p>} />
         <Route path="/profile" element={<p>profile page</p>} />
       </Routes>
+      {/* The real toaster, so a toast is observable as text on screen. */}
+      <AppToaster />
     </MemoryRouter>,
   );
 }
@@ -83,6 +114,7 @@ async function planBody(): Promise<Record<string, unknown>> {
 beforeEach(() => {
   posted.length = 0;
   planFailure = null;
+  preInterviewFailure = null;
   post.mockClear();
   resetProfileStub();
   setProfileState({ status: "ready", profile: COMPLETE_PROFILE });
@@ -377,5 +409,137 @@ describe("the role field it sits beside", () => {
     submit();
 
     expect((await planBody()).targetRole).toBe("Backend Engineer");
+  });
+});
+
+// A candidate who has used their three interviews clicks Start.
+//
+// The regression these pin is not subtle and it reached a real user: POST
+// /pre-interview answers 403 with the quota message, the page had no 403 branch,
+// and the refusal fell through to the catch-all — which was FORM_FAILED, the
+// GITHUB copy. So "you have run out of interviews" was reported as "we could not
+// read that GitHub profile, check the URL and retry", sending someone to fix a URL
+// that was correct, on a route that has not read a GitHub profile since ingestion
+// moved to the profile page.
+describe("when the interview quota is exhausted", () => {
+  // Shaped like an axios error, because `statusOf` and `serverMessage` both read
+  // it through `axios.isAxiosError`. A plain Error would take the generic branch
+  // and the test would pass against the bug.
+  function quotaRefusal(body?: unknown) {
+    return {
+      isAxiosError: true,
+      response: { status: 403, data: body },
+      message: "Request failed with status code 403",
+      toJSON: () => ({}),
+    };
+  }
+
+  it("shows the server's quota message", async () => {
+    preInterviewFailure = quotaRefusal({
+      message:
+        "You have used all of your interview sessions. Ask for more access to continue.",
+      sessions: {
+        unlimited: false,
+        limit: 3,
+        used: 3,
+        remaining: 0,
+        exhausted: true,
+      },
+    });
+
+    renderPage();
+    fireEvent.change(screen.getByLabelText(MESSAGES.FORM_ROLE_LABEL), {
+      target: { value: "Backend Engineer" },
+    });
+    submit();
+
+    await waitFor(() => {
+      expect(
+        toastShown(
+          "You have used all of your interview sessions. Ask for more access to continue.",
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it("never blames GitHub", async () => {
+    // The assertion that actually encodes the bug. Kept separate from the one
+    // above so it survives a rewording of the server's copy — the property is
+    // that GitHub is not mentioned, whatever the message turns out to say.
+    preInterviewFailure = quotaRefusal({
+      message: "You have used all of your interview sessions.",
+    });
+
+    renderPage();
+    fireEvent.change(screen.getByLabelText(MESSAGES.FORM_ROLE_LABEL), {
+      target: { value: "Backend Engineer" },
+    });
+    submit();
+
+    await waitFor(() => {
+      expect(toastMessages().length).toBeGreaterThan(0);
+    });
+    // The assertion that actually encodes the bug: whatever is on screen, it does
+    // not mention GitHub.
+    for (const message of toastMessages()) {
+      expect(message).not.toContain("GitHub");
+    }
+    expect(toastShown(MESSAGES.FORM_FAILED)).toBe(false);
+  });
+
+  it("falls back to its own copy when the server sends no message", async () => {
+    // A 403 with an empty body is reachable through a proxy that strips it. The
+    // fallback still has to be about the quota rather than about GitHub.
+    preInterviewFailure = quotaRefusal(undefined);
+
+    renderPage();
+    fireEvent.change(screen.getByLabelText(MESSAGES.FORM_ROLE_LABEL), {
+      target: { value: "Backend Engineer" },
+    });
+    submit();
+
+    await waitFor(() => {
+      expect(toastShown(MESSAGES.START_SESSION_LIMIT)).toBe(true);
+    });
+  });
+
+  it("does not send the candidate to the profile page", async () => {
+    // 409 means "finish onboarding" and navigates to /profile. A quota refusal
+    // must not, because there is nothing on that page that fixes it — and being
+    // bounced into onboarding you already completed reads as data loss.
+    preInterviewFailure = quotaRefusal({ message: "out of sessions" });
+
+    renderPage();
+    fireEvent.change(screen.getByLabelText(MESSAGES.FORM_ROLE_LABEL), {
+      target: { value: "Backend Engineer" },
+    });
+    submit();
+
+    await waitFor(() => {
+      expect(toastMessages().length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText("profile page")).toBeNull();
+  });
+
+  it("uses neutral copy for a genuine server failure too", async () => {
+    // The neighbouring half of the same defect: every unmapped failure on this
+    // route used to blame GitHub, not just the quota one.
+    preInterviewFailure = {
+      isAxiosError: true,
+      response: { status: 500, data: {} },
+      message: "Request failed with status code 500",
+      toJSON: () => ({}),
+    };
+
+    renderPage();
+    fireEvent.change(screen.getByLabelText(MESSAGES.FORM_ROLE_LABEL), {
+      target: { value: "Backend Engineer" },
+    });
+    submit();
+
+    await waitFor(() => {
+      expect(toastShown(MESSAGES.START_FAILED_GENERIC)).toBe(true);
+    });
+    expect(toastShown(MESSAGES.FORM_FAILED)).toBe(false);
   });
 });

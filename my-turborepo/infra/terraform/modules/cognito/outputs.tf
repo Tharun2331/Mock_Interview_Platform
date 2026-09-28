@@ -17,6 +17,11 @@ output "cognito_user_pool_client_id" {
   value       = aws_cognito_user_pool_client.client.id
 }
 output "cognito_user_pool_arn" {
-  description = "ARN of the Cognito User Pool. Consumed by the IAM module to scope AdminDeleteUser to this pool and no other."
+  description = "ARN of the Cognito User Pool. Consumed by the IAM module to scope AdminDeleteUser and ListUsers to this pool and no other."
   value       = aws_cognito_user_pool.pool.arn
+}
+
+output "admin_group_name" {
+  description = "Cognito group whose members reach the admin API. Set as ADMIN_GROUP_NAME on the API service — the server's default matches, so this exists to make a change to the variable propagate rather than drift."
+  value       = aws_cognito_user_group.admins.name
 }

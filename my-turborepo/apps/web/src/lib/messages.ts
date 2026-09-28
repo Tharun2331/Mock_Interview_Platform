@@ -576,6 +576,103 @@ export const MESSAGES = {
   // another tab, most likely. Names the fix rather than the error.
   START_PROFILE_INCOMPLETE:
     "Your profile is missing something. Finish it, then start your interview.",
+  // The quota, as a client-side fallback only — the server sends its own copy with
+  // the counts, and that is preferred. This is what shows if the body is missing.
+  START_SESSION_LIMIT:
+    "You have used all of your interview sessions. Ask for more access to continue.",
+  // The genuine catch-all for starting an interview.
+  //
+  // Replaces FORM_FAILED in that position, which is the GITHUB failure copy: this
+  // route stopped scraping GitHub when the profile refactor moved ingestion out of
+  // it, so blaming a URL here sends a candidate to re-check something correct. Says
+  // nothing about the cause, because by definition it does not know one.
+  START_FAILED_GENERIC:
+    "We could not start your interview. Try again in a moment.",
+
+  // -------------------------------------------------------------------------
+  // Admin
+  //
+  // The one surface in this app whose reader is not a candidate. That changes the
+  // register: the copy elsewhere avoids naming services and internals because a
+  // candidate can do nothing with them, while here the reader is the operator and
+  // the namespace, the log group and the metric names are exactly what they need.
+  // It does NOT change the rule about model names — "the interviewer" is still how
+  // the product talks about itself, and an admin reading "Nova Sonic" in a chart
+  // label learns nothing a candidate would not.
+  // -------------------------------------------------------------------------
+  // The header link's accessible name. Always sr-only — the nav item is a glyph
+  // at every width — so this is the only thing that names the destination for a
+  // screen reader or a hover tooltip.
+  ADMIN_NAV: "Admin",
+  ADMIN_TITLE: "Admin",
+  ADMIN_SUBTITLE: "Access grants and service health",
+  ADMIN_DENIED_TITLE: "This page needs admin access",
+  // Names the exact reason a real admin might be seeing this, because the
+  // server's 404 deliberately will not tell them. Group membership is stamped on
+  // the access token at sign-in, so someone added to the group five minutes ago
+  // genuinely has to sign in again — and without this sentence that looks like the
+  // feature being broken.
+  ADMIN_DENIED_BODY:
+    "Your account is not in the admin group. If you were added recently, sign out and back in — group membership is attached when you sign in.",
+
+  ADMIN_GRANT_TITLE: "Interview access",
+  ADMIN_GRANT_BODY:
+    "Every account gets three interviews. Grant more here, or lift the limit entirely.",
+  ADMIN_GRANT_EMAIL_LABEL: "Account email",
+  ADMIN_GRANT_EMAIL_PLACEHOLDER: "someone@example.com",
+  ADMIN_GRANT_MODE_LABEL: "Grant",
+  ADMIN_GRANT_MODE_DEFAULT: "Reset to the default of three",
+  ADMIN_GRANT_MODE_LIMIT: "Set a number of interviews",
+  ADMIN_GRANT_MODE_UNLIMITED: "No limit",
+  ADMIN_GRANT_LIMIT_LABEL: "Interviews allowed",
+  // Shown only once an email has turned out to name more than one account.
+  ADMIN_GRANT_USERNAME_LABEL: "Cognito username",
+  ADMIN_GRANT_USERNAME_PLACEHOLDER: "Google_1033…",
+  ADMIN_GRANT_USERNAME_HINT:
+    "Used instead of the email. Every row in the table below has one.",
+  // Only reached if the server returns a 409 with candidates but no message —
+  // the server normally sends its own, which explains why the email is ambiguous.
+  ADMIN_GRANT_AMBIGUOUS_FALLBACK:
+    "That email matches more than one account. Choose which one you mean.",
+  ADMIN_GRANT_SUBMIT: "Save access",
+  ADMIN_GRANT_SUBMIT_PENDING: "Saving…",
+  ADMIN_GRANT_FAILED: "That access change did not save.",
+
+  ADMIN_USERS_TITLE: "Accounts",
+  ADMIN_USERS_LOAD_FAILED: "The account list could not be loaded.",
+  ADMIN_USERS_EMPTY: "No accounts yet.",
+  ADMIN_USERS_MORE: "Load more",
+  ADMIN_USERS_MORE_PENDING: "Loading…",
+  // Column headings, kept here rather than inline so the table and any future
+  // export cannot drift apart.
+  ADMIN_COL_EMAIL: "Email",
+  ADMIN_COL_STATUS: "Account",
+  ADMIN_COL_ONBOARDED: "Onboarded",
+  ADMIN_COL_INTERVIEWS: "Interviews",
+  ADMIN_COL_ACCESS: "Access",
+  ADMIN_ONBOARDED_YES: "Yes",
+  ADMIN_ONBOARDED_NO: "Not yet",
+  ADMIN_ACCESS_UNLIMITED: "No limit",
+  ADMIN_ACCESS_DEFAULT: "Default",
+  ADMIN_ACCESS_GRANTED: "Granted",
+  ADMIN_DISABLED: "Disabled",
+
+  ADMIN_METRICS_TITLE: "Service health",
+  ADMIN_METRICS_LOAD_FAILED: "Metrics could not be loaded.",
+  ADMIN_METRICS_WINDOW_LABEL: "Window",
+  // The honest empty state, and the reason it is worded this specifically.
+  //
+  // Custom metrics are emitted as EMF log lines and extracted by CloudWatch at log
+  // ingestion, so nothing exists until the service runs somewhere that ships logs.
+  // There is no ECS yet, so this is the state today. A generic "no data" here
+  // would read as "your service handled no requests", which is the opposite of
+  // true and would send someone debugging the emitter.
+  ADMIN_METRICS_NO_DATA_TITLE: "No metrics ingested yet",
+  ADMIN_METRICS_NO_DATA_BODY:
+    "The service publishes metrics as structured log lines, and CloudWatch turns them into metrics when those logs are ingested. Nothing is ingesting them yet, so there is nothing to chart. This is expected until the service runs on ECS.",
+  // Per-series empty, which means something different: the pipeline works and this
+  // particular thing has not happened. A 5xx count with no data is good news.
+  ADMIN_METRICS_SERIES_EMPTY: "Nothing recorded in this window.",
 } as const;
 
 // Shortcuts, not an allowlist. The field accepts any role — these exist because
@@ -610,6 +707,72 @@ export const redactionSummary = (count: number): string =>
   count === 0
     ? "No personal details were found to remove. Your resume is stored as you sent it."
     : `Removed ${count} personal ${count === 1 ? "detail" : "details"} — name, contact information and similar — before your resume was used to build questions.`;
+
+// Admin table and chart helpers.
+
+// "2 of 3", "12 · no limit". Reads the resolved allowance rather than the raw
+// fields, so the operator sees what the server would actually decide.
+export const adminInterviewsUsed = (
+  used: number,
+  limit: number,
+  unlimited: boolean,
+  // Sessions minted, conducted or not. Omitted where the caller has no mint count
+  // to show — the grant form echoes an allowance, not a row.
+  created?: number,
+): string => {
+  const quota = unlimited ? `${used} · no limit` : `${used} of ${limit}`;
+  // Only shown when it differs. "2 of 3 (2 started)" is noise; "1 of 3 (12
+  // started)" is the whole story, and printing the suffix unconditionally would
+  // bury the second in a column of the first.
+  return created !== undefined && created !== used
+    ? `${quota} (${created} started)`
+    : quota;
+};
+
+// The window selector's own labels. Hours rather than a date range, because the
+// window is relative to now and a range would go stale the moment it rendered.
+export const adminWindowLabel = (hours: number): string => {
+  if (hours === 1) return "Last hour";
+  if (hours === 24) return "Last 24 hours";
+  return `Last ${Math.round(hours / 24)} days`;
+};
+
+// What a chart says to a screen reader, which cannot read an SVG path.
+//
+// Names the range and the endpoints rather than every point. A series of 170
+// datapoints read aloud in full is not accessibility, it is a denial of service —
+// the shape and the extremes are what the sighted reader takes from it too.
+export const adminMetricAlt = (
+  label: string,
+  points: number,
+  min: number,
+  max: number,
+  latest: number,
+): string =>
+  `${label}: ${points} data points. Lowest ${min}, highest ${max}, most recent ${latest}.`;
+
+// Milliseconds are the emitted unit and almost never the readable one. A p95 of
+// 1430 is fine; a total billed stream time of 7,200,000 is not a number anyone
+// can sanity-check, which is why the Sonic duration alarm converts to minutes too.
+export const adminFormatMs = (value: number): string => {
+  if (value >= 60_000) return `${(value / 60_000).toFixed(1)} min`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(2)} s`;
+  return `${Math.round(value)} ms`;
+};
+
+// Counts are integers by nature but arrive as floats from a Sum over a period.
+// Rounded rather than truncated, and localised so a token count reads as 12,480.
+export const adminFormatCount = (value: number): string =>
+  Math.round(value).toLocaleString();
+
+// How many rows the table has LOADED, which is not how many accounts exist — the
+// listing is cursor-paginated, so the total is unknown until the last page.
+//
+// Says "loaded" for exactly that reason. This rendered as a bare "6" beside the
+// Load more button until it was looked at in a browser, where it read as a stray
+// number rather than as a count of anything.
+export const adminAccountsLoaded = (count: number): string =>
+  `${count.toLocaleString()} ${count === 1 ? "account" : "accounts"} loaded`;
 
 export const resumeThinDetail = (characters: number): string =>
   `We only extracted ${characters.toLocaleString()} characters. This usually means the PDF is a scan or an image. You can continue without it, or attach a text-based PDF.`;

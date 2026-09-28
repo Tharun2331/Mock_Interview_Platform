@@ -4,7 +4,7 @@
 > and public on GitHub — deliberately, as a record of how the build progressed.
 > The `.claude.local.md` entry in `.gitignore` is a different file and does not
 > match this one. Write nothing here you would not publish.
-> Updated as work progresses. Last updated: 2026-09-22 (worker loop + resume upload under test)
+> Updated as work progresses. Last updated: 2026-09-24 (admin surface + observability)
 
 ---
 
@@ -33,18 +33,27 @@ now load-bearing:
 **The one thing that has never been deployed is the application.** There is no
 ECS, so nothing runs outside a laptop. That is the whole of what remains.
 
-| Phase                                 | Status                                                                                          |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| 1 — Foundation + Planner              | ✅ Complete                                                                                     |
-| 2 — Resume + Auth + Database          | ✅ Complete                                                                                     |
-| 3 — WebSocket + Speech                | ✅ Complete (Redis dropped — see below)                                                         |
-| 4 — Sonic end-to-end                  | ✅ Complete                                                                                     |
-| 4.5 — Profile, PII redaction, erasure | ✅ Complete                                                                                     |
-| 5 — Evaluator + SQS                   | ✅ Complete — the `ecs` module moved to Phase 7, where it belongs                               |
-| 5.5 — Gap + Company Intel agents      | ✅ Complete — not in the original plan                                                          |
-| 6 — Coach                             | ✅ Complete **without RAG**, deliberately — see the phase below                                 |
-| 7 — Deploy + CI/CD + Observability    | 🔸 ~40% — CI gates every PR; no ECS, no CD, no alarms, prod empty                               |
-| Testing (cross-cutting)               | 🟢 1107 tests: 857 backend, 153 web, 97 shared. Backend 93.1% funcs / 95.3% lines (source only) |
+**Unrelated defect found while working here, NOT fixed — it needs your call.**
+`lib/config.ts` reads `interviewTestMode` as `env("INTERVIEW_TEST_MODE", "") === "false"`,
+so test mode turns on when the variable is the string `"false"` and stays off when
+it is `"true"`. That inverts the documented workflow in this file (which says to set
+`INTERVIEW_TEST_MODE=true`) and the comment in `__tests__/setup.ts` (which says the
+config tests for `"true"`). Commit 1a4cc96 changed it deliberately, so it may have
+been a quick way to disable the mode rather than a typo — the tests are unaffected
+either way, because `setup.ts` pins the variable to `""`.
+
+| Phase                                 | Status                                                                                  |
+| ------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1 — Foundation + Planner              | ✅ Complete                                                                             |
+| 2 — Resume + Auth + Database          | ✅ Complete                                                                             |
+| 3 — WebSocket + Speech                | ✅ Complete (Redis dropped — see below)                                                 |
+| 4 — Sonic end-to-end                  | ✅ Complete                                                                             |
+| 4.5 — Profile, PII redaction, erasure | ✅ Complete                                                                             |
+| 5 — Evaluator + SQS                   | ✅ Complete — the `ecs` module moved to Phase 7, where it belongs                       |
+| 5.5 — Gap + Company Intel agents      | ✅ Complete — not in the original plan                                                  |
+| 6 — Coach                             | ✅ Complete **without RAG**, deliberately — see the phase below                         |
+| 7 — Deploy + CI/CD + Observability    | 🔸 ~60% — CI gates every PR; alarms + admin surface written, not applied; no ECS, no CD |
+| Testing (cross-cutting)               | 🟢 1188 tests: 921 backend, 153 web, 118 shared                                         |
 
 **Next highest-leverage step: the `ecs` module.** It is the only thing between
 this and a URL somebody else can open, and it blocks every other Phase 7 item.
@@ -496,10 +505,176 @@ sweep, so a cache added without a line there outlives the account it belongs to
 
 ## Phase 7 — Deploy + CI/CD + Observability 🔸
 
+### Admin surface + observability ✅ code, ⏳ not applied (2026-09-24)
+
+Built as one unit because both halves sit behind the same `/admin` path and the
+same server-side check — `lib/adminAuth.ts` is written once and reused by the
+metrics route and the two user-management routes.
+
+**The plan for this called for a DynamoDB GSI on email, and that is not what was
+built.** `UserProfileSchema` has never stored an email — Cognito owns it, as the
+pool's `username_attributes` — so a GSI would have needed the field added, written
+on every profile upsert, backfilled out of Cognito for existing accounts, and only
+then indexed, as a second copy of the largest item in the table. Cognito
+`ListUsers` answers email→sub exactly, with no new stored field and nothing to keep
+in sync. It is also the only way to enumerate accounts at all: the base table has
+no keyed listing, so `GET /admin/users` against DynamoDB would be a `Scan`, which
+the task role deliberately withholds. Full reasoning in `lib/cognitoDirectory.ts`.
+
+**`unlimitedAccess` did not exist anywhere before this.** Not in any schema, not in
+any route, not in the rate limiter — so there was no attribute anyone was editing
+by hand. It is now a quota: `INTERVIEW_QUOTA.DEFAULT_SESSIONS` is 3, and an admin
+grants either a number (`sessionLimit`) or no cap (`unlimitedAccess`). Three
+states — ungranted, a number, unlimited — need two fields to stay distinguishable,
+because a single nullable number makes "no grant" and "a grant of zero" the same
+value and suspends every existing account. `resolveSessionAllowance` in
+`@repo/shared` is the only place they collapse, called by both the route that
+refuses an interview and the table that displays the quota.
+
+- [x] `lib/adminAuth.ts` — `RequireAdmin`, keyed on the `cognito:groups` claim.
+      **Returns 404, not 403**, on the reasoning `SessionAccessError` already
+      carries: a 403 confirms the route exists and names the admin API's path to
+      any signed-in candidate. The cost is that a real admin missing from the group
+      also sees a 404, which is why the refusal is logged with the subject
+- [x] `cognitoAuth.ts` reads `cognito:groups` — one source of group membership, on
+      a token the server already verifies. No extra call, no cache
+- [x] `lib/cognitoDirectory.ts` — `findUserByEmail`, `listDirectoryUsers`. The
+      ListUsers filter is refused rather than escaped on a quote or backslash: its
+      string literals are double-quoted with no documented escape
+- [x] `routes/admin.ts` — `POST /admin/unlimited-access`, `GET /admin/users`. The
+      cost-per-user field the plan sketched here was **dropped, not deferred** —
+      see the metrics note below
+- [x] Quota enforcement in `routes/preInterview.ts`. `claimInterviewSession` is
+      `ADD sessionsStarted :one` under a condition, claimed BEFORE the session is
+      created: a session that exists but was never counted is a free interview
+      repeatable by retrying, which is worse than a slot lost to a failed write
+- [x] `sessionsStarted` is a monotonic counter on the PROFILE item, **not** a count
+      of `SESSION#` rows. Those carry `expiresAt`, so a quota counted from them
+      would silently reset after `SESSION_RETENTION.DAYS` with nothing in the logs
+      saying why
+- [x] `lib/metrics.ts` — request latency/count/4xx/5xx, Sonic open latency, billed
+      stream duration, token usage and errors, interview starts and refusals
+- [x] `lib/sonic.ts` now reads the `usageEvent` it used to drop. Token totals are
+      **assigned, not accumulated** within a stream (Sonic reports running totals)
+      and **summed across** streams (a renewal is a new prompt, so its counters
+      restart). Getting that backwards overstates a long interview by roughly its
+      turn count
+- [x] `GET /admin/metrics` via `GetMetricData`, plus `ListMetrics` to discover which
+      route templates exist rather than hardcoding a list that drifts
+- [x] `modules/cloudwatch` — API and worker log groups, five alarms. `treat_missing_data`
+      is set explicitly on every one and differs by alarm; the default is wrong for
+      most of them
+- [x] `pages/admin.tsx` — grant form, account table, charts. Three independent
+      states, so a CloudWatch outage cannot hide the account table
+- [x] 81 new tests (1107 → 1188)
+- [ ] **Nothing is applied.** The Cognito group does not exist in AWS, so nobody is
+      an admin yet and every admin route correctly answers 404
+
+**Two things this found that were not in the plan.**
+
+**Per-user cost cannot come from CloudWatch, and the plan's Step 5 assumed it
+could.** CloudWatch metrics are aggregated; a per-user figure needs a per-user
+dimension, which is one billed metric per account forever, including for deleted
+ones. The aggregate spend graph is real and is built; the per-user column is not,
+and the honest place for it is token counts written onto the session record at
+interview end. That is a deliberate omission rather than a stub.
+
+**EMF means the charts read empty until ECS exists.** Metrics are emitted as
+structured log lines and extracted by CloudWatch Logs **at ingestion**, so on a
+laptop they are JSON on a terminal. `noData` is reported explicitly and the page
+says so in those words, because a bare "no data" reads as "your service handled no
+requests" and sends someone debugging an emitter that is working. The DLQ alarm
+reads an AWS-published metric and is the one alarm that works today — it is the
+control when the others look broken.
+
+**Verified in a real browser, without a real sign-in.** `/admin` sits behind
+`RequireAuth` and reads `cognito:groups` off the access token via
+`fetchAuthSession` — in-bundle JS, so request interception cannot reach it. The
+session is instead seeded into localStorage under the keys Amplify itself reads
+(`CognitoIdentityServiceProvider.<clientId>.<user>.accessToken` and friends);
+Amplify does not verify signatures client-side, so an unsigned token with a future
+`exp` is accepted locally. The four API routes are mocked at the network boundary,
+because the real server correctly 401s an unsigned token. Everything between those
+two boundaries is the real app — real router, real guards, real components, real
+Zod parsing of every response. Script in the session scratchpad; `addInitScript`
+rather than a post-load `evaluate`, because `AuthProvider` calls `getCurrentUser()`
+in a mount effect and tokens written afterwards arrive after the redirect.
+
+Confirmed that way: all six account-row variants render distinct copy
+(`12 · no limit`, `4 of 10`, `1 of 3`, `3 of 3`, `—`, `Disabled`); the grant form
+echoes the resolved allowance and surfaces the server's own 404 copy; the
+`noData` screen renders while the account table beside it still works (the
+three-independent-states design); the denial screen appears for a token without
+the group and the nav link is absent; at 375px the page has no horizontal scroll
+and the 674px table scrolls inside its own container; zero console errors.
+
+**Two UI defects found only by reading the accessibility tree and the rendered
+page**, neither reachable from types or tests:
+
+1. **An all-zero series announced "highest 1".** `MetricChart` used one `max` for
+   both the y-domain and the alt text, and the domain needs a `|| 1` guard or a
+   0–0 range divides by zero and lands every point at NaN. So the chart for a
+   healthy 5xx count told a screen-reader user its maximum was 1 — a value not in
+   the data, to the one reader who cannot see the flat line at the floor and check.
+   `dataMax` and `domainMax` are now separate.
+2. **The account table footer rendered a bare `6`.** No label, beside the Load
+   more button, reading as a stray number. Now "6 accounts loaded" — "loaded"
+   rather than a total, because the listing is cursor-paginated and the total is
+   unknown until the last page.
+
+**The quota was metering the wrong event, and `complete` meant two opposite
+things (fixed 2026-09-24).** Both found by using the product.
+
+`sessionsStarted` incremented at `POST /pre-interview` — when a session was
+MINTED. So pressing "Build my interview" and closing the tab spent an interview
+before the plan had rendered and before anyone spoke. What costs money is the
+Sonic stream, which starts later.
+
+Separately, `routes/interview.ts` sends a session with zero answers straight to
+`complete`, because its scoring pipeline genuinely is finished; one with answers
+goes `evaluating` → `complete`. **Both land on `complete`**, so a forty-minute
+interview and a two-second one were indistinguishable in the record.
+
+- **Charged on the first SCOREABLE answer**, not at creation. `chargeConductedSession`
+  does the `ADD`; `markSessionCharged` wins a conditional write on the session's
+  `chargedAt` first, which is the idempotency key — `recordAnswer` runs per answer,
+  so without it a fifteen-question interview would spend fifteen slots. Scoreable
+  rather than any answer, because a courtesy sign-off is recorded to the transcript
+  but is not an attempt at a question
+- **Pre-flight is now a read, not a claim.** The trade is stated in the route: two
+  tabs can both pass and both start. Neither the count nor the spend ceiling goes
+  wrong — each session charges exactly once when conducted — so the cost is one
+  extra interview at the boundary, against charging every abandoned session to
+  everybody
+- **`sessionsStarted` → `sessionsConducted` + `sessionsCreated`.** Two counters,
+  because the GAP is the diagnostic: 1 conducted against 12 created is someone
+  bouncing off the interview screen, which one number hid. Accounts metered under
+  the old rule restart from zero — correct, those counts were taken by a rule that
+  charged for sessions nobody conducted
+- **`endReason` and `answerCount` are persisted** on the session META, plus
+  `startedAt`/`endedAt`. The route always knew the reason — `shutdown(reason)`
+  receives it on every exit path — and wrote it to a log line and nowhere else.
+  `endReason: "disconnected"` with `answerCount: 0` is what "closed the tab"
+  actually looks like, and nothing could say that before. `wasInterviewConducted`
+  in @repo/shared is the one definition
+- Admin table shows `1 of 3 (12 started)`, and the suffix is suppressed when the
+  two agree so a healthy row stays quiet
+
+**A crash found by running the service, not by the type checker.** `req.baseUrl` is
+typed `string` by `@types/express` and is **undefined at runtime** when no mount
+matched — every genuine 404. Reading `.length` off it threw inside the
+`res.on("finish")` listener, which is an EventEmitter callback Express's error
+middleware cannot see, so the process died on any unmatched request. The
+instrumentation took down the service it was measuring. Fixed with a `typeof`
+guard, and the whole listener is now wrapped rather than only the emit inside it —
+the "nothing here may throw" rule has to hold at the outermost point where the
+module regains control. There is a regression test for the impossible shape.
+
 ### Terraform
 
 - [x] `modules/` — `cloudfront`, `cognito`, `dynamodb`, `iam`, `s3`, `sqs`,
-      `ssm`, `vpc`. All applied to dev
+      `ssm`, `vpc`. All applied to dev. **`cloudwatch` is written and validated but
+      NOT applied**
 - [x] ~~`ssm` carries the Tavily key; the server role has `ssm:GetParameter`
       plus `kms:Decrypt`~~ — **all three removed with Tavily.** `ssm` still
       carries the Google OAuth pair and the table name, but nothing in the
@@ -508,8 +683,12 @@ sweep, so a cache added without a line there outlives the account it belongs to
 - [ ] **`ecs` module — cluster, API service, Spot worker service.** The blocker:
       nothing else in this phase can land without it, and nothing runs outside a
       laptop until it does
-- [ ] `cloudwatch` module — log groups, alarms (error rate, latency, DLQ depth,
-      and Bedrock invocations — see the cost note below)
+- [x] ~~`cloudwatch` module — log groups, alarms~~ — **written 2026-09-24, not
+      applied.** Error rate, p95 latency, Sonic stream errors, Sonic billed minutes
+      (the leaked-stream detector CLAUDE.md asks for) and DLQ depth. Four of the
+      five read custom metrics that arrive via EMF at log ingestion, so they will
+      apply cleanly and sit in INSUFFICIENT_DATA until an `ecs` task ships logs to
+      the group. The DLQ alarm reads an AWS metric and works now
 - [ ] Extend `ssm` to cover **all** runtime config, not just secrets
 - [ ] `environments/prod/` — still five empty files (0 bytes each)
 

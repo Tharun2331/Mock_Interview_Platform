@@ -55,5 +55,15 @@ variable "eval_queue_arn" {
 
 variable "cognito_user_pool_arn" {
   type        = string
-  description = "ARN of the Cognito user pool the server may delete users from. Wired through the module output rather than reconstructed, so a pool replacement cannot leave this policy pointing at one that no longer exists."
+  description = "ARN of the Cognito user pool the server may delete users from and list users in. Wired through the module output rather than reconstructed, so a pool replacement cannot leave this policy pointing at one that no longer exists."
+}
+
+variable "api_log_group_arn" {
+  type        = string
+  description = "ARN of the API log group, from the cloudwatch module. This grant is the metric-publishing permission as well as the logging one: custom metrics are emitted as EMF log lines and extracted at ingestion, so without logs:PutLogEvents here every custom-metric alarm sits in INSUFFICIENT_DATA while the service runs fine."
+}
+
+variable "worker_log_group_arn" {
+  type        = string
+  description = "ARN of the Evaluator worker's log group, from the cloudwatch module. A separate group from the API's, so the worker role cannot write into the stream the API's alarms are extracted from — the same separation-of-roles reasoning applied to logs."
 }

@@ -28,6 +28,7 @@ import {
   isUnauthorized,
   isTimeout,
   isUnreachable,
+  serverMessage,
   statusOf,
   transportMessage,
 } from "@/lib/httpErrors";
@@ -186,11 +187,28 @@ export function StartInterview() {
         return;
       }
 
-      if (isUnauthorized(error) || isTimeout(error) || isUnreachable(error)) {
-        toast.error(transportMessage(error, MESSAGES.FORM_FAILED));
+      // The interview quota. Its own branch, above the transport checks, because
+      // without one it fell to the catch-all below — which is the GITHUB failure
+      // copy, and told a candidate who had simply run out of interviews to
+      // "check that GitHub URL and retry". They would have checked a URL that was
+      // never wrong, on a route that has not touched GitHub since the profile
+      // refactor moved scraping out of it.
+      //
+      // Prefers the server's own message, which names the remedy (ask for more
+      // access) and carries the resolved counts alongside it.
+      if (statusOf(error) === 403) {
+        toast.error(serverMessage(error) ?? MESSAGES.START_SESSION_LIMIT);
         return;
       }
-      toast.error(MESSAGES.FORM_FAILED);
+
+      if (isUnauthorized(error) || isTimeout(error) || isUnreachable(error)) {
+        toast.error(transportMessage(error, MESSAGES.START_FAILED_GENERIC));
+        return;
+      }
+      // Deliberately NOT FORM_FAILED. That string is about reading a GitHub
+      // profile and this route does not read one — it mints a session from
+      // material already stored. A catch-all must not name a cause it cannot know.
+      toast.error(MESSAGES.START_FAILED_GENERIC);
     }
   };
 

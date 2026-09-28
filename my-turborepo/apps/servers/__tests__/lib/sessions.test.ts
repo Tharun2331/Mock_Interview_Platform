@@ -34,6 +34,7 @@ import {
   deleteSessionData,
   deleteUserSessionRefs,
   finishInterview,
+  markSessionCharged,
   listUserSessionIds,
   loadPlannerInputs,
   recordAnswer,
@@ -581,7 +582,14 @@ describe("finishInterview", () => {
   it("only moves a session that is still in progress", async () => {
     ddb.on(UpdateCommand).resolves({});
 
-    await finishInterview({ sessionId: SESSION_ID, status: "complete" });
+    await finishInterview({
+      sessionId: SESSION_ID,
+      status: "complete",
+      // Required now that the outcome is persisted alongside the status.
+      // These cases are about the transition, so the pair is neutral.
+      endReason: "candidate_ended",
+      answerCount: 1,
+    });
 
     const input = ddb.commandCalls(UpdateCommand)[0]?.args[0].input;
     expect(input?.ConditionExpression).toBe("#status = :inProgress");
@@ -591,7 +599,14 @@ describe("finishInterview", () => {
   it("can mark a session failed", async () => {
     ddb.on(UpdateCommand).resolves({});
 
-    await finishInterview({ sessionId: SESSION_ID, status: "failed" });
+    await finishInterview({
+      sessionId: SESSION_ID,
+      status: "failed",
+      // Required now that the outcome is persisted alongside the status.
+      // These cases are about the transition, so the pair is neutral.
+      endReason: "candidate_ended",
+      answerCount: 1,
+    });
 
     expect(
       ddb.commandCalls(UpdateCommand)[0]?.args[0].input
@@ -606,7 +621,14 @@ describe("finishInterview", () => {
   it("can park a session at evaluating while its answers are scored", async () => {
     ddb.on(UpdateCommand).resolves({});
 
-    await finishInterview({ sessionId: SESSION_ID, status: "evaluating" });
+    await finishInterview({
+      sessionId: SESSION_ID,
+      status: "evaluating",
+      // Required now that the outcome is persisted alongside the status.
+      // These cases are about the transition, so the pair is neutral.
+      endReason: "candidate_ended",
+      answerCount: 1,
+    });
 
     const input = ddb.commandCalls(UpdateCommand)[0]?.args[0].input;
     expect(input?.ExpressionAttributeValues?.[":status"]).toBe("evaluating");
@@ -771,5 +793,93 @@ describe("attachPlan", () => {
     ddb.on(UpdateCommand).rejects(new Error("throughput exceeded"));
 
     await expect(attachPlan(ARGS)).rejects.toThrow(ServiceError);
+  });
+});
+
+// The once-per-session charge marker, and the outcome fields.
+//
+// Both exist because of one defect with two halves: the quota counted sessions
+// MINTED rather than conducted, so abandoning one at the plan screen spent an
+// interview; and `status` could not tell an abandoned session from a scored one,
+// because a session with nothing to score is genuinely finished and lands on
+// `complete` exactly like a completed round.
+describe("markSessionCharged", () => {
+  it("claims with a conditional write, not a read-then-write", async () => {
+    ddb.on(UpdateCommand).resolves({});
+
+    await markSessionCharged({ sessionId: SESSION_ID });
+
+    const input = ddb.commandCalls(UpdateCommand)[0]?.args[0].input;
+    // DynamoDB arbitrates. Two answers landing together would both read
+    // "unmarked" under a read-then-write and both charge, so the condition and
+    // the write have to be one operation.
+    expect(input?.ConditionExpression).toBe("attribute_not_exists(chargedAt)");
+    expect(input?.UpdateExpression).toContain("chargedAt");
+  });
+
+  it("returns true for the first caller", async () => {
+    ddb.on(UpdateCommand).resolves({});
+    expect(await markSessionCharged({ sessionId: SESSION_ID })).toBe(true);
+  });
+
+  it("returns false — not throws — once already charged", async () => {
+    ddb
+      .on(UpdateCommand)
+      .rejects(
+        new ConditionalCheckFailedException({ $metadata: {}, message: "no" }),
+      );
+
+    // The normal case on every answer after the first. `recordAnswer` runs per
+    // answer, so a throw here would surface an exception fourteen times in a
+    // fifteen-question interview for something working exactly as designed.
+    expect(await markSessionCharged({ sessionId: SESSION_ID })).toBe(false);
+  });
+
+  it("throws on a genuine failure, so a lost charge is not silent", async () => {
+    ddb.on(UpdateCommand).rejects(new Error("ProvisionedThroughputExceeded"));
+
+    // Must NOT collapse into `false`. A throughput error reported as "already
+    // charged" means the interview is never counted and nobody finds out.
+    expect(markSessionCharged({ sessionId: SESSION_ID })).rejects.toThrow();
+  });
+});
+
+describe("finishInterview outcome fields", () => {
+  it("persists the end reason and the answer count", async () => {
+    ddb.on(UpdateCommand).resolves({});
+
+    await finishInterview({
+      sessionId: SESSION_ID,
+      status: "complete",
+      endReason: "disconnected",
+      answerCount: 0,
+    });
+
+    const values =
+      ddb.commandCalls(UpdateCommand)[0]?.args[0].input
+        .ExpressionAttributeValues;
+
+    // THE pair that answers "did they sit an interview or close the tab". Before
+    // this, both were thrown away — the reason into a log line, the count into a
+    // local variable — and `complete` was all that survived.
+    expect(values?.[":endReason"]).toBe("disconnected");
+    expect(values?.[":answerCount"]).toBe(0);
+    expect(values?.[":endedAt"]).toBeDefined();
+  });
+
+  it("still only moves a session that is in progress", async () => {
+    // The guard does not loosen just because the update writes more fields.
+    ddb.on(UpdateCommand).resolves({});
+
+    await finishInterview({
+      sessionId: SESSION_ID,
+      status: "evaluating",
+      endReason: "interviewer_ended",
+      answerCount: 8,
+    });
+
+    expect(
+      ddb.commandCalls(UpdateCommand)[0]?.args[0].input.ConditionExpression,
+    ).toBe("#status = :inProgress");
   });
 });

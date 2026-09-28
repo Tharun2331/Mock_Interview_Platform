@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanup, render, screen } from "@testing-library/react";
 // The SHARED stubs, not local mock.module calls. Each of these modules is
 // registered exactly once for the whole process — see the helpers' headers.
-import "../helpers/amplifyAuthStub";
+import {
+  resetAmplifyAuthStub,
+  setAmplifyGroups,
+} from "../helpers/amplifyAuthStub";
 import {
   COMPLETE_PROFILE as COMPLETE,
   resetProfileStub,
@@ -22,7 +25,10 @@ function renderHeader(path = "/start") {
   );
 }
 
-beforeEach(resetProfileStub);
+beforeEach(() => {
+  resetProfileStub();
+  resetAmplifyAuthStub();
+});
 
 afterEach(cleanup);
 
@@ -150,5 +156,53 @@ describe("the rest of the header", () => {
     expect(
       screen.getByRole("link", { name: MESSAGES.PROFILE_NAV }),
     ).toBeDefined();
+  });
+});
+
+// The admin link, and the reason this block exists at all.
+//
+// Header reads the `cognito:groups` claim through `fetchAuthSession` to decide
+// whether to render it. When that import was added, the shared amplify stub
+// exported only `signOut`, so this whole FILE stopped loading on Linux CI with
+// "Export named 'fetchAuthSession' not found" — nine tests silently ceased to
+// exist while the suite still reported green, and it passed on Windows because
+// the mock key does not match there.
+//
+// These tests are what make that impossible to repeat quietly: they fail if the
+// stub loses `fetchAuthSession`, rather than vanishing along with the file.
+describe("the admin link", () => {
+  it("is hidden for a candidate who is not in the admin group", async () => {
+    setAmplifyGroups([]);
+    setProfileState({ status: "ready", profile: COMPLETE });
+    renderHeader();
+
+    // `findBy` would wait for something that must never appear. The link is
+    // rendered from an async claim read, so the absence is asserted after the
+    // other nav items have settled.
+    await screen.findByRole("link", { name: MESSAGES.HISTORY_NAV });
+    expect(screen.queryByRole("link", { name: MESSAGES.ADMIN_NAV })).toBeNull();
+  });
+
+  it("appears for a member of the admin group", async () => {
+    setAmplifyGroups(["admins"]);
+    setProfileState({ status: "ready", profile: COMPLETE });
+    renderHeader();
+
+    const link = await screen.findByRole("link", { name: MESSAGES.ADMIN_NAV });
+    expect(link.getAttribute("href")).toBe("/admin");
+  });
+
+  it("does not depend on the candidate having onboarded", async () => {
+    // Gated on the group claim alone, NOT on `showHistory`. An operator has no
+    // reason to have uploaded a resume, and tying the two would hide the admin
+    // link from exactly the person who needs it.
+    setAmplifyGroups(["admins"]);
+    setProfileState({ status: "ready", profile: null });
+    renderHeader();
+
+    await screen.findByRole("link", { name: MESSAGES.ADMIN_NAV });
+    expect(
+      screen.queryByRole("link", { name: MESSAGES.HISTORY_NAV }),
+    ).toBeNull();
   });
 });

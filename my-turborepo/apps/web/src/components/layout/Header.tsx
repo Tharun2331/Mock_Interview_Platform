@@ -1,13 +1,14 @@
 import { signOut } from "aws-amplify/auth";
 import { NavLink, useNavigate } from "react-router";
 import { toast } from "sonner";
-import { CompassIcon, TrendingUpIcon } from "lucide-react";
+import { CompassIcon, ShieldIcon, TrendingUpIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/BrandMark";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/errors";
 import { useProfile } from "@/lib/profile";
+import { useIsAdmin } from "@/lib/useIsAdmin";
 import { MESSAGES } from "@/lib/messages";
 
 // App chrome, and deliberately quiet. Everything below this bar is a system
@@ -30,6 +31,10 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 export function Header() {
   const navigate = useNavigate();
   const profile = useProfile();
+  // Null while the access token is being read. Not gated on `showHistory`: an
+  // admin has no reason to have onboarded as a candidate, and tying the two would
+  // hide the admin link from an operator who never uploaded a resume.
+  const isAdmin = useIsAdmin();
 
   // Keyed on the server's own `complete` boolean — the same flag RequireProfile
   // gates on — so the link and the guard can never disagree about who is
@@ -90,6 +95,27 @@ export function Header() {
                 the most generic mark available. */}
             <CompassIcon aria-hidden className="size-4 sm:hidden" />
             <span className="sr-only sm:not-sr-only">{MESSAGES.COACH_NAV}</span>
+          </NavLink>
+        ) : null}
+
+        {/* Admin, and the only nav item that is a glyph at EVERY width rather
+            than below `sm` only.
+
+            The comment at the top of this file records that four items with their
+            labels visible already overflow the bar at 375px. A fifth word would
+            make that worse for the one person who needs it and for nobody else, so
+            this destination trades its label for a glyph permanently — the
+            sr-only span keeps the accessible name, so the bar is narrower without
+            the link becoming unnameable.
+
+            `=== true` rather than truthiness: useIsAdmin returns null while the
+            token is being read, and a truthiness check would render nothing for
+            that instant either way while reading as though null meant "no". It
+            means "not yet". */}
+        {isAdmin === true ? (
+          <NavLink to="/admin" className={navLinkClass}>
+            <ShieldIcon aria-hidden className="size-4" />
+            <span className="sr-only">{MESSAGES.ADMIN_NAV}</span>
           </NavLink>
         ) : null}
 

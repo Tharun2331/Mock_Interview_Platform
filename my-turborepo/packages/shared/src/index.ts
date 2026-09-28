@@ -7,3 +7,4 @@ export * from "./schemas/coach";
 export * from "./schemas/profile";
 export * from "./schemas/preInterview";
 export * from "./schemas/auth";
+export * from "./schemas/admin";

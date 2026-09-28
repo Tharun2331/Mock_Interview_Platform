@@ -46,6 +46,17 @@ export const COMPLETE_PROFILE: ProfileView = {
   profileVersion: 3,
   complete: true,
   updatedAt: "2026-09-09T12:00:00.000Z",
+  // A fresh account's quota: three sessions granted by default, none used. Set
+  // explicitly rather than spread from a helper so a test that cares about the
+  // exhausted case overrides one field and reads as the exception it is.
+  sessions: {
+    unlimited: false,
+    limit: 3,
+    used: 0,
+    remaining: 3,
+    exhausted: false,
+    created: 0,
+  },
 };
 
 export function setProfileState(state: ProfileState): void {

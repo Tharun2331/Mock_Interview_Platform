@@ -35,10 +35,17 @@ export const AuthMiddleware = async (
     // `scope` is optional on the payload type, and reading `.split` off an
     // absent claim would throw here — caught below and turned into a 401, which
     // would reject a perfectly valid user. Absent scope means no scopes.
+    //
+    // `cognito:groups` is read here rather than in the admin middleware so the
+    // token is the single source of group membership: every route sees the same
+    // value, and a second reader could not re-verify a token it never held.
+    // Cognito omits the claim entirely for a user in no groups — which is every
+    // candidate — so absence is the normal case and means no groups.
     req.user = {
       id: payload.sub,
       username: payload.username,
       scopes: payload.scope?.split(" ") ?? [],
+      groups: payload["cognito:groups"] ?? [],
     };
 
     next();

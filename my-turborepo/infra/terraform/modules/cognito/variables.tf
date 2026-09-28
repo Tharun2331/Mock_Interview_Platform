@@ -33,3 +33,14 @@ variable "aws_acm_custom_domain" {
   description = "Domain name created for Cognito Auth"
   default     = "auth.tharunsekar.xyz"
 }
+
+# Defaulted, because this name is safe in every environment: it is an internal
+# identifier, not a resource name that could collide across accounts, and the
+# group is scoped to its own user pool. It MUST match `adminGroupName` in
+# apps/servers/lib/config.ts — a mismatch is not an error at boot, it silently
+# means no request ever passes RequireAdmin.
+variable "admin_group_name" {
+  type        = string
+  description = "Cognito group whose members are permitted to reach the admin API"
+  default     = "admins"
+}

@@ -90,4 +90,33 @@ resource "aws_cognito_user_pool_client" "client" {
   depends_on = [aws_cognito_identity_provider.google]
 }
 
+# 8. Admin group.
+#
+# Membership in this group is the whole of the admin authorisation model. Cognito
+# puts it on the access token as `cognito:groups`, which the server already
+# verifies for every request, so `lib/adminAuth.ts` needs no extra API call, no
+# cache, and no second source of truth.
+#
+# The alternative considered was an ADMIN_USER_IDS allowlist in the server's
+# config. Rejected because membership would then be a deploy: adding an admin
+# means editing an environment variable and restarting the service, and the list
+# is written in opaque Cognito subs that nobody can read back.
+#
+# **Terraform deliberately does not manage membership.** There is an
+# `aws_cognito_user_in_group` resource and it is not used here, because putting a
+# member in state means the person's Cognito username sits in a plaintext state
+# file and every membership change becomes an apply against live auth. The group
+# is infrastructure; who is in it is an operational act:
+#
+#   aws cognito-idp admin-add-user-to-group \
+#     --user-pool-id <pool id> --username <email> --group-name admins
+#
+# `precedence` is unset on purpose. It only matters for resolving the IAM role
+# claim when a user belongs to several groups, and there is exactly one group.
+resource "aws_cognito_user_group" "admins" {
+  name         = var.admin_group_name
+  user_pool_id = aws_cognito_user_pool.pool.id
+  description  = "Members reach the PrepPilot admin API (${var.environment})"
+}
+
   

@@ -85,6 +85,35 @@ export function serverFailure(error: unknown): ServerFailure | null {
 // The transport-level fallbacks every call site shares. Server-authored
 // messages are handled by the caller, because only the caller knows which field
 // they belong beside.
+// The candidate usernames from a 409 the admin grant route returns when an email
+// matches more than one Cognito identity — which a federated sign-in makes
+// possible on an address a native account already uses.
+//
+// Null for every other error, including a 409 without the array, so the caller
+// falls through to ordinary message handling rather than rendering an empty
+// disambiguation list.
+//
+// Narrowed with runtime checks rather than a cast: this is a parsed JSON body from
+// the wire, and `data` is `unknown` by construction.
+export function ambiguousUsernames(error: unknown): string[] | null {
+  if (statusOf(error) !== 409) return null;
+
+  if (!axios.isAxiosError(error)) return null;
+  const data: unknown = error.response?.data;
+  if (typeof data !== "object" || data === null) return null;
+
+  const names: unknown = (data as { usernames?: unknown }).usernames;
+  if (!Array.isArray(names)) return null;
+
+  const usernames = names.filter(
+    (name): name is string => typeof name === "string" && name.length > 0,
+  );
+
+  // An empty array after filtering is not a usable disambiguation prompt — it
+  // would render "pick one of:" followed by nothing.
+  return usernames.length > 0 ? usernames : null;
+}
+
 export function transportMessage(error: unknown, fallback: string): string {
   if (isUnauthorized(error)) return MESSAGES.FORM_SESSION_EXPIRED;
   if (isTimeout(error)) return MESSAGES.FORM_TIMED_OUT;

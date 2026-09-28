@@ -32,6 +32,7 @@ import {
   type QuestionType,
   type SessionMeta,
   type SessionStatus,
+  type SessionEndReason,
 } from "@repo/shared";
 import { SECONDS_PER_DAY, SESSION_RETENTION } from "./constants";
 import { dynamoClient, parseItem, requireTable } from "./dynamo";
@@ -498,12 +499,28 @@ export async function recordAnswer(args: {
 export async function finishInterview(args: {
   sessionId: string;
   status: "evaluating" | "complete" | "failed";
+  // What actually happened, as opposed to where the scoring pipeline got to.
+  //
+  // `status` cannot answer this and was being read as if it could: a session that
+  // recorded answers ends `evaluating`, one that was abandoned ends `complete`
+  // immediately — because there is genuinely nothing left to score — and both
+  // arrive at `complete`. So an interview someone sat for forty minutes and one
+  // they closed after two seconds were indistinguishable in the record, and the
+  // admin table counted them the same.
+  //
+  // The route has always known both values. `shutdown(reason)` receives the reason
+  // on every exit path and wrote it to a log line; `recorded.length` is the answer
+  // count it already computed to decide what to enqueue. Neither was persisted.
+  endReason: SessionEndReason;
+  answerCount: number;
 }): Promise<void> {
   await dynamoClient.send(
     new UpdateCommand({
       TableName: requireTable(),
       Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.META },
-      UpdateExpression: "SET #status = :status",
+      UpdateExpression:
+        "SET #status = :status, endReason = :endReason, " +
+        "answerCount = :answerCount, endedAt = :endedAt",
       // Only from in_progress, so a late close cannot drag a session that has
       // already moved on to evaluating back to complete.
       ConditionExpression: "#status = :inProgress",
@@ -511,9 +528,51 @@ export async function finishInterview(args: {
       ExpressionAttributeValues: {
         ":status": args.status,
         ":inProgress": "in_progress",
+        ":endReason": args.endReason,
+        ":answerCount": args.answerCount,
+        ":endedAt": new Date().toISOString(),
       },
     }),
   );
+}
+
+// Claims the right to charge this session against the candidate's quota, once.
+//
+// Returns true for exactly one caller, ever, per session. `recordAnswer` runs per
+// answer and the charge happens on the first SCOREABLE one, so without a marker a
+// fifteen-question interview would spend fifteen slots — and with a read-then-write
+// marker, two answers landing together would both read "unmarked" and both charge.
+//
+// `attribute_not_exists(chargedAt)` makes DynamoDB itself arbitrate: the condition
+// and the write are one operation, so concurrent callers cannot both win. Same
+// election as `attribute_not_exists(averages)` on the evaluation rollup, and for
+// the same reason — it is already the once-only signal, so nothing else needs to be.
+//
+// A false return is the normal case after the first answer, not a failure.
+export async function markSessionCharged(args: {
+  sessionId: string;
+}): Promise<boolean> {
+  try {
+    await dynamoClient.send(
+      new UpdateCommand({
+        TableName: requireTable(),
+        Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.META },
+        UpdateExpression: "SET chargedAt = :now",
+        ConditionExpression: "attribute_not_exists(chargedAt)",
+        ExpressionAttributeValues: { ":now": new Date().toISOString() },
+      }),
+    );
+  } catch (error) {
+    // Already charged. Expected on every answer after the first.
+    if (error instanceof ConditionalCheckFailedException) return false;
+    throw new ServiceError(
+      `${MESSAGES.SESSION_UPDATE_FAILED} — ${
+        error instanceof Error ? error.message : "unknown"
+      }`,
+    );
+  }
+
+  return true;
 }
 
 // The last transition: every answer has been scored, so the session leaves
@@ -645,7 +704,11 @@ export async function startInterview(args: {
       new UpdateCommand({
         TableName: requireTable(),
         Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.META },
-        UpdateExpression: "SET #status = :inProgress",
+        // `startedAt` is stamped here, not at creation. The gap between
+        // `createdAt` and this is a candidate reading their plan, and it can be
+        // days — so measuring an interview's length from `createdAt` would report
+        // nonsense, and "did they ever actually begin" would be unanswerable.
+        UpdateExpression: "SET #status = :inProgress, startedAt = :now",
         // `ready` only. A session still `planning` has no plan to interview
         // against, and one already `in_progress` is being held by another
         // connection.
@@ -656,6 +719,7 @@ export async function startInterview(args: {
           ":inProgress": "in_progress",
           ":ready": "ready",
           ":userId": args.userId,
+          ":now": new Date().toISOString(),
         },
         // Returns the whole item so the caller gets the plan without a second
         // read — the plan is needed immediately to build the system prompt.

@@ -1,9 +1,10 @@
 import { ulid } from "ulid";
 import { Router } from "express";
-import { isProfileComplete } from "@repo/shared";
+import { isProfileComplete, resolveSessionAllowance } from "@repo/shared";
 import { ProfileStateError, ServiceError } from "../lib/errors";
 import { MESSAGES } from "../lib/messages";
-import { getProfile } from "../lib/profile";
+import { recordInterviewSession } from "../lib/metrics";
+import { getProfile, recordSessionCreated } from "../lib/profile";
 import { createSession } from "../lib/sessions";
 
 // Starts an interview session from the candidate's stored profile.
@@ -59,6 +60,50 @@ preInterviewRouter.post("/", async (req, res) => {
       return;
     }
 
+    // The interview quota, CHECKED here and charged later.
+    //
+    // This used to claim a slot atomically at this point, which was the bug: a
+    // candidate who pressed "Build my interview" and closed the tab spent an
+    // interview before the plan had rendered and before anyone had spoken. The
+    // slot is now charged on the first scoreable answer — see
+    // `chargeConductedSession` — so this is purely a pre-flight refusal.
+    //
+    // It has to happen here rather than at the socket because this is the request
+    // that decides an interview will exist. Refusing at the WebSocket would mean a
+    // candidate reaching a loaded interview screen before being told no.
+    //
+    // The trade from dropping the atomic claim, stated plainly: two tabs can both
+    // pass this check and both start. Neither the count nor the spend ceiling goes
+    // wrong — each session still charges exactly once, when it is conducted — so
+    // the cost is one extra interview at the boundary, against charging every
+    // abandoned session to everybody. That is the better side to err on.
+    const allowance = resolveSessionAllowance({
+      unlimitedAccess: profile.unlimitedAccess,
+      sessionLimit: profile.sessionLimit,
+      sessionsConducted: profile.sessionsConducted,
+    });
+
+    // 403, not 429. A 429 means "slow down and retry", which is the opposite of
+    // what is true here — no amount of waiting returns a session, and a client
+    // honouring Retry-After would poll forever. This is a policy refusal of a
+    // well-formed request, which is what 403 is for. The body names the remedy
+    // (ask for more) because there is no payment path to send anyone to.
+    if (allowance.exhausted) {
+      console.log(
+        `[pre-interview] refused ${userId}: quota exhausted ` +
+          `(${allowance.used}/${allowance.limit})`,
+      );
+      // Counted as a refusal. The pair of series matters more than either half:
+      // refusals climbing while starts stay flat is the signal that the default
+      // quota is too tight, and neither number says that on its own.
+      recordInterviewSession({ started: false });
+      res.status(403).json({
+        message: MESSAGES.SESSION_LIMIT_REACHED,
+        sessions: allowance,
+      });
+      return;
+    }
+
     // Copied into the session rather than read from the profile at plan time,
     // deliberately. INPUTS is a snapshot: an interview was conducted against
     // the material as it stood when it started, and a candidate who updates
@@ -73,6 +118,30 @@ preInterviewRouter.post("/", async (req, res) => {
       githubUsername: profile.githubUsername ?? null,
       profileVersion: profile.profileVersion,
     });
+
+    // The display-only mint counter. Deliberately NOT the quota: it counts
+    // sessions created, including ones nobody ever conducts, and the gap between
+    // it and `sessionsConducted` is what makes repeated abandonment visible in the
+    // admin table instead of silently spending someone's allowance.
+    //
+    // Failure is logged and swallowed. A wrong number in an admin column is not
+    // worth failing an interview the candidate is entitled to — and unlike the
+    // charge, nothing gates on this.
+    try {
+      await recordSessionCreated({ userId });
+    } catch (error) {
+      console.error(
+        `[pre-interview] ${sessionId} created but the mint counter did not move — ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
+
+    // Emitted after createSession. A session that failed to create is not a
+    // started interview, and counting it as one would make this series disagree
+    // with the session rows in DynamoDB — which are what any real accounting
+    // would be reconciled against.
+    recordInterviewSession({ started: true });
 
     res.json({ sessionId });
   } catch (error) {

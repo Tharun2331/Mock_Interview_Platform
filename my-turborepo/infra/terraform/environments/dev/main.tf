@@ -8,6 +8,51 @@ module "iam" {
   sessions_table_arn    = module.dynamodb.table_arn
   cognito_user_pool_arn = module.cognito.cognito_user_pool_arn
   eval_queue_arn        = module.sqs.eval_queue_arn
+
+  # Two separate groups, never one. Custom metrics are extracted from log content,
+  # so write access to the API's group is write access to the metrics its alarms
+  # fire on — see the statements in the iam module.
+  api_log_group_arn    = module.cloudwatch.api_log_group_arn
+  worker_log_group_arn = module.cloudwatch.worker_log_group_arn
+}
+
+# Log groups and alarms.
+#
+# Ordered after the metrics exist in the application, deliberately: writing alarms
+# against metric names before anything emits them means guessing at names, and a
+# guessed name does not fail — the alarm sits in INSUFFICIENT_DATA looking
+# configured. Every metric named in this module is one apps/servers/lib/metrics.ts
+# actually emits.
+#
+# **What works today and what does not.** The DLQ alarm reads an AWS-published
+# metric and is live now. The other four read custom metrics that arrive via EMF
+# log lines, and nothing writes to the log group until an `ecs` module points a
+# task at it — so they will apply cleanly and sit in INSUFFICIENT_DATA until then.
+# That is expected, not a misconfiguration.
+#
+# Cost: log ingestion and storage only, and storage is the one that recurs —
+# hence the explicit 30-day retention rather than CloudWatch's "never expire"
+# default. Alarms are $0.10/month each, so five is $0.50. Custom metrics are
+# $0.30/metric/month, and the dimension design in lib/constants.ts is what keeps
+# that count in the low tens rather than unbounded — read the note there before
+# adding a dimension.
+module "cloudwatch" {
+  source      = "../../modules/cloudwatch"
+  environment = var.environment
+
+  # What the service sets APP_ENV to, which is what the metric dimension carries.
+  # Separate from `environment` on purpose — see the variable's description — but
+  # the same value here, because dev's service reports as "dev".
+  metric_dimension_value = var.environment
+
+  eval_dlq_name = module.sqs.eval_dlq_name
+
+  # No alarm_actions in dev. An SNS topic with no confirmed subscription notifies
+  # nobody while making every alarm look wired up, and dev is where a false sense
+  # of coverage is cheapest to acquire and most expensive to keep. The alarms still
+  # record state and still show red in the console, which is what dev needs.
+  # prod should set this to a real topic ARN with a confirmed subscription.
+  alarm_actions = []
 }
 
 # The evaluation queue and its dead-letter queue.
