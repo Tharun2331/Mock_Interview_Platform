@@ -15,10 +15,38 @@ import {
   SessionAccessError,
   SessionStateError,
 } from "../lib/errors";
+import { budgetRefusalMessage, spendModelCall } from "../lib/budget";
 import { MESSAGES } from "../lib/messages";
 import { attachPlan, loadPlannerInputs } from "../lib/sessions";
 
 export const planRouter = Router();
+
+// Fire-and-forget, gated on the spend budgets. Never throws and is never
+// awaited: the plan response must not wait on, or fail because of, an agent it
+// does not read.
+function withBudget(
+  label: string,
+  userId: string,
+  sessionId: string,
+  run: () => Promise<void>,
+): void {
+  void (async () => {
+    try {
+      const verdict = await spendModelCall({ userId, sessionId });
+      if (verdict !== "ok") {
+        console.log(`[plan] ${sessionId} skipped ${label}: ${verdict}`);
+        return;
+      }
+      await run();
+    } catch (error) {
+      console.error(
+        `[plan] ${sessionId} ${label} budget check failed — ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
+  })();
+}
 
 planRouter.post("/", async (req, res) => {
   const parsed = PlanRequestSchema.safeParse(req.body);
@@ -102,6 +130,19 @@ planRouter.post("/", async (req, res) => {
     }
 
     if (result === undefined) {
+      // Spent only on a cache miss: a cached plan costs nothing, so it draws
+      // nothing from either budget. Refused BEFORE the Bedrock call, so a
+      // candidate re-planning in a loop hits a wall instead of the bill.
+      const verdict = await spendModelCall({
+        userId,
+        sessionId: parsed.data.sessionId,
+      });
+      if (verdict !== "ok") {
+        stage(`refused (${verdict})`);
+        res.status(429).json({ message: budgetRefusalMessage(verdict) });
+        return;
+      }
+
       stage("calling planner");
 
       result = await runPlanner({
@@ -158,13 +199,20 @@ planRouter.post("/", async (req, res) => {
     // Skipped entirely without a job description. Calling the model with an
     // empty posting would spend tokens to produce buckets for requirements that
     // do not exist.
+    //
+    // Each spends from the same budgets as the Planner, and a refusal skips the
+    // agent silently: the plan is what the candidate asked for, and the
+    // interview runs without targeting rather than failing.
     if (parsed.data.jobDescription !== undefined) {
-      void analyseGap({
-        sessionId: parsed.data.sessionId,
-        jobDescription: parsed.data.jobDescription,
-        resumeText: inputs.resumeText ?? "",
-        githubSummary: summariseRepos(inputs.repos),
-      });
+      const jobDescription = parsed.data.jobDescription;
+      withBudget("gap", userId, parsed.data.sessionId, () =>
+        analyseGap({
+          sessionId: parsed.data.sessionId,
+          jobDescription,
+          resumeText: inputs.resumeText ?? "",
+          githubSummary: summariseRepos(inputs.repos),
+        }),
+      );
 
       // Company Intel, same fire-and-forget treatment and gated behind the
       // posting as well as the company name. Nested rather than checked
@@ -172,11 +220,14 @@ planRouter.post("/", async (req, res) => {
       // posting means no Gap agent AND no Company Intel, so a session cannot
       // end up shaped by a company's reputation with nothing to aim it at.
       if (parsed.data.companyName !== undefined) {
-        void researchCompany({
-          sessionId: parsed.data.sessionId,
-          company: parsed.data.companyName,
-          notes: parsed.data.companyNotes,
-        });
+        const company = parsed.data.companyName;
+        withBudget("intel", userId, parsed.data.sessionId, () =>
+          researchCompany({
+            sessionId: parsed.data.sessionId,
+            company,
+            notes: parsed.data.companyNotes,
+          }),
+        );
       }
     }
 

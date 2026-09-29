@@ -89,9 +89,13 @@ export type SessionAllowance = {
 //
 // `sessionsConducted` is a monotonic counter on the profile item — NOT a count of
 // SESSION# rows, which carry a TTL and would let the quota silently reset as a
-// candidate's history aged out. It counts interviews actually CONDUCTED, charged
-// on the first scoreable answer; sessions merely minted are counted separately by
+// candidate's history aged out. It counts interviews actually CONDUCTED, claimed
+// atomically when the Sonic stream opens (and refunded if the interview ends at
+// once with nothing scoreable); sessions merely minted are counted separately by
 // `sessionsCreated` and meter nothing.
+//
+// Mostly "monotonic": the one decrement is that refund, which can only undo a
+// claim this same connection made.
 export function resolveSessionAllowance(args: {
   unlimitedAccess: boolean;
   sessionLimit: number | undefined;

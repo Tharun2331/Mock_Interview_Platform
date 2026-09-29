@@ -31,6 +31,11 @@ export const KEY_PREFIX = {
   // rollup living at SESSION#<sid>/SUMMARY. Different partition, different
   // purpose: that one is the scoring denominator, this one is a history card.
   USER_SUMMARY: "SUMMARY#",
+  // The shared API rate limiter's window counter, one item per limiter key
+  // (normally a Cognito subject). Its own partition rather than a row under
+  // USER#<uid>, because the limiter also keys unauthenticated callers by IP and
+  // those have no user partition to live in.
+  RATE_LIMIT: "RATELIMIT#",
 } as const;
 
 // Fixed sort keys, as opposed to the prefixed ones above.
@@ -63,6 +68,12 @@ export const SORT_KEY = {
   EVAL_SUMMARY: "SUMMARY",
   PROFILE: "PROFILE",
   PLAN: "PLAN",
+  // Today's model-call count for a candidate, under USER#<uid>. One item that
+  // resets itself when the day changes, rather than one per day, so it never
+  // accumulates and erasure has exactly one key to delete.
+  USAGE: "USAGE",
+  // The rate limiter's window, under RATELIMIT#<key>.
+  RATE_LIMIT_WINDOW: "WINDOW",
 } as const;
 
 // A self-describing `type` on every item, independent of its keys.
@@ -98,6 +109,8 @@ export const ITEM_TYPE = {
   USER_PROFILE: "user_profile",
   CACHED_PLAN: "cached_plan",
   CACHED_COACH: "cached_coach",
+  USER_USAGE: "user_usage",
+  RATE_LIMIT_WINDOW: "rate_limit_window",
 } as const;
 
 export const sessionPk = (sessionId: string): string =>
@@ -259,13 +272,14 @@ export const SessionMetaSchema = z.object({
 
   endReason: SessionEndReasonSchema.optional(),
 
-  // When this session was charged against the candidate's quota, written once.
+  // When this session was charged against the candidate's quota.
   //
-  // Its presence is the idempotency key: the quota is charged on the FIRST
-  // scoreable answer, and `recordAnswer` runs per answer, so without a marker a
-  // fifteen-question interview would bill fifteen slots. Conditioned on
-  // `attribute_not_exists`, so exactly one write can win no matter how many
-  // answers land at once.
+  // Written by `startInterview` in the same update that moves the session to
+  // `in_progress`, because the slot is claimed immediately before it. Removed by
+  // `finishInterview` when the slot is refunded (an interview that ended inside
+  // the refund window with nothing scoreable), so its presence on a finished
+  // session means the interview counted. A record, not an enforcement point: the
+  // counter on the PROFILE item is what the quota reads.
   chargedAt: z.iso.datetime().optional(),
 });
 

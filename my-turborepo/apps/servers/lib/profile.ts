@@ -8,10 +8,13 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import {
   ADMIN_PROFILE_FIELDS,
+  resolveSessionAllowance,
+  type SessionAllowance,
   AdminProfileProjectionSchema,
   CachedCoachSchema,
   CachedPlanSchema,
   ITEM_TYPE,
+  KEY_PREFIX,
   PLAN_LIMITS,
   SORT_KEY,
   UserProfileSchema,
@@ -318,6 +321,10 @@ export async function deleteProfileItems(args: {
   for (const Key of [
     cachedPlanKey(args.userId),
     cachedCoachKey(args.userId),
+    // The daily model-call counter (lib/budget.ts) and the shared rate
+    // limiter's window (lib/rateLimitStore.ts). Both name the user.
+    { PK: userPk(args.userId), SK: SORT_KEY.USAGE },
+    { PK: `${KEY_PREFIX.RATE_LIMIT}${args.userId}`, SK: SORT_KEY.RATE_LIMIT_WINDOW },
     profileKey(args.userId),
   ]) {
     try {
@@ -574,16 +581,152 @@ export async function setAccessGrant(args: {
 // never opened one worth billing.
 //
 // So:
-//   recordSessionCreated  — every mint. Display only; meters nothing.
-//   chargeConductedSession — once per session, on the first SCOREABLE answer.
-//                            This is what the quota reads.
+//   recordSessionCreated — every mint. Display only; meters nothing.
+//   claimInterviewSlot   — when the Sonic stream is about to open. Atomic, and
+//                          the ONLY enforcement point. This is what the quota
+//                          reads.
+//   refundInterviewSlot  — undoes a claim for an interview that ended inside the
+//                          refund window with nothing scoreable.
 //
-// The pre-flight refusal is now a plain read in the route rather than a
-// conditional write here. That loses the atomic claim, and the trade is worth
-// naming: two tabs racing can both pass the check and both start. Neither the
-// COUNT nor the spend ceiling is wrong as a result — each session still charges
-// exactly once when it is conducted — so the failure mode is one extra interview
-// at the boundary, against charging every abandoned session to everybody.
+// The claim used to happen on the first scoreable answer, with the limit checked
+// only at `POST /pre-interview`. That was a bypass, not a trade: the pre-flight
+// read `sessionsConducted`, which nothing had moved yet, so a candidate at 0/3
+// could mint fifty sessions and conduct all fifty — and an interview made only of
+// "could you repeat that" was never charged at all. The charge now happens where
+// the money is spent, and the pre-flight stays only as early, friendly UX.
+
+// How many times a claim re-reads and retries after losing a compare-and-swap to
+// a concurrent claim. Contention needs the same candidate opening several
+// interviews in the same few milliseconds, so three is generous; running out is
+// reported as a service failure rather than as an exhausted quota.
+const CLAIM_MAX_ATTEMPTS = 3;
+
+export type SlotClaim = {
+  granted: boolean;
+  // After the claim when granted, as read when refused — so the caller can
+  // report either without a second read.
+  allowance: SessionAllowance;
+};
+
+// Claims one interview against the candidate's quota, or refuses.
+//
+// A compare-and-swap, not a bare ADD: the limit lives in `resolveSessionAllowance`
+// (three grant states, one default) and expressing all of that inside a DynamoDB
+// condition would be a second, subtly different implementation of it. So the
+// allowance is computed from a strongly consistent read, and the write is
+// conditioned on the counter still holding the value that decision was made on.
+// Two tabs claiming the last slot together both read 2/3; one write lands 3, the
+// other fails its condition, re-reads 3/3 and is refused. Exactly one wins.
+//
+// Unlimited accounts still count — the admin table shows usage for them too —
+// but their write carries no counter condition, since nothing is being guarded.
+export async function claimInterviewSlot(args: {
+  userId: string;
+}): Promise<SlotClaim> {
+  const TableName = requireTable();
+
+  for (let attempt = 0; attempt < CLAIM_MAX_ATTEMPTS; attempt += 1) {
+    const profile = await getProfile({ userId: args.userId });
+
+    // The interview route only runs for a session minted from a complete
+    // profile, so a missing one means it was erased in between.
+    if (profile === null || profile.status === "deleting") {
+      throw new ProfileStateError(MESSAGES.PROFILE_DELETING);
+    }
+
+    const allowance = resolveSessionAllowance({
+      unlimitedAccess: profile.unlimitedAccess,
+      sessionLimit: profile.sessionLimit,
+      sessionsConducted: profile.sessionsConducted,
+    });
+
+    if (allowance.exhausted) return { granted: false, allowance };
+
+    // The schema defaults an absent counter to 0, so an observed 0 may mean
+    // "attribute missing" — both spellings must satisfy the guard.
+    const condition = allowance.unlimited
+      ? NOT_DELETING
+      : `(${NOT_DELETING}) AND (attribute_not_exists(sessionsConducted) OR sessionsConducted = :observed)`;
+
+    const values: Record<string, unknown> = {
+      ":one": 1,
+      ":now": new Date().toISOString(),
+      ":deleting": "deleting",
+    };
+    if (!allowance.unlimited) values[":observed"] = profile.sessionsConducted;
+
+    try {
+      await dynamoClient.send(
+        new UpdateCommand({
+          TableName,
+          Key: profileKey(args.userId),
+          UpdateExpression: "SET updatedAt = :now ADD sessionsConducted :one",
+          ConditionExpression: condition,
+          ExpressionAttributeNames: { "#status": "status" },
+          ExpressionAttributeValues: values,
+          // Not ALL_NEW: nothing here needs the item back, and the profile
+          // carries the resume text.
+          ReturnValues: "NONE",
+        }),
+      );
+    } catch (error) {
+      // Lost the race, or the account started erasure. The re-read at the top
+      // of the loop tells the two apart.
+      if (error instanceof ConditionalCheckFailedException) continue;
+      throw readFailure(error, MESSAGES.PROFILE_SAVE_FAILED);
+    }
+
+    return {
+      granted: true,
+      allowance: resolveSessionAllowance({
+        unlimitedAccess: profile.unlimitedAccess,
+        sessionLimit: profile.sessionLimit,
+        sessionsConducted: profile.sessionsConducted + 1,
+      }),
+    };
+  }
+
+  throw new ServiceError(
+    `${MESSAGES.PROFILE_SAVE_FAILED} — quota claim lost ${CLAIM_MAX_ATTEMPTS} races in a row`,
+  );
+}
+
+// Gives back a slot `claimInterviewSlot` took. Called at most once per claim, by
+// the connection that made it, which is what keeps the counter honest without
+// a per-session marker in the condition.
+//
+// Floored at zero by the condition, so a refund can never make the counter
+// negative even if something upstream calls it twice. Returns false rather than
+// throwing when the condition fails — an account mid-erasure is not refunded,
+// because its quota is about to stop existing.
+export async function refundInterviewSlot(args: {
+  userId: string;
+}): Promise<boolean> {
+  const TableName = requireTable();
+
+  try {
+    await dynamoClient.send(
+      new UpdateCommand({
+        TableName,
+        Key: profileKey(args.userId),
+        UpdateExpression: "SET updatedAt = :now ADD sessionsConducted :minusOne",
+        ConditionExpression: `sessionsConducted > :zero AND (${NOT_DELETING})`,
+        ExpressionAttributeNames: { "#status": "status" },
+        ExpressionAttributeValues: {
+          ":minusOne": -1,
+          ":zero": 0,
+          ":now": new Date().toISOString(),
+          ":deleting": "deleting",
+        },
+      }),
+    );
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException) return false;
+    throw readFailure(error, MESSAGES.PROFILE_SAVE_FAILED);
+  }
+
+  return true;
+}
 
 // Counts a session being minted. Display only.
 //
@@ -611,51 +754,6 @@ export async function recordSessionCreated(args: {
       }),
     );
   } catch (error) {
-    if (error instanceof ConditionalCheckFailedException) return;
-    throw readFailure(error, MESSAGES.PROFILE_SAVE_FAILED);
-  }
-}
-
-// Charges one interview against the quota.
-//
-// `ADD`, not a read-then-write: two answers landing at once would otherwise both
-// read the same count and both write the same successor, and the interview would
-// bill once instead of twice — or, in the reverse race, not at all. The same
-// reasoning `ADD profileVersion` carries on the resume path.
-//
-// **Idempotency is NOT this function's job.** It adds one every time it is called.
-// Calling it once per session is guaranteed by `markSessionCharged` in
-// lib/sessions.ts, which wins a conditional write on the session item before this
-// runs — `recordAnswer` fires per answer, so without that marker a fifteen-question
-// interview would spend fifteen slots. Keeping the two apart means the marker is
-// the single place the once-per-session rule lives, rather than being half-stated
-// in a condition here that could not see the session anyway.
-//
-// No cap condition. The limit was already checked before the interview started;
-// re-checking here would refuse to record an interview that has already happened,
-// which loses the count without giving anyone their time back.
-export async function chargeConductedSession(args: {
-  userId: string;
-}): Promise<void> {
-  const TableName = requireTable();
-
-  try {
-    await dynamoClient.send(
-      new UpdateCommand({
-        TableName,
-        Key: profileKey(args.userId),
-        UpdateExpression: "SET updatedAt = :now ADD sessionsConducted :one",
-        ConditionExpression: NOT_DELETING,
-        ExpressionAttributeNames: { "#status": "status" },
-        ExpressionAttributeValues: {
-          ":one": 1,
-          ":now": new Date().toISOString(),
-          ":deleting": "deleting",
-        },
-      }),
-    );
-  } catch (error) {
-    // An account mid-erasure is not charged. Its quota is about to stop existing.
     if (error instanceof ConditionalCheckFailedException) return;
     throw readFailure(error, MESSAGES.PROFILE_SAVE_FAILED);
   }

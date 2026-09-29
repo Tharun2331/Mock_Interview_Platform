@@ -79,19 +79,18 @@ export const UserProfileSchema = z.object({
 
   // Interviews this account has actually CONDUCTED — the number the quota meters.
   //
-  // Incremented once per session, on the first SCOREABLE answer, not when the
-  // session is created. That distinction is the fix for a real defect: the
-  // counter used to increment at `POST /pre-interview`, so pressing "Build my
-  // interview" and closing the tab burned a slot before the plan had rendered, let
-  // alone before anyone spoke. What costs money is the Sonic stream, and a
-  // candidate who never answered a question never opened one worth billing.
+  // CLAIMED atomically when the interview WebSocket opens the Sonic stream —
+  // `claimInterviewSlot` in apps/servers/lib/profile.ts, a compare-and-swap on
+  // this counter. Not when the session is minted (that burned a slot for a
+  // closed tab), and not on the first scoreable answer (that was checked only at
+  // mint time, so a candidate could mint any number of sessions at 0 used and
+  // conduct all of them, and an interview of nothing but "could you repeat that"
+  // was never charged at all).
   //
-  // "Scoreable" rather than "any answer" because a courtesy sign-off is recorded
-  // to the transcript but is not an attempt at a question — charging a slot for
-  // "thanks, bye" would reintroduce the same unfairness one layer down.
-  //
-  // `chargedAt` on the session is what makes this once-per-session: `recordAnswer`
-  // runs per answer, so the session-level marker is the idempotency key.
+  // The fairness the scoreable-answer rule bought is kept by a REFUND instead: a
+  // session that ends inside INTERVIEW.QUOTA_REFUND_WINDOW_MS with no scoreable
+  // answer gives its slot back. The window is what stops the refund being a free
+  // interview.
   //
   // Deliberately not derived from the `USER#<uid>/SESSION#<sid>` rows. Those carry
   // `expiresAt` and are removed by TTL after SESSION_RETENTION.DAYS, so a quota

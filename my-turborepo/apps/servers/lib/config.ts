@@ -91,6 +91,46 @@ const DEFAULT_TEXT_MODELS = [
 // longer describes real plans.
 const isProduction = (): boolean => process.env.NODE_ENV === "production";
 
+// The CORS allowlist. Exported, and pure, so the production rules are testable
+// without re-importing this module under a different NODE_ENV.
+//
+// Outside production an unset CORS_ORIGIN means the local web app. In
+// production it is refused outright: the old default quietly allowed
+// http://localhost:3000 in a deployed service, and an unset variable should be
+// a failed boot rather than a policy nobody chose. Every production origin must
+// also be https://, since this is the list of pages trusted to call the API
+// with a candidate's token.
+export function resolveCorsOrigins(
+  raw: string | undefined,
+  production: boolean,
+): string[] {
+  if (raw === undefined || raw.trim().length === 0) {
+    if (production) {
+      throw new Error(
+        "CORS_ORIGIN must be set in production: a comma-separated list of " +
+          "the https:// origins the web app is served from.",
+      );
+    }
+    return ["http://localhost:3000"];
+  }
+
+  const origins = csvList("CORS_ORIGIN", raw);
+
+  if (production) {
+    const insecure = origins.filter((origin) => !origin.startsWith("https://"));
+    if (insecure.length > 0) {
+      throw new Error(
+        `CORS_ORIGIN allows non-https origins in production: ${insecure.join(", ")}`,
+      );
+    }
+    if (origins.includes("*") || origins.some((origin) => origin.includes("*"))) {
+      throw new Error("CORS_ORIGIN may not contain a wildcard in production.");
+    }
+  }
+
+  return origins;
+}
+
 const testTargetMinutes = (): number => {
   const raw = Number(env("INTERVIEW_TEST_TARGET_MINUTES", "6"));
   // A non-numeric or non-positive value would produce timers that fire
@@ -105,10 +145,7 @@ export const config = {
   interviewTestMode:
     !isProduction() && env("INTERVIEW_TEST_MODE", "") === "false",
   interviewTestTargetMinutes: testTargetMinutes(),
-  corsOrigins: csvList(
-    "CORS_ORIGIN",
-    env("CORS_ORIGIN", "http://localhost:3000"),
-  ),
+  corsOrigins: resolveCorsOrigins(process.env.CORS_ORIGIN, isProduction()),
   // Caps the JSON parser. Every current route takes a small object; resume
   // uploads are multipart and will carry their own limit.
   jsonBodyLimit: env("JSON_BODY_LIMIT", "16kb"),
@@ -141,6 +178,31 @@ export const config = {
   // route burns the shared quota for every user at once.
   rateLimitWindowMs: Number(env("RATE_LIMIT_WINDOW_MS", "60000")),
   rateLimitMaxRequests: Number(env("RATE_LIMIT_MAX_REQUESTS", "20")),
+  // Where the limiter keeps its counts. `memory` is per process, so behind a
+  // load balancer the real limit is `max x taskCount` and a restart forgets
+  // everything. `dynamodb` shares one count across every task through the
+  // sessions table — one extra write per API request. Set it to `dynamodb`
+  // before running more than one task.
+  rateLimitStore: env("RATE_LIMIT_STORE", "memory") === "dynamodb"
+    ? ("dynamodb" as const)
+    : ("memory" as const),
+
+  // ---------------------------------------------------------------------------
+  // Model spend
+  // ---------------------------------------------------------------------------
+
+  // Text-model generations one candidate may trigger per UTC day: Planner (on a
+  // cache miss), Gap, Company Intel and Coach. The rate limiter bounds how FAST
+  // someone can spend; this bounds how MUCH. At 20 req/min the limiter alone
+  // allowed roughly 28,800 generations per account per day.
+  //
+  // Not the voice stream — that is metered by the interview quota — and not the
+  // Evaluator, whose calls are bounded by the answers of a conducted interview.
+  modelCallsPerDay: Number(env("MODEL_CALLS_PER_DAY", "40")),
+  // Text-model generations against one session. A plan with a job description
+  // and a company is three (Planner, Gap, Intel), so the default allows a couple
+  // of re-plans and on-demand reruns before refusing.
+  agentRunsPerSession: Number(env("AGENT_RUNS_PER_SESSION", "8")),
   cognitoUserPoolId: requireEnv("COGNITO_USER_POOL_ID"),
   cognitoUserPoolClientId: requireEnv("COGNITO_USER_POOL_CLIENT_ID"),
 

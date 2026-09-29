@@ -52,6 +52,14 @@ process.env.METRICS_NAMESPACE = "PrepPilot/Test";
 // directly rather than by reading stdout.
 process.env.METRICS_ENABLED = "false";
 
+// Spend controls. Pinned like everything else config.ts reads. The in-memory
+// store keeps route tests from sending a DynamoDB write per request.
+process.env.RATE_LIMIT_STORE = "memory";
+// Blank, so the non-production default applies regardless of a developer's .env.
+process.env.CORS_ORIGIN = "";
+process.env.MODEL_CALLS_PER_DAY = "40";
+process.env.AGENT_RUNS_PER_SESSION = "8";
+
 // Nonsense credentials, deliberately. The SDK resolves lazily, so an unmocked
 // command would otherwise pick up the machine's real profile or hang on IMDS in
 // CI. These make such a call fail fast and locally rather than reach AWS.

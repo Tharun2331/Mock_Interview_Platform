@@ -11,7 +11,7 @@ import {
   AdminDeleteUserCommand,
   CognitoIdentityProviderClient,
 } from "@aws-sdk/client-cognito-identity-provider";
-import { SORT_KEY, userPk } from "@repo/shared";
+import { SORT_KEY, userPk, KEY_PREFIX } from "@repo/shared";
 
 const ddb = mockClient(DynamoDBDocumentClient);
 // Erasure also removes the archived resume. Without this the sweep reaches real
@@ -59,6 +59,21 @@ describe("eraseUserAccount", () => {
     expect(deleted).toContain(SORT_KEY.PROFILE);
     expect(deleted).toContain(SORT_KEY.PLAN);
     expect(deleted).toContain(SORT_KEY.COACH);
+    // The daily model-call counter from lib/budget.ts.
+    expect(deleted).toContain(SORT_KEY.USAGE);
+  });
+
+  it("deletes the shared rate limiter's counter for this user", async () => {
+    await eraseUserAccount({ userId: USER, username: "tharun" });
+
+    const keys = ddb
+      .commandCalls(DeleteCommand)
+      .map((call) => call.args[0].input.Key);
+
+    expect(keys).toContainEqual({
+      PK: `${KEY_PREFIX.RATE_LIMIT}${USER}`,
+      SK: SORT_KEY.RATE_LIMIT_WINDOW,
+    });
   });
 
   it("removes the cached coaching report before the profile it was built from", async () => {

@@ -128,6 +128,26 @@ function sessionFound(meta: Record<string, unknown> = META) {
 
 const BODY = { sessionId: SESSION_ID, targetRole: "Backend Engineer" };
 
+// The two spend-budget writes from lib/budget.ts, matched by their expressions so
+// a test that fails every OTHER update can still let the budgets through.
+const SESSION_RUN = { UpdateExpression: "ADD agentRuns :one" };
+const DAILY_CALL = {
+  ConditionExpression: "usageDay = :day AND modelCalls < :cap",
+};
+
+function budgetAllows(): void {
+  ddb.on(UpdateCommand, SESSION_RUN).resolves({});
+  ddb.on(UpdateCommand, DAILY_CALL).resolves({});
+}
+
+// The attachPlan write, told apart from the budget writes by its payload.
+function planWrites() {
+  return ddb
+    .commandCalls(UpdateCommand)
+    .map((call) => call.args[0].input)
+    .filter((input) => input.ExpressionAttributeValues?.[":plan"] !== undefined);
+}
+
 beforeEach(() => {
   ddb.reset();
   resetBedrockStub();
@@ -553,9 +573,7 @@ describe("persistence", () => {
 
     await postPlan(url, BODY);
 
-    const values =
-      ddb.commandCalls(UpdateCommand)[0]?.args[0].input
-        .ExpressionAttributeValues;
+    const values = planWrites()[0]?.ExpressionAttributeValues;
     expect(values?.[":plan"]).toEqual(PLAN);
     // Derived from the mix, not trusted from the client.
     expect(values?.[":questionCount"]).toBe(10);
@@ -574,7 +592,7 @@ describe("persistence", () => {
 
     await postPlan(url, BODY);
 
-    expect(ddb.commandCalls(UpdateCommand)).toHaveLength(0);
+    expect(planWrites()).toHaveLength(0);
   });
 });
 
@@ -631,6 +649,7 @@ describe("failure mapping", () => {
     });
     Object.assign(failure, { Item: { userId: { S: USER.id } } });
     ddb.on(UpdateCommand).rejects(failure);
+    budgetAllows();
     const { url } = await start();
 
     expect((await postPlan(url, BODY)).status).toBe(409);
@@ -643,6 +662,7 @@ describe("failure mapping", () => {
     ddb.on(GetCommand).resolves({});
     ddb.on(PutCommand).resolves({});
     ddb.on(UpdateCommand).rejects(new Error("throughput exceeded"));
+    budgetAllows();
     const { url } = await start();
 
     const response = await postPlan(url, BODY);
@@ -683,5 +703,101 @@ describe("failure mapping", () => {
 
     expect(response.status).toBe(502);
     expect(raw).not.toContain("something unexpected");
+  });
+});
+
+// Spend budgets (lib/budget.ts). The rate limiter bounds how fast; these bound
+// how much. Refused BEFORE the model runs, which is the whole point.
+describe("spend budgets", () => {
+  it("429s without calling the model when the session's runs are spent", async () => {
+    sessionFound();
+    ddb.on(GetCommand).resolves({});
+    ddb.on(UpdateCommand).resolves({});
+    ddb
+      .on(UpdateCommand, SESSION_RUN)
+      .rejects(
+        new ConditionalCheckFailedException({ $metadata: {}, message: "cap" }),
+      );
+    const { url } = await start();
+
+    const response = await postPlan(url, BODY);
+
+    expect(response.status).toBe(429);
+    expect(ErrorBody.parse(await response.json()).message).toBe(
+      MESSAGES.SESSION_AGENT_LIMIT,
+    );
+    expect(converseCallCount()).toBe(0);
+    expect(planWrites()).toHaveLength(0);
+  });
+
+  it("429s without calling the model when today's budget is spent", async () => {
+    sessionFound();
+    ddb.on(GetCommand).resolves({});
+    ddb.on(UpdateCommand).resolves({});
+    const capped = new ConditionalCheckFailedException({
+      $metadata: {},
+      message: "cap",
+    });
+    // Today's item exists, so the cap, not the day, is what failed.
+    Object.assign(capped, {
+      Item: { usageDay: { S: new Date().toISOString().slice(0, 10) } },
+    });
+    ddb.on(UpdateCommand, DAILY_CALL).rejects(capped);
+    const { url } = await start();
+
+    const response = await postPlan(url, BODY);
+
+    expect(response.status).toBe(429);
+    expect(ErrorBody.parse(await response.json()).message).toBe(
+      MESSAGES.MODEL_BUDGET_EXHAUSTED,
+    );
+    expect(converseCallCount()).toBe(0);
+  });
+
+  it("spends one session run and one daily call on a generation", async () => {
+    sessionFound();
+    ddb.on(GetCommand).resolves({});
+    ddb.on(PutCommand).resolves({});
+    ddb.on(UpdateCommand).resolves({});
+    const { url } = await start();
+
+    await postPlan(url, BODY);
+
+    const inputs = ddb.commandCalls(UpdateCommand).map((c) => c.args[0].input);
+    const sessionRuns = inputs.filter(
+      (input) => input.UpdateExpression === SESSION_RUN.UpdateExpression,
+    );
+    expect(sessionRuns).toHaveLength(1);
+    // Scoped to the owner in the same condition that enforces the cap.
+    expect(sessionRuns[0]?.ConditionExpression).toContain("userId = :userId");
+    expect(
+      inputs.filter(
+        (input) => input.ConditionExpression === DAILY_CALL.ConditionExpression,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("skips the Gap agent, but still plans, when the budget refuses it", async () => {
+    sessionFound();
+    ddb.on(GetCommand).resolves({});
+    ddb.on(PutCommand).resolves({});
+    ddb.on(UpdateCommand).resolves({});
+    // The Planner's run succeeds; the Gap agent's is refused.
+    ddb
+      .on(UpdateCommand, SESSION_RUN)
+      .resolvesOnce({})
+      .rejects(
+        new ConditionalCheckFailedException({ $metadata: {}, message: "cap" }),
+      );
+    const { url } = await start();
+
+    const response = await postPlan(url, {
+      ...BODY,
+      jobDescription: "Kubernetes, Go, on-call.",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(response.status).toBe(200);
+    expect(structuredCallCount()).toBe(0);
   });
 });

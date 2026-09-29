@@ -60,23 +60,15 @@ preInterviewRouter.post("/", async (req, res) => {
       return;
     }
 
-    // The interview quota, CHECKED here and charged later.
+    // The interview quota, CHECKED here and ENFORCED at the WebSocket.
     //
-    // This used to claim a slot atomically at this point, which was the bug: a
-    // candidate who pressed "Build my interview" and closed the tab spent an
-    // interview before the plan had rendered and before anyone had spoken. The
-    // slot is now charged on the first scoreable answer — see
-    // `chargeConductedSession` — so this is purely a pre-flight refusal.
-    //
-    // It has to happen here rather than at the socket because this is the request
-    // that decides an interview will exist. Refusing at the WebSocket would mean a
-    // candidate reaching a loaded interview screen before being told no.
-    //
-    // The trade from dropping the atomic claim, stated plainly: two tabs can both
-    // pass this check and both start. Neither the count nor the spend ceiling goes
-    // wrong — each session still charges exactly once, when it is conducted — so
-    // the cost is one extra interview at the boundary, against charging every
-    // abandoned session to everybody. That is the better side to err on.
+    // This is a pre-flight refusal only, so a candidate who is out of sessions
+    // is told before they sit through planning. It is NOT the control: it reads
+    // a counter, and a read cannot stop someone minting many sessions while the
+    // counter still says 0. The atomic claim is `claimInterviewSlot`, run by
+    // routes/interview.ts immediately before the Sonic stream opens — which is
+    // where the money is spent, and where a session minted past this check is
+    // refused.
     const allowance = resolveSessionAllowance({
       unlimitedAccess: profile.unlimitedAccess,
       sessionLimit: profile.sessionLimit,

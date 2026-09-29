@@ -513,6 +513,10 @@ export async function finishInterview(args: {
   // count it already computed to decide what to enqueue. Neither was persisted.
   endReason: SessionEndReason;
   answerCount: number;
+  // True when the connection gave the candidate's quota slot back — the
+  // interview ended inside the refund window with nothing scoreable. Clears
+  // `chargedAt` so the record agrees with the counter.
+  chargeRefunded?: boolean;
 }): Promise<void> {
   await dynamoClient.send(
     new UpdateCommand({
@@ -520,7 +524,8 @@ export async function finishInterview(args: {
       Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.META },
       UpdateExpression:
         "SET #status = :status, endReason = :endReason, " +
-        "answerCount = :answerCount, endedAt = :endedAt",
+        "answerCount = :answerCount, endedAt = :endedAt" +
+        (args.chargeRefunded === true ? " REMOVE chargedAt" : ""),
       // Only from in_progress, so a late close cannot drag a session that has
       // already moved on to evaluating back to complete.
       ConditionExpression: "#status = :inProgress",
@@ -534,45 +539,6 @@ export async function finishInterview(args: {
       },
     }),
   );
-}
-
-// Claims the right to charge this session against the candidate's quota, once.
-//
-// Returns true for exactly one caller, ever, per session. `recordAnswer` runs per
-// answer and the charge happens on the first SCOREABLE one, so without a marker a
-// fifteen-question interview would spend fifteen slots — and with a read-then-write
-// marker, two answers landing together would both read "unmarked" and both charge.
-//
-// `attribute_not_exists(chargedAt)` makes DynamoDB itself arbitrate: the condition
-// and the write are one operation, so concurrent callers cannot both win. Same
-// election as `attribute_not_exists(averages)` on the evaluation rollup, and for
-// the same reason — it is already the once-only signal, so nothing else needs to be.
-//
-// A false return is the normal case after the first answer, not a failure.
-export async function markSessionCharged(args: {
-  sessionId: string;
-}): Promise<boolean> {
-  try {
-    await dynamoClient.send(
-      new UpdateCommand({
-        TableName: requireTable(),
-        Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.META },
-        UpdateExpression: "SET chargedAt = :now",
-        ConditionExpression: "attribute_not_exists(chargedAt)",
-        ExpressionAttributeValues: { ":now": new Date().toISOString() },
-      }),
-    );
-  } catch (error) {
-    // Already charged. Expected on every answer after the first.
-    if (error instanceof ConditionalCheckFailedException) return false;
-    throw new ServiceError(
-      `${MESSAGES.SESSION_UPDATE_FAILED} — ${
-        error instanceof Error ? error.message : "unknown"
-      }`,
-    );
-  }
-
-  return true;
 }
 
 // The last transition: every answer has been scored, so the session leaves
@@ -708,7 +674,10 @@ export async function startInterview(args: {
         // `createdAt` and this is a candidate reading their plan, and it can be
         // days — so measuring an interview's length from `createdAt` would report
         // nonsense, and "did they ever actually begin" would be unanswerable.
-        UpdateExpression: "SET #status = :inProgress, startedAt = :now",
+        // `chargedAt` in the same write: the route claims the quota slot
+        // immediately before this, so the session records that it counted.
+        UpdateExpression:
+          "SET #status = :inProgress, startedAt = :now, chargedAt = :now",
         // `ready` only. A session still `planning` has no plan to interview
         // against, and one already `in_progress` is being held by another
         // connection.

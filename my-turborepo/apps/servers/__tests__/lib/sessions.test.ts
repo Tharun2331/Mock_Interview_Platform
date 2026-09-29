@@ -34,7 +34,6 @@ import {
   deleteSessionData,
   deleteUserSessionRefs,
   finishInterview,
-  markSessionCharged,
   listUserSessionIds,
   loadPlannerInputs,
   recordAnswer,
@@ -664,6 +663,9 @@ describe("startInterview", () => {
     // The whole item comes back so the caller gets the plan without a second
     // read — it is needed immediately to build the system prompt.
     expect(input?.ReturnValues).toBe("ALL_NEW");
+    // The route claimed the quota slot just before this, so the session records
+    // that it counted in the same write.
+    expect(input?.UpdateExpression).toContain("chargedAt = :now");
   });
 
   it("returns the parsed meta including the plan", async () => {
@@ -796,54 +798,11 @@ describe("attachPlan", () => {
   });
 });
 
-// The once-per-session charge marker, and the outcome fields.
+// The outcome fields.
 //
-// Both exist because of one defect with two halves: the quota counted sessions
-// MINTED rather than conducted, so abandoning one at the plan screen spent an
-// interview; and `status` could not tell an abandoned session from a scored one,
-// because a session with nothing to score is genuinely finished and lands on
-// `complete` exactly like a completed round.
-describe("markSessionCharged", () => {
-  it("claims with a conditional write, not a read-then-write", async () => {
-    ddb.on(UpdateCommand).resolves({});
-
-    await markSessionCharged({ sessionId: SESSION_ID });
-
-    const input = ddb.commandCalls(UpdateCommand)[0]?.args[0].input;
-    // DynamoDB arbitrates. Two answers landing together would both read
-    // "unmarked" under a read-then-write and both charge, so the condition and
-    // the write have to be one operation.
-    expect(input?.ConditionExpression).toBe("attribute_not_exists(chargedAt)");
-    expect(input?.UpdateExpression).toContain("chargedAt");
-  });
-
-  it("returns true for the first caller", async () => {
-    ddb.on(UpdateCommand).resolves({});
-    expect(await markSessionCharged({ sessionId: SESSION_ID })).toBe(true);
-  });
-
-  it("returns false — not throws — once already charged", async () => {
-    ddb
-      .on(UpdateCommand)
-      .rejects(
-        new ConditionalCheckFailedException({ $metadata: {}, message: "no" }),
-      );
-
-    // The normal case on every answer after the first. `recordAnswer` runs per
-    // answer, so a throw here would surface an exception fourteen times in a
-    // fifteen-question interview for something working exactly as designed.
-    expect(await markSessionCharged({ sessionId: SESSION_ID })).toBe(false);
-  });
-
-  it("throws on a genuine failure, so a lost charge is not silent", async () => {
-    ddb.on(UpdateCommand).rejects(new Error("ProvisionedThroughputExceeded"));
-
-    // Must NOT collapse into `false`. A throughput error reported as "already
-    // charged" means the interview is never counted and nobody finds out.
-    expect(markSessionCharged({ sessionId: SESSION_ID })).rejects.toThrow();
-  });
-});
-
+// `status` could not tell an abandoned session from a scored one, because a
+// session with nothing to score is genuinely finished and lands on `complete`
+// exactly like a completed round.
 describe("finishInterview outcome fields", () => {
   it("persists the end reason and the answer count", async () => {
     ddb.on(UpdateCommand).resolves({});
@@ -881,5 +840,37 @@ describe("finishInterview outcome fields", () => {
     expect(
       ddb.commandCalls(UpdateCommand)[0]?.args[0].input.ConditionExpression,
     ).toBe("#status = :inProgress");
+  });
+
+  it("clears chargedAt when the quota slot was refunded", async () => {
+    ddb.on(UpdateCommand).resolves({});
+
+    await finishInterview({
+      sessionId: SESSION_ID,
+      status: "complete",
+      endReason: "disconnected",
+      answerCount: 0,
+      chargeRefunded: true,
+    });
+
+    // The record has to agree with the counter: a refunded session did not count.
+    expect(
+      ddb.commandCalls(UpdateCommand)[0]?.args[0].input.UpdateExpression,
+    ).toContain("REMOVE chargedAt");
+  });
+
+  it("leaves chargedAt alone for an interview that counted", async () => {
+    ddb.on(UpdateCommand).resolves({});
+
+    await finishInterview({
+      sessionId: SESSION_ID,
+      status: "evaluating",
+      endReason: "time_limit",
+      answerCount: 6,
+    });
+
+    expect(
+      ddb.commandCalls(UpdateCommand)[0]?.args[0].input.UpdateExpression,
+    ).not.toContain("chargedAt");
   });
 });
