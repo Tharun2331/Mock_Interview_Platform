@@ -10,7 +10,9 @@ import {
   BatchGetCommand,
   DynamoDBDocumentClient,
   PutCommand,
+  UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
+import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import {
   GapAnalysisSchema,
@@ -265,6 +267,29 @@ describe("POST /api/v1/gap", () => {
 
 // Flattened in the route so the agent's input stays four plain strings — it
 // never learns what a repo is.
+// On demand means callable in a loop, so the spend budget (lib/budget.ts) is this
+// route's real bound. Refused before the model runs.
+describe("POST /api/v1/gap spend budget", () => {
+  it("429s without calling the model once the session's runs are spent", async () => {
+    sessionFound();
+    ddb
+      .on(UpdateCommand)
+      .rejects(
+        new ConditionalCheckFailedException({ $metadata: {}, message: "cap" }),
+      );
+    const { url } = await start();
+
+    const response = await postGap(url, BODY);
+
+    expect(response.status).toBe(429);
+    expect(ErrorBody.parse(await response.json()).message).toBe(
+      MESSAGES.SESSION_AGENT_LIMIT,
+    );
+    expect(structuredCallCount()).toBe(0);
+    expect(ddb.commandCalls(PutCommand)).toHaveLength(0);
+  });
+});
+
 describe("summariseRepos", () => {
   it("renders one line per repository", () => {
     expect(

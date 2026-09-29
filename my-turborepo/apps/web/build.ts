@@ -16,6 +16,26 @@ const requireBuildEnv = (key: string): string => {
   return value;
 };
 
+// The API origin the bundle talks to. https:// only: the interview socket takes
+// its scheme from this URL, so an http:// base would ship a bundle that sends
+// the access token and the candidate's microphone audio in plaintext.
+const requireHttpsApiUrl = (key: string): string => {
+  const value = requireBuildEnv(key);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${key} is not a valid URL: ${value}`);
+  }
+  if (url.protocol !== "https:") {
+    throw new Error(
+      `${key} must be an https:// URL for a production build, got ${url.protocol}//. ` +
+        `The interview WebSocket derives wss:// from it.`,
+    );
+  }
+  return value.replace(/\/+$/, "");
+};
+
 // Resolved BEFORE the output directory is cleared, so a misconfigured build
 // leaves the previous dist/ intact instead of deleting it and then failing.
 const define = {
@@ -28,6 +48,9 @@ const define = {
   ),
   "process.env.BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID": JSON.stringify(
     requireBuildEnv("BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID"),
+  ),
+  "process.env.BUN_PUBLIC_API_URL": JSON.stringify(
+    requireHttpsApiUrl("BUN_PUBLIC_API_URL"),
   ),
 };
 

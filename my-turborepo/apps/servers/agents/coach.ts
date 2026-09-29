@@ -488,6 +488,14 @@ export type CoachAgentInput = {
    * and does not read or write one.
    */
   cachedProse?: CoachProse | null | undefined;
+  /**
+   * False when the candidate's daily model budget is spent (lib/budget.ts).
+   *
+   * The report is still built: every number comes from the analysis, and the
+   * fallback summaries cover the prose. Only the Bedrock call is skipped.
+   * Defaults to true.
+   */
+  allowGeneration?: boolean;
 };
 
 export type CoachAgentResult = {
@@ -536,8 +544,12 @@ export async function runCoachAgent(
       ? null
       : storedToProse(input.cachedProse, known);
 
+  const mayGenerate = input.allowGeneration !== false;
   const prose =
-    cached ?? (await writeProse(groupByTopic(input.summaries), trends, known));
+    cached ??
+    (mayGenerate
+      ? await writeProse(groupByTopic(input.summaries), trends, known)
+      : new Map());
 
   const report: CoachReport = {
     trends: trends.map((trend) => {
@@ -562,6 +574,6 @@ export async function runCoachAgent(
     // An empty map means the model call failed or returned nothing this
     // analysis recognised. Reported as null so the caller does not store it.
     prose: prose.size === 0 ? null : proseToStored(prose),
-    generated: cached === null,
+    generated: cached === null && mayGenerate,
   };
 }

@@ -9,7 +9,15 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { Amplify } from "aws-amplify";
 import { App } from "./App";
+import { config as configureZod } from "zod";
 import { COGNITO } from "./lib/config";
+
+// Before anything parses. Zod v4 probes `new Function("")` to decide whether to
+// JIT-compile its validators. The production Content-Security-Policy has no
+// 'unsafe-eval' (infra/terraform/modules/cloudfront), so the probe would fail
+// into Zod's own fallback and log a CSP violation on every page load. Jitless
+// is that same fallback, chosen up front.
+configureZod({ jitless: true });
 
 // Configure Amplify once, at startup. This drives the custom email/password
 // sign-up + sign-in flow AND the Google hosted-UI redirect flow in the client

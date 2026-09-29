@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  DynamoDBDocumentClient,
+  GetCommand,
+  UpdateCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import { ITEM_TYPE, SORT_KEY, userPk } from "@repo/shared";
+import { ProfileStateError, ServiceError } from "../../lib/errors";
 import {
-  chargeConductedSession,
+  claimInterviewSlot,
   recordSessionCreated,
+  refundInterviewSlot,
   setAccessGrant,
 } from "../../lib/profile";
 
@@ -69,7 +75,7 @@ function lastUpdate(): {
 // That claim was the bug: it spent a slot when a session was MINTED, so pressing
 // "Build my interview" and closing the tab cost an interview before the plan had
 // rendered. The split is the fix — `recordSessionCreated` counts mints and meters
-// nothing, `chargeConductedSession` counts interviews actually conducted and is
+// nothing, `claimInterviewSlot` counts interviews actually conducted and is
 // what the quota reads.
 describe("recordSessionCreated", () => {
   it("adds to sessionsCreated and nothing else", async () => {
@@ -115,63 +121,178 @@ describe("recordSessionCreated", () => {
   });
 });
 
-describe("chargeConductedSession", () => {
-  it("adds to sessionsConducted, which is what the quota reads", async () => {
-    await chargeConductedSession({ userId: USER_ID });
+function conditionalFailure(): ConditionalCheckFailedException {
+  return new ConditionalCheckFailedException({ $metadata: {}, message: "no" });
+}
 
+function profileWith(fields: Record<string, unknown>) {
+  return { Item: { ...PROFILE, ...fields } };
+}
+
+// THE quota enforcement point. Claimed when the Sonic stream opens, as a
+// compare-and-swap on the counter.
+//
+// It replaced a charge on the first scoreable answer, with the limit checked only
+// at session creation. That was a bypass: the check read a counter nothing had
+// moved yet, so a candidate at 0/3 could mint fifty sessions and conduct them
+// all, and an interview of nothing but "could you repeat that" was never charged.
+describe("claimInterviewSlot", () => {
+  it("grants a slot under the limit and increments the counter", async () => {
+    dynamo.on(GetCommand).resolves(profileWith({ sessionsConducted: 1 }));
+
+    const claim = await claimInterviewSlot({ userId: USER_ID });
+
+    expect(claim.granted).toBe(true);
+    expect(claim.allowance.used).toBe(2);
     const input = lastUpdate();
     expect(input.UpdateExpression).toContain("ADD sessionsConducted :one");
-    expect(input.UpdateExpression).not.toContain("sessionsCreated");
   });
 
-  it("uses ADD so two answers landing together cannot lose a count", async () => {
-    await chargeConductedSession({ userId: USER_ID });
-    expect(lastUpdate().UpdateExpression).not.toContain(
-      "SET sessionsConducted",
+  it("conditions the write on the counter it read", async () => {
+    dynamo.on(GetCommand).resolves(profileWith({ sessionsConducted: 2 }));
+
+    await claimInterviewSlot({ userId: USER_ID });
+
+    // The compare-and-swap. Without it two tabs reading 2/3 would both land and
+    // the account would conduct four interviews on a limit of three.
+    const input = lastUpdate();
+    expect(input.ConditionExpression).toContain("sessionsConducted = :observed");
+    expect(input.ExpressionAttributeValues?.[":observed"]).toBe(2);
+    expect(input.ConditionExpression).toContain("#status <> :deleting");
+  });
+
+  it("refuses without writing when the quota is exhausted", async () => {
+    dynamo.on(GetCommand).resolves(profileWith({ sessionsConducted: 3 }));
+
+    const claim = await claimInterviewSlot({ userId: USER_ID });
+
+    expect(claim.granted).toBe(false);
+    expect(claim.allowance.exhausted).toBe(true);
+    expect(dynamo.commandCalls(UpdateCommand)).toHaveLength(0);
+  });
+
+  it("honours a numeric grant above the default", async () => {
+    dynamo
+      .on(GetCommand)
+      .resolves(profileWith({ sessionsConducted: 3, sessionLimit: 10 }));
+
+    expect((await claimInterviewSlot({ userId: USER_ID })).granted).toBe(true);
+  });
+
+  it("counts an unlimited account but guards nothing", async () => {
+    dynamo
+      .on(GetCommand)
+      .resolves(profileWith({ sessionsConducted: 40, unlimitedAccess: true }));
+
+    const claim = await claimInterviewSlot({ userId: USER_ID });
+
+    expect(claim.granted).toBe(true);
+    const input = lastUpdate();
+    expect(input.UpdateExpression).toContain("ADD sessionsConducted :one");
+    expect(input.ConditionExpression).not.toContain(":observed");
+  });
+
+  it("re-reads after losing a race and refuses the loser at the limit", async () => {
+    // Two tabs, one slot left. This call reads 2/3, loses the write to the other
+    // tab, re-reads 3/3 and must be refused rather than retried blindly.
+    dynamo
+      .on(GetCommand)
+      .resolvesOnce(profileWith({ sessionsConducted: 2 }))
+      .resolves(profileWith({ sessionsConducted: 3 }));
+    dynamo.on(UpdateCommand).rejectsOnce(conditionalFailure()).resolves({});
+
+    const claim = await claimInterviewSlot({ userId: USER_ID });
+
+    expect(claim.granted).toBe(false);
+    expect(dynamo.commandCalls(UpdateCommand)).toHaveLength(1);
+  });
+
+  it("closes the mint-many bypass: each claim sees the previous one", async () => {
+    // The original exploit, replayed against the enforcement point. The counter
+    // moves on every claim, so the fourth is refused no matter how many sessions
+    // were minted while it read 0.
+    let conducted = 0;
+    dynamo
+      .on(GetCommand)
+      .callsFake(() => profileWith({ sessionsConducted: conducted }));
+    dynamo.on(UpdateCommand).callsFake(() => {
+      conducted += 1;
+      return {};
+    });
+
+    const results: boolean[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      results.push((await claimInterviewSlot({ userId: USER_ID })).granted);
+    }
+
+    expect(results).toEqual([true, true, true, false, false]);
+  });
+
+  it("refuses an account mid-erasure", async () => {
+    dynamo.on(GetCommand).resolves(profileWith({ status: "deleting" }));
+
+    expect(claimInterviewSlot({ userId: USER_ID })).rejects.toThrow(
+      ProfileStateError,
     );
   });
 
-  it("attaches NO cap condition", async () => {
-    // The limit was checked before the interview started. Re-checking here would
-    // refuse to record an interview that has already happened, which loses the
-    // count without giving anyone their time back.
-    await chargeConductedSession({ userId: USER_ID });
+  it("refuses when the profile is gone", async () => {
+    dynamo.on(GetCommand).resolves({});
 
-    const expression = lastUpdate().ConditionExpression ?? "";
-    expect(expression).not.toContain("sessionsConducted <");
-    expect(expression).not.toContain(":limit");
+    expect(claimInterviewSlot({ userId: USER_ID })).rejects.toThrow(
+      ProfileStateError,
+    );
   });
 
-  it("does not charge an account mid-erasure", async () => {
-    dynamo.reset();
-    dynamo
-      .on(UpdateCommand)
-      .rejects(
-        new ConditionalCheckFailedException({ $metadata: {}, message: "nope" }),
-      );
+  it("gives up with a service error after repeated contention", async () => {
+    dynamo.on(GetCommand).resolves(profileWith({ sessionsConducted: 0 }));
+    dynamo.on(UpdateCommand).rejects(conditionalFailure());
 
-    // Its quota is about to stop existing. Swallowed rather than thrown, because
-    // the interview it would be charging for has already happened.
-    expect(await chargeConductedSession({ userId: USER_ID })).toBeUndefined();
+    expect(claimInterviewSlot({ userId: USER_ID })).rejects.toThrow(
+      ServiceError,
+    );
+  });
+
+  it("emits no doubled parentheses", async () => {
+    // The regression from the condition-building bug that 500'd every interview
+    // start. aws-sdk-client-mock does not parse expressions, so no fragment
+    // assertion can catch it.
+    dynamo.on(GetCommand).resolves(profileWith({ sessionsConducted: 0 }));
+
+    await claimInterviewSlot({ userId: USER_ID });
+
+    const expression = lastUpdate().ConditionExpression ?? "";
+    expect(expression).not.toContain("((");
+    expect(expression).not.toContain("))");
+  });
+});
+
+describe("refundInterviewSlot", () => {
+  it("decrements the counter, floored at zero by the condition", async () => {
+    await refundInterviewSlot({ userId: USER_ID });
+
+    const input = lastUpdate();
+    expect(input.UpdateExpression).toContain("ADD sessionsConducted :minusOne");
+    expect(input.ExpressionAttributeValues?.[":minusOne"]).toBe(-1);
+    expect(input.ConditionExpression).toContain("sessionsConducted > :zero");
+  });
+
+  it("returns true when the refund landed", async () => {
+    expect(await refundInterviewSlot({ userId: USER_ID })).toBe(true);
+  });
+
+  it("returns false rather than throwing when the condition fails", async () => {
+    dynamo.reset();
+    dynamo.on(UpdateCommand).rejects(conditionalFailure());
+
+    expect(await refundInterviewSlot({ userId: USER_ID })).toBe(false);
   });
 
   it("throws on a genuine write failure", async () => {
     dynamo.reset();
     dynamo.on(UpdateCommand).rejects(new Error("ResourceNotFoundException"));
 
-    expect(chargeConductedSession({ userId: USER_ID })).rejects.toThrow();
-  });
-
-  it("emits no doubled parentheses", async () => {
-    // The regression from the condition-building bug that 500'd every interview
-    // start: DynamoDB treats `((` as a ValidationException, not as harmless
-    // nesting, and aws-sdk-client-mock does not parse expressions so no fragment
-    // assertion can catch it.
-    await chargeConductedSession({ userId: USER_ID });
-
-    const expression = lastUpdate().ConditionExpression ?? "";
-    expect(expression).not.toContain("((");
-    expect(expression).not.toContain("))");
+    expect(refundInterviewSlot({ userId: USER_ID })).rejects.toThrow();
   });
 });
 

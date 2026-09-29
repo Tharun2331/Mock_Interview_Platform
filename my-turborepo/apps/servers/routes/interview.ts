@@ -9,7 +9,11 @@ import {
   SONIC,
 } from "../lib/constants";
 import { verifier } from "../lib/cognitoAuth";
-import { SessionAccessError, SessionStateError } from "../lib/errors";
+import {
+  ProfileStateError,
+  SessionAccessError,
+  SessionStateError,
+} from "../lib/errors";
 import { MESSAGES } from "../lib/messages";
 import { config } from "../lib/config";
 import type { QuestionType, SessionEndReason } from "@repo/shared";
@@ -21,7 +25,7 @@ import {
   type InterviewPhase,
 } from "../lib/interviewClock";
 import { recordSonicError, recordSonicStream } from "../lib/metrics";
-import { chargeConductedSession } from "../lib/profile";
+import { claimInterviewSlot, refundInterviewSlot } from "../lib/profile";
 import { classifyAnswer } from "../lib/scoreableAnswer";
 import { SonicConversation } from "../lib/sonic";
 import { startEvaluationSummary } from "../lib/evaluations";
@@ -30,7 +34,6 @@ import {
   finishInterview,
   loadCompanyIntel,
   loadGapAnalysis,
-  markSessionCharged,
   recordAnswer,
   startInterview,
 } from "../lib/sessions";
@@ -352,6 +355,52 @@ async function handleConnection(
   // Timers that must not outlive the connection. A pending hard-stop on a
   // finished interview would fire against a closed session.
   const clearOnClose: ReturnType<typeof setTimeout>[] = [];
+  // Logged once per connection rather than per frame, so a flood of oversized
+  // frames cannot also flood the log.
+  let droppedOversizedFrames = 0;
+
+  // The quota slot this connection holds. `claimed` once claimInterviewSlot
+  // grants one, `refunded` once it has been given back. A one-way latch, so no
+  // path through shutdown can refund twice.
+  let slot: "none" | "claimed" | "refunded" = "none";
+  // When the Sonic stream became usable. The refund window is measured from
+  // here, not from the connection: a slow startup is not the candidate's time.
+  let streamLiveAt: number | null = null;
+
+  // Gives the slot back when this interview never really happened: nothing
+  // scoreable was said, and it ended inside the refund window (or never got a
+  // stream at all). Returns whether a refund was made, so finishInterview can
+  // clear `chargedAt` to match.
+  //
+  // A refund failure is logged and swallowed. It costs the candidate one slot on
+  // a DynamoDB error, which an admin grant can fix; throwing here would abort
+  // the close sequence and leave the session stuck in_progress.
+  const refundIfUnused = async (scoredCount: number): Promise<boolean> => {
+    if (slot !== "claimed") return false;
+    const elapsedMs = streamLiveAt === null ? 0 : Date.now() - streamLiveAt;
+    if (scoredCount > 0 || elapsedMs >= INTERVIEW.QUOTA_REFUND_WINDOW_MS) {
+      return false;
+    }
+
+    slot = "refunded";
+    try {
+      const refunded = await refundInterviewSlot({ userId });
+      if (refunded) {
+        console.log(
+          `[interview] ${sessionId} refunded its quota slot to ${userId} ` +
+            `(nothing scoreable after ${Math.round(elapsedMs / 1000)}s)`,
+        );
+      }
+      return refunded;
+    } catch (error) {
+      console.error(
+        `[interview] ${sessionId} quota refund failed: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+      return false;
+    }
+  };
 
   const shutdown = async (reason: string): Promise<void> => {
     if (closing) return;
@@ -373,6 +422,10 @@ async function handleConnection(
         // when the socket dropped is included rather than left unscored.
         const questionIds = scoredQuestionIds();
 
+        // Decided before the status write so the record can say whether the
+        // interview counted.
+        const chargeRefunded = await refundIfUnused(questionIds.length);
+
         // `evaluating`, not `complete` — the answers exist but nothing has read
         // them yet. An interview that produced nothing to score is the one case
         // that is genuinely finished.
@@ -389,6 +442,7 @@ async function handleConnection(
           // say that before.
           endReason: endReasonOf(reason),
           answerCount: questionIds.length,
+          chargeRefunded,
         });
 
         // After the status write, deliberately. A message consumed before the
@@ -432,7 +486,15 @@ async function handleConnection(
             error instanceof Error ? error.message : error
           }`,
         );
+        // Still refund if it qualifies. A no-op when the refund already ran
+        // above, because the latch has moved past `claimed`.
+        await refundIfUnused(scoredQuestionIds().length);
       }
+    } else {
+      // Never reached the point of having a transcript: the session could not
+      // be started, or carried no plan. Nothing was interviewed, so the slot
+      // goes back.
+      await refundIfUnused(0);
     }
 
     if (sonic !== null) {
@@ -464,6 +526,32 @@ async function handleConnection(
   };
 
   try {
+    // THE quota enforcement point, and deliberately the first thing here.
+    //
+    // This is where money starts being spent (the Sonic stream opens a few lines
+    // down), so this is where the slot is claimed, atomically. The check at
+    // POST /pre-interview is only early UX: it reads a counter, so on its own it
+    // let a candidate mint any number of sessions at 0 used and conduct them all.
+    //
+    // Claimed BEFORE startInterview rather than after, so a refusal leaves the
+    // session `ready` for when the candidate is granted more, instead of stuck
+    // `in_progress`. The cost of that order is a refund whenever startInterview
+    // then refuses (wrong owner, already running), which shutdown handles.
+    const claim = await claimInterviewSlot({ userId });
+    if (!claim.granted) {
+      console.log(
+        `[interview] ${sessionId} refused ${userId}: quota exhausted ` +
+          `(${claim.allowance.used}/${claim.allowance.limit})`,
+      );
+      sendEvent(socket, {
+        type: "error",
+        message: MESSAGES.SESSION_LIMIT_REACHED,
+      });
+      socket.close();
+      return;
+    }
+    slot = "claimed";
+
     const meta = await startInterview({ sessionId, userId });
     const plan = meta.plan;
     if (plan === undefined) {
@@ -471,7 +559,9 @@ async function handleConnection(
         type: "error",
         message: MESSAGES.SESSION_NOT_INTERVIEWABLE,
       });
-      socket.close();
+      // Through shutdown rather than a bare close, so the claimed slot is
+      // refunded. This session was never going to be interviewed.
+      await shutdown(INTERVIEW_CLOSE.STARTUP_FAILED);
       return;
     }
 
@@ -555,38 +645,6 @@ async function handleConnection(
         const verdict = classifyAnswer(exchange.transcript);
         if (verdict.scoreable) {
           recorded.push(exchange.questionId);
-
-          // THE quota charge, on the first scoreable answer and only then.
-          //
-          // Here rather than at session creation, which is where it used to be:
-          // pressing "Build my interview" and closing the tab spent a slot before
-          // the plan had rendered. And scoreable rather than any answer, because a
-          // courtesy sign-off is recorded to the transcript but is not an attempt
-          // at a question — charging for "thanks, bye" would reintroduce the same
-          // unfairness one layer down.
-          //
-          // `markSessionCharged` is a conditional write that exactly one caller
-          // can win, so this is once per session however many answers land.
-          //
-          // Awaited, but its failure never reaches the candidate: a quota that
-          // failed to record costs a free interview, and throwing here would abort
-          // the answer write path mid-interview over an accounting problem.
-          void (async () => {
-            try {
-              if (await markSessionCharged({ sessionId })) {
-                await chargeConductedSession({ userId });
-                console.log(
-                  `[interview] ${sessionId} charged one session to ${userId}`,
-                );
-              }
-            } catch (error) {
-              console.error(
-                `[interview] ${sessionId} quota charge failed — ${
-                  error instanceof Error ? error.message : error
-                }`,
-              );
-            }
-          })();
         } else {
           console.log(
             `[interview] ${sessionId} not scoring ${exchange.questionId} (${verdict.reason})`,
@@ -787,6 +845,7 @@ async function handleConnection(
     const openBegan = performance.now();
     await sonic.start();
     streamOpenLatencyMs = performance.now() - openBegan;
+    streamLiveAt = Date.now();
 
     sendEvent(socket, {
       type: "ready",
@@ -862,10 +921,41 @@ async function handleConnection(
     clearOnClose.push(wrapUpTimer, finalCallTimer, timeUpTimer, hardStopTimer);
 
     socket.on("message", (data: Buffer, isBinary: boolean) => {
+      // The transport cap, enforced here as well as by `maxPayload`, because
+      // Bun's `ws` shim ignores `maxPayload` entirely. Measured: under Bun a
+      // 64 KiB message reaches this handler, and only Bun's own ~16 MiB limit
+      // stops anything. Closing with 1009 (message too big) is what `ws`
+      // itself would do under Node, so the two runtimes behave the same.
+      if (data.byteLength > SONIC.MAX_SOCKET_MESSAGE_BYTES) {
+        console.warn(
+          `[interview] ${sessionId} closing: ${data.byteLength}-byte message ` +
+            `exceeds ${SONIC.MAX_SOCKET_MESSAGE_BYTES}`,
+        );
+        socket.close(1009, "message too big");
+        void shutdown(INTERVIEW_CLOSE.SOCKET_ERROR);
+        return;
+      }
       if (isBinary) {
+        // Size-checked before it reaches Sonic. `maxPayload` already refuses
+        // anything absurd at the transport; this is the tighter, audio-shaped
+        // bound. An oversized frame is dropped rather than ending the
+        // interview: a real client never sends one, so it is a bug or abuse,
+        // and neither deserves to spend model time.
+        if (data.byteLength > SONIC.MAX_AUDIO_FRAME_BYTES) {
+          droppedOversizedFrames += 1;
+          if (droppedOversizedFrames === 1) {
+            console.warn(
+              `[interview] ${sessionId} dropping oversized audio frames ` +
+                `(${data.byteLength} bytes > ${SONIC.MAX_AUDIO_FRAME_BYTES})`,
+            );
+          }
+          return;
+        }
         sonic?.sendAudio(data);
         return;
       }
+      // Not decoded when it cannot be a control word.
+      if (data.byteLength > SONIC.MAX_CONTROL_MESSAGE_BYTES) return;
       // The only control message the client sends today. Stopping must always
       // be reachable, so it is handled unconditionally.
       if (data.toString() === "stop")
@@ -876,6 +966,8 @@ async function handleConnection(
     socket.on("error", () => void shutdown(INTERVIEW_CLOSE.SOCKET_ERROR));
   } catch (error) {
     if (error instanceof SessionAccessError) {
+      sendEvent(socket, { type: "error", message: error.message });
+    } else if (error instanceof ProfileStateError) {
       sendEvent(socket, { type: "error", message: error.message });
     } else if (error instanceof SessionStateError) {
       sendEvent(socket, { type: "error", message: error.message });
@@ -893,7 +985,13 @@ export function attachInterviewSocket(server: Server): WebSocketServer {
   // noServer, so the upgrade is authenticated before a socket exists. A
   // rejected caller never reaches handleConnection and never causes a Sonic
   // stream to be allocated.
-  const wss = new WebSocketServer({ noServer: true });
+  // `maxPayload` is the transport-level cap. Without it `ws` accepts messages
+  // up to 100 MiB and buffers each one whole before any handler sees it. See
+  // SONIC.MAX_SOCKET_MESSAGE_BYTES.
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: SONIC.MAX_SOCKET_MESSAGE_BYTES,
+  });
 
   // Sockets that have answered a ping since the last sweep.
   //

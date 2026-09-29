@@ -20,10 +20,12 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import { SendMessageBatchCommand, SQSClient } from "@aws-sdk/client-sqs";
 import { mockClient } from "aws-sdk-client-mock";
+import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
   ITEM_TYPE,
   SORT_KEY,
   sessionPk,
+  userPk,
   type PlanResponse,
 } from "@repo/shared";
 import WebSocket from "ws";
@@ -84,6 +86,29 @@ const META = {
   questionCount: 6,
 };
 
+// The candidate's profile, read by claimInterviewSlot before anything else.
+// One of three sessions used, so every test that is not about the quota starts
+// with room to spare.
+const PROFILE = {
+  PK: userPk(USER_ID),
+  SK: SORT_KEY.PROFILE,
+  type: ITEM_TYPE.USER_PROFILE,
+  userId: USER_ID,
+  status: "active",
+  createdAt: "2026-09-01T00:00:00.000Z",
+  updatedAt: "2026-09-01T00:00:00.000Z",
+  firstName: "Test",
+  lastName: "Candidate",
+  resumeKey: `resumes/${USER_ID}/resume.pdf`,
+  resumeText: "redacted",
+  repos: [],
+  profileVersion: 1,
+  sessionsConducted: 1,
+  unlimitedAccess: false,
+};
+
+const PROFILE_KEY = { PK: userPk(USER_ID), SK: SORT_KEY.PROFILE };
+
 let sonicStreams: FakeSonicStream[] = [];
 let server: Server | null = null;
 let wss: ReturnType<typeof attachInterviewSocket> | null = null;
@@ -119,6 +144,8 @@ beforeEach(() => {
   });
   // loadGapAnalysis and loadCompanyIntel — absent is the common case.
   ddb.on(GetCommand).resolves({});
+  // claimInterviewSlot's read of the profile.
+  ddb.on(GetCommand, { Key: PROFILE_KEY }).resolves({ Item: PROFILE });
   ddb.on(PutCommand).resolves({});
   sqs.on(SendMessageBatchCommand).resolves({ Successful: [], Failed: [] });
 });
@@ -331,6 +358,17 @@ async function playExchange(
   await settle(30);
 }
 
+/** Every update aimed at the PROFILE item, in order — the quota writes. */
+function profileUpdates(): { UpdateExpression?: string }[] {
+  return ddb
+    .commandCalls(UpdateCommand)
+    .map((call) => call.args[0].input)
+    .filter(
+      (input) =>
+        input.Key?.PK === PROFILE_KEY.PK && input.Key?.SK === PROFILE_KEY.SK,
+    );
+}
+
 function answerWrites(): Record<string, unknown>[] {
   return ddb
     .commandCalls(PutCommand)
@@ -433,6 +471,32 @@ describe("audio", () => {
     await settle(50);
 
     expect(client.outbound.ofName("audioInput").length).toBeGreaterThan(0);
+  });
+
+  // The browser sends 1 KiB frames. Anything larger than the audio bound is
+  // dropped before it reaches Sonic, without ending the interview.
+  it("drops an oversized audio frame instead of forwarding it", async () => {
+    const client = await startInterviewSocket();
+
+    client.socket.send(Buffer.alloc(12 * 1024));
+    await settle(50);
+
+    expect(client.outbound.ofName("audioInput")).toHaveLength(0);
+    expect(client.socket.readyState).toBe(WebSocket.OPEN);
+  });
+
+  // The transport cap. Without it `ws` buffers messages up to 100 MiB whole,
+  // and one candidate could exhaust the task's memory.
+  it("closes the socket on a message over the transport cap", async () => {
+    const client = await startInterviewSocket();
+
+    const closed = new Promise<number>((resolve) =>
+      client.socket.once("close", (code: number) => resolve(code)),
+    );
+    client.socket.send(Buffer.alloc(64 * 1024));
+
+    expect(await closed).toBe(1009);
+    expect(client.outbound.ofName("audioInput")).toHaveLength(0);
   });
 
   // Decoded server-side rather than forwarded as base64: the client gets raw
@@ -938,5 +1002,103 @@ describe("ending the interview", () => {
 
     const sessionEnds = client.outbound.ofName("sessionEnd");
     expect(sessionEnds.length).toBeGreaterThan(0);
+  });
+});
+
+// The quota, enforced where the money is spent.
+//
+// The slot used to be charged on the first scoreable answer, with the limit
+// checked only when a session was minted — so a candidate could mint any number
+// of sessions at 0 used and conduct all of them. These pin the fix end to end:
+// the claim happens before a Sonic stream exists, and only a genuinely failed
+// interview gets its slot back.
+describe("the interview quota", () => {
+  it("refuses an exhausted account before opening a Sonic stream", async () => {
+    ddb
+      .on(GetCommand, { Key: PROFILE_KEY })
+      .resolves({ Item: { ...PROFILE, sessionsConducted: 3 } });
+
+    const port = await listen();
+    const client = connect(port);
+    const error = await client.waitFor("error");
+
+    expect(String(error.message)).toContain("used all of your interview");
+    expect(sonicStreams).toHaveLength(0);
+    // The session is never moved to in_progress, so a later grant can start it.
+    expect(
+      ddb
+        .commandCalls(UpdateCommand)
+        .some((call) => call.args[0].input.ReturnValues === "ALL_NEW"),
+    ).toBe(false);
+  });
+
+  it("claims the slot before the stream opens", async () => {
+    await startInterviewSocket();
+
+    const claims = profileUpdates().filter((input) =>
+      input.UpdateExpression?.includes("ADD sessionsConducted :one"),
+    );
+    expect(claims).toHaveLength(1);
+  });
+
+  it("keeps the slot once the candidate has given a real answer", async () => {
+    const client = await startInterviewSocket();
+
+    await playExchange(client.stream, {
+      question: "Tell me about Kafka.",
+      answer: "I ran consumers coordinating order state transitions.",
+    });
+
+    client.socket.send("stop");
+    await client.waitFor("closed");
+    await settle(80);
+
+    const refunds = profileUpdates().filter((input) =>
+      input.UpdateExpression?.includes(":minusOne"),
+    );
+    expect(refunds).toHaveLength(0);
+  });
+
+  it("refunds an interview that ended at once with nothing scoreable", async () => {
+    const client = await startInterviewSocket();
+
+    client.socket.send("stop");
+    await client.waitFor("closed");
+    await settle(80);
+
+    const refunds = profileUpdates().filter((input) =>
+      input.UpdateExpression?.includes(":minusOne"),
+    );
+    expect(refunds).toHaveLength(1);
+
+    // And the session record agrees that it did not count.
+    const finish = ddb
+      .commandCalls(UpdateCommand)
+      .map((call) => call.args[0].input)
+      .find((input) => input.ConditionExpression === "#status = :inProgress");
+    expect(finish?.UpdateExpression).toContain("REMOVE chargedAt");
+  });
+
+  it("refunds when the session cannot be started", async () => {
+    // Someone else's session, or one already running in another tab. The slot
+    // was claimed first, so it has to go back.
+    ddb.on(UpdateCommand, { ReturnValues: "ALL_NEW" }).rejects(
+      new ConditionalCheckFailedException({
+        $metadata: {},
+        message: "no",
+        Item: { userId: { S: "someone-else" } },
+      }),
+    );
+
+    const port = await listen();
+    const client = connect(port);
+    await client.waitFor("error");
+    await settle(80);
+
+    expect(sonicStreams).toHaveLength(0);
+    const refunds = profileUpdates().filter((input) =>
+      input.UpdateExpression?.includes(":minusOne"),
+    );
+    expect(refunds).toHaveLength(1);
   });
 });

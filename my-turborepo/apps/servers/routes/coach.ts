@@ -7,6 +7,7 @@ import {
 } from "@repo/shared";
 import { runCoachAgent } from "../agents/coach";
 import { ServiceError } from "../lib/errors";
+import { spendModelCall } from "../lib/budget";
 import { MESSAGES } from "../lib/messages";
 import { listUserSessionSummaries } from "../lib/evaluations";
 import { getCachedCoach, putCachedCoach } from "../lib/profile";
@@ -82,7 +83,23 @@ coachRouter.get("/", async (req, res) => {
     // A candidate with no finished interviews gets an empty report rather than
     // a 404. There is no error here — they simply have not done one yet, and
     // the page has an empty state for exactly this.
-    const result = await runCoachAgent({ summaries, cachedProse: fresh });
+    // A regeneration spends from the daily model budget; a cache hit does not.
+    // Refused, the page still renders from the numbers with fallback copy
+    // rather than failing: the report is the candidate's own data, and only
+    // the prose costs money.
+    let allowGeneration = true;
+    if (fresh === null && summaries.length > 0) {
+      allowGeneration = (await spendModelCall({ userId })) === "ok";
+      if (!allowGeneration) {
+        console.log(`[coach] ${userId} daily model budget spent, serving without prose`);
+      }
+    }
+
+    const result = await runCoachAgent({
+      summaries,
+      cachedProse: fresh,
+      allowGeneration,
+    });
 
     // Only a run that actually generated something is worth writing. Rewriting
     // on a hit would be a Put per page load to store bytes already there.

@@ -6,6 +6,16 @@ export const MESSAGES = {
   UNAUTHORIZED_MISSING_TOKEN: "Unauthorized: missing or malformed token",
   UNAUTHORIZED_INVALID_TOKEN: "Unauthorized: invalid token",
   RATE_LIMITED: "Too many requests. Wait a moment and try again.",
+  // Client-facing spend refusals. Both are 429s: the request was fine, the
+  // account has spent what it may spend, and waiting (until tomorrow, or for a
+  // new session) is the remedy.
+  MODEL_BUDGET_EXHAUSTED:
+    "You have reached today's limit for AI-generated plans and analysis. Try again tomorrow.",
+  SESSION_AGENT_LIMIT:
+    "This interview has been re-planned too many times. Start a new interview to plan again.",
+  // Log-facing.
+  USAGE_WRITE_FAILED: "Could not record model usage.",
+  RATE_LIMIT_STORE_FAILED: "Could not update the shared rate limit counter.",
   // Client-facing, and safe to be specific: the value came from them and the
   // fix is theirs. Names the shape rather than saying "invalid".
   INVALID_GITHUB_URL:

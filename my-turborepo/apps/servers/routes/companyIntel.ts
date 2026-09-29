@@ -7,6 +7,7 @@ import {
   SessionAccessError,
   SessionStateError,
 } from "../lib/errors";
+import { budgetRefusalMessage, spendModelCall } from "../lib/budget";
 import { MESSAGES } from "../lib/messages";
 import { loadPlannerInputs, putCompanyIntel } from "../lib/sessions";
 
@@ -85,6 +86,15 @@ companyIntelRouter.post("/", async (req, res) => {
     // reads nothing from the session — the agent takes a company name and
     // nothing else — so the call is purely the access check.
     await loadPlannerInputs({ sessionId: parsed.data.sessionId, userId });
+
+    const verdict = await spendModelCall({
+      userId,
+      sessionId: parsed.data.sessionId,
+    });
+    if (verdict !== "ok") {
+      res.status(429).json({ message: budgetRefusalMessage(verdict) });
+      return;
+    }
 
     const intel = await runCompanyIntelAgent({
       sessionId: parsed.data.sessionId,

@@ -78,6 +78,17 @@ export const INTERVIEW = {
   // prompt's time budget is advisory and the model overran it by eight minutes
   // in a measured 48-minute session, so the clock is enforced in code.
   HARD_STOP_GRACE_MS: 60 * 1000,
+  // A claimed quota slot is given back when the interview ends within this long
+  // of the stream opening AND produced no scoreable answer — a failed startup, a
+  // microphone that never worked, a tab closed on the first question.
+  //
+  // Short on purpose. The slot is claimed when the stream opens precisely so an
+  // interview of nothing but "could you repeat that" cannot run for forty
+  // minutes uncharged; a long refund window would reopen exactly that. Two
+  // minutes is enough to discover a broken setup and not enough to be worth
+  // abusing, because every new attempt needs a new session and a new plan, and
+  // plans spend the daily model budget.
+  QUOTA_REFUND_WINDOW_MS: 2 * 60 * 1000,
 } as const;
 
 // Nova 2 Sonic stream settings. Separate from BEDROCK above because the voice
@@ -146,6 +157,25 @@ export const SONIC = {
   // Liveness probe. `ws` gives us ping/pong; a socket that misses two in a row
   // is gone, and the Sonic stream behind it must not outlive it.
   HEARTBEAT_MS: 30_000,
+  // Largest WebSocket message the server will accept at all. `ws` defaults to
+  // 100 MiB, and MAX_QUEUED_AUDIO_FRAMES bounds frames by COUNT, not size — so
+  // without this one authenticated candidate could queue 200 x 100 MiB and take
+  // the task, and every other live interview on it, down. A message over this
+  // closes the socket with 1009.
+  //
+  // Under Node `ws` enforces it before buffering. Under Bun it does NOT: Bun's
+  // `ws` shim ignores `maxPayload` (measured), so routes/interview.ts checks it
+  // again in the message handler, and Bun's own ~16 MiB limit is the only thing
+  // that stops a message before it is buffered.
+  MAX_SOCKET_MESSAGE_BYTES: 16 * 1024,
+  // Largest single audio frame forwarded to Sonic. The browser's worklet sends
+  // 512 samples of 16-bit PCM — 1,024 bytes — per frame (apps/web
+  // audioConstants.ts). Eight times that is headroom for a client that batches,
+  // and small enough that the queue's worst case is 200 x 8 KiB = 1.6 MiB.
+  MAX_AUDIO_FRAME_BYTES: 8 * 1024,
+  // Text frames carry one control word today ("stop"). Anything longer is not a
+  // message this server understands, and is dropped without being decoded.
+  MAX_CONTROL_MESSAGE_BYTES: 64,
 } as const;
 
 import { RESUME_LIMITS, UPLOAD_FIELDS } from "@repo/shared";

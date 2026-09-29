@@ -108,6 +108,10 @@ module "cloudfront" {
   bucket_id                   = module.s3.bucket_id
   bucket_arn                  = module.s3.bucket_arn
   bucket_regional_domain_name = module.s3.bucket_regional_domain_name
+
+  # The API's origins for the CSP's connect-src. Empty until the API has a
+  # public endpoint; set both the https:// and wss:// forms when it does.
+  api_origins = var.api_origins
 }
 
 module "cognito" {

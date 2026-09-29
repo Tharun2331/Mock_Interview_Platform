@@ -8,6 +8,7 @@ import {
   SessionAccessError,
   SessionStateError,
 } from "../lib/errors";
+import { budgetRefusalMessage, spendModelCall } from "../lib/budget";
 import { MESSAGES } from "../lib/messages";
 import { loadPlannerInputs, putGapAnalysis } from "../lib/sessions";
 
@@ -100,6 +101,17 @@ gapRouter.post("/", async (req, res) => {
       sessionId: parsed.data.sessionId,
       userId,
     });
+
+    // After ownership is proven, before the model runs. On demand means it can
+    // be called in a loop, so this is the route's only real spend bound.
+    const verdict = await spendModelCall({
+      userId,
+      sessionId: parsed.data.sessionId,
+    });
+    if (verdict !== "ok") {
+      res.status(429).json({ message: budgetRefusalMessage(verdict) });
+      return;
+    }
 
     const analysis = await runGapAgent({
       sessionId: parsed.data.sessionId,

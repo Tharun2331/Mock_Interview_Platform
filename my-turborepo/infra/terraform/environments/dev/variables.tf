@@ -19,3 +19,9 @@ variable "google_client_secret" {
   description = "Google OAuth client secret for the Cognito Google identity provider"
   sensitive   = true
 }
+
+variable "api_origins" {
+  type        = list(string)
+  description = "Origins of the PrepPilot API that the web app's Content-Security-Policy allows, in both schemes, e.g. [\"https://api-dev.tharunsekar.xyz\", \"wss://api-dev.tharunsekar.xyz\"]."
+  default     = []
+}

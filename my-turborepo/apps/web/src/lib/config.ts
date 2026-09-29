@@ -1,4 +1,18 @@
-export const BACKEND_URL = "http://localhost:8000";
+// The API's base URL, inlined at build time from BUN_PUBLIC_API_URL.
+//
+// Falls back to the local dev server only when the variable is unset, which is
+// the `bun --hot` workflow. A production bundle never takes the fallback:
+// build.ts refuses to build without the variable, and refuses anything that is
+// not https://. The interview WebSocket derives its scheme from this URL, so an
+// https:// base is also what makes the socket wss:// rather than a plaintext
+// ws:// stream of the candidate's voice and access token.
+const DEV_BACKEND_URL = "http://localhost:8000";
+
+export const BACKEND_URL: string =
+  process.env.BUN_PUBLIC_API_URL !== undefined &&
+  process.env.BUN_PUBLIC_API_URL.length > 0
+    ? process.env.BUN_PUBLIC_API_URL
+    : DEV_BACKEND_URL;
 
 // Upper bound on any single API call. Without one, axios waits forever: a
 // request the server never answers leaves the form pinned on its progress bar
