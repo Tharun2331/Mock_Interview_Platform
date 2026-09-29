@@ -44,3 +44,20 @@ variable "admin_group_name" {
   description = "Cognito group whose members are permitted to reach the admin API"
   default     = "admins"
 }
+
+variable "threat_protection_mode" {
+  type        = string
+  description = "Cognito threat protection: OFF, AUDIT (score and log risky sign-ins) or ENFORCED (block them). Anything but OFF moves the pool to the PLUS feature tier, which is billed per monthly active user."
+  default     = "OFF"
+
+  validation {
+    condition     = contains(["OFF", "AUDIT", "ENFORCED"], var.threat_protection_mode)
+    error_message = "threat_protection_mode must be OFF, AUDIT or ENFORCED."
+  }
+}
+
+variable "deletion_protection" {
+  type        = bool
+  description = "Refuse to delete the user pool. Deleting it deletes every account, so this defaults on; turn it off only to deliberately tear an environment down."
+  default     = true
+}
