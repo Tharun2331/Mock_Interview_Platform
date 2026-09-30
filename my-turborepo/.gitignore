@@ -40,6 +40,12 @@ yarn-error.log*
 
 # Terraform
 .terraform/
+# Lambda zips built by `data "archive_file"` at plan time.
+infra/terraform/**/.build/
+# Saved plan files (`terraform plan -out=...`). These can carry values
+# resolved from state, so they are never committed, under any name.
+infra/terraform/**/*tfplan*
+infra/terraform/**/=tfplan
 *.tfstate
 *.tfstate.backup
 *.tfstate.lock.info

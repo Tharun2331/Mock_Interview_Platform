@@ -47,12 +47,11 @@ module "cloudwatch" {
 
   eval_dlq_name = module.sqs.eval_dlq_name
 
-  # No alarm_actions in dev. An SNS topic with no confirmed subscription notifies
-  # nobody while making every alarm look wired up, and dev is where a false sense
-  # of coverage is cheapest to acquire and most expensive to keep. The alarms still
-  # record state and still show red in the console, which is what dev needs.
-  # prod should set this to a real topic ARN with a confirmed subscription.
-  alarm_actions = []
+  # Alarm notifications go to the alerts module's topic, which exists only when
+  # alert_emails is set. With no emails this is an empty list: the alarms still
+  # record state and show red in the console, but notify nobody, which is the
+  # honest default rather than a topic that looks wired up and is not.
+  alarm_actions = module.alerts.alarm_actions
 }
 
 # The evaluation queue and its dead-letter queue.
@@ -61,6 +60,14 @@ module "cloudwatch" {
 # free tier, and a fifteen-question interview is ~17 requests end to end. There
 # is no per-hour charge, so an idle queue costs zero — unlike the NAT Gateway
 # and ALB called out in infra/terraform/CLAUDE.md.
+# Email notifications for the alarms above. See the module for the
+# subscription-confirmation step.
+module "alerts" {
+  source      = "../../modules/alerts"
+  environment = var.environment
+  emails      = var.alert_emails
+}
+
 module "sqs" {
   source      = "../../modules/sqs"
   environment = var.environment
@@ -119,6 +126,9 @@ module "cognito" {
   environment          = var.environment
   google_client_id     = var.google_client_id
   google_client_secret = var.google_client_secret
+
+  # Dev's pages only. The production origin belongs to the prod pool's client.
+  app_origins = var.app_origins
 
   # NOTE: intentionally NO depends_on = [module.cloudfront]. The apex record
   # (created by module.cloudfront) only needed to exist for the FIRST creation

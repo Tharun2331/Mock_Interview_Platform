@@ -76,3 +76,16 @@ variable "alarm_actions" {
   description = "SNS topic ARNs notified when an alarm fires. Deliberately empty by default and deliberately NOT a topic created by this module: a topic with no confirmed subscription is indistinguishable from no topic at all, and creating one here would make every alarm look wired up while notifying nobody. An alarm with no action still records state and still shows red in the console, which is the honest default until a real destination exists."
   default     = []
 }
+
+variable "auth_failure_threshold" {
+  type        = number
+  description = "401s (HTTP and WebSocket handshake) in a 5-minute period before alarming. A normal user produces at most one or two when a token expires mid-session, so twenty in five minutes is either an attack or a broken client."
+  default     = 20
+}
+
+variable "admin_refusal_threshold" {
+  type        = number
+  description = "Admin-route refusals in a 15-minute period before alarming. The web app never sends a non-admin there, so a handful is already deliberate probing."
+  default     = 5
+}
+

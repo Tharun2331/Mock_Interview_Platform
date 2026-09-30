@@ -64,6 +64,12 @@ resource "aws_cognito_user_pool" "pool" {
 
   # Deleting the pool deletes every account in it, with no undo.
   deletion_protection = var.deletion_protection ? "ACTIVE" : "INACTIVE"
+
+  # The free substitute for threat protection: refuses disposable-mail domains
+  # and + sub-addressing at sign-up. See pre_sign_up.tf.
+  lambda_config {
+    pre_sign_up = aws_lambda_function.pre_sign_up.arn
+  }
 }
 
 # 4. Google Identity Provider Connection
@@ -119,18 +125,12 @@ resource "aws_cognito_user_pool_client" "client" {
   allowed_oauth_flows_user_pool_client = true
   allowed_oauth_scopes                 = ["phone", "email", "openid", "profile"]
 
-  # You can keep BOTH production urls and your localhost dev urls active simultaneously!
-  callback_urls = [
-    "http://localhost:3000/callback",            # Your local dev callback route
-    "https://preppilot.tharunsekar.xyz/callback" # Your production callback route
-
-  ]
-
-  logout_urls = [
-    "http://localhost:3000",            # Your local dev landing page on logout
-    "https://preppilot.tharunsekar.xyz" # Your production landing page on logout
-
-  ]
+  # Only this environment's URLs. One client used to accept both localhost and
+  # production, so a production sign-in code could be sent to
+  # http://localhost:3000, where anything listening locally could catch it.
+  # Each environment's pool now lists its own pages and nothing else.
+  callback_urls = [for origin in var.app_origins : "${origin}/callback"]
+  logout_urls   = var.app_origins
   # Sign-in and password reset answer the same way whether or not the account
   # exists. The web app already shows one message for both, but that only
   # covered the UI: anyone calling InitiateAuth or ForgotPassword directly

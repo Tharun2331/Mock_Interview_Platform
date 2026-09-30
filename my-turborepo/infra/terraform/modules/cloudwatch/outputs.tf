@@ -26,5 +26,7 @@ output "alarm_names" {
     aws_cloudwatch_metric_alarm.sonic_errors.alarm_name,
     aws_cloudwatch_metric_alarm.sonic_billed_time.alarm_name,
     aws_cloudwatch_metric_alarm.eval_dlq_depth.alarm_name,
+    aws_cloudwatch_metric_alarm.auth_failures.alarm_name,
+    aws_cloudwatch_metric_alarm.admin_refusals.alarm_name,
   ]
 }
