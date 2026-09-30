@@ -123,7 +123,23 @@ resource "aws_cognito_user_pool_client" "client" {
   explicit_auth_flows                  = ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
   allowed_oauth_flows                  = ["code"]
   allowed_oauth_flows_user_pool_client = true
-  allowed_oauth_scopes                 = ["phone", "email", "openid", "profile"]
+  # aws.cognito.signin.user.admin is the scope that gates every self-service
+  # Cognito API — GetUser, ChangePassword, and the whole MFA management
+  # family (AssociateSoftwareToken, SetUserMFAPreference, and by extension
+  # fetchMFAPreference/setUpTOTP/verifyTOTPSetup/updateMFAPreference in
+  # Amplify). A native sign-in (signIn(), USER_SRP_AUTH) gets it on its access
+  // token automatically; the Hosted UI / OAuth code exchange used by Google
+  // sign-in only grants what is listed here. Its absence produced
+  // "NotAuthorizedException: Access Token does not have required scopes" for
+  // every Google-authenticated candidate who opened Settings > Security — not
+  // a federated-user limitation, just this one scope never being requested.
+  allowed_oauth_scopes = [
+    "phone",
+    "email",
+    "openid",
+    "profile",
+    "aws.cognito.signin.user.admin",
+  ]
 
   # Only this environment's URLs. One client used to accept both localhost and
   # production, so a production sign-in code could be sent to

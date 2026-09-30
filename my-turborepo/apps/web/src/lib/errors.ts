@@ -21,9 +21,31 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   // Lambda's own message in "PreSignUp failed with error ...", which is not
   // copy a candidate should see.
   UserLambdaValidationException: MESSAGES.AUTH_EMAIL_NOT_ALLOWED,
+  LimitExceededException: MESSAGES.AUTH_TOO_MANY_ATTEMPTS,
+  TooManyRequestsException: MESSAGES.AUTH_TOO_MANY_ATTEMPTS,
+  TooManyFailedAttemptsException: MESSAGES.AUTH_TOO_MANY_ATTEMPTS,
+};
+
+// A second, smaller table for MFA-context calls (MfaSettings.tsx, and the
+// sign-in TOTP challenge in signin.tsx), kept apart from AUTH_ERROR_MESSAGES
+// on purpose.
+//
+// The two generic entries there — NotAuthorizedException and
+// UserNotFoundException, both mapped to "Incorrect email or password" —
+// make sense on a form where a password was just typed. They make no sense
+// on a settings screen that never asks for one: fetchMFAPreference() failing
+// on a Cognito NotAuthorizedException (raised for reasons that have nothing
+// to do with a password, a stale session among them) showed a candidate "did
+// you mean to be signed in as someone else" copy on a page that had not
+// asked them to authenticate anything. This table omits both, so an
+// unrecognised error here falls through to the caller's own, accurate
+// fallback instead of borrowing the wrong one.
+const MFA_ERROR_MESSAGES: Record<string, string> = {
+  CodeMismatchException: MESSAGES.AUTH_CODE_INVALID,
+  ExpiredCodeException: MESSAGES.AUTH_CODE_EXPIRED,
   // Wrong code during TOTP setup (VerifySoftwareToken) or during the sign-in
-  // challenge (VerifySoftwareTokenMfa). CodeMismatchException is Cognito's name
-  // for the same failure in the sign-up path, already mapped to identical copy.
+  // challenge (VerifySoftwareTokenMfa). CodeMismatchException is Cognito's
+  // name for the same failure in the sign-up path, mapped to identical copy.
   EnableSoftwareTokenMFAException: MESSAGES.AUTH_CODE_INVALID,
   // Raised by updateMFAPreference({ totp: "DISABLED" }) if setup was never
   // completed — the settings screen only ever shows Disable once it has, so
@@ -39,6 +61,19 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
 export function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error) {
     const mapped = AUTH_ERROR_MESSAGES[error.name];
+    if (mapped !== undefined) return mapped;
+  }
+  return fallback;
+}
+
+// The MFA-context counterpart. Also logs the raw error name to the console —
+// unlike the sign-in form, these screens are reached far less often, so a real
+// failure here is worth a trace even outside a dev build; nothing sensitive is
+// in a Cognito exception name.
+export function mfaErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) {
+    console.error(`[mfa] ${error.name}: ${error.message}`);
+    const mapped = MFA_ERROR_MESSAGES[error.name];
     if (mapped !== undefined) return mapped;
   }
   return fallback;
