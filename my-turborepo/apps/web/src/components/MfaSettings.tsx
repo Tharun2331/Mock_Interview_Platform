@@ -29,7 +29,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { errorMessage } from "@/lib/errors";
+import { mfaErrorMessage } from "@/lib/errors";
 import { MESSAGES } from "@/lib/messages";
 
 // Self-service TOTP enrolment, in the Security section of the settings page.
@@ -82,7 +82,7 @@ export function MfaSettings() {
     } catch (error) {
       setState({
         status: "error",
-        message: errorMessage(error, MESSAGES.MFA_LOAD_FAILED),
+        message: mfaErrorMessage(error, MESSAGES.MFA_LOAD_FAILED),
       });
     }
   };
@@ -129,7 +129,7 @@ export function MfaSettings() {
         setupUri: details.getSetupUri(MESSAGES.APP_NAME).toString(),
       });
     } catch (error) {
-      toast.error(errorMessage(error, MESSAGES.MFA_START_FAILED));
+      toast.error(mfaErrorMessage(error, MESSAGES.MFA_START_FAILED));
     }
   };
 
@@ -143,7 +143,7 @@ export function MfaSettings() {
       setState({ status: "on" });
       toast.success(MESSAGES.MFA_ENABLED);
     } catch (error) {
-      toast.error(errorMessage(error, MESSAGES.AUTH_CODE_INVALID));
+      toast.error(mfaErrorMessage(error, MESSAGES.AUTH_CODE_INVALID));
     }
   });
 
@@ -155,7 +155,7 @@ export function MfaSettings() {
       setDisableOpen(false);
       toast.success(MESSAGES.MFA_DISABLED);
     } catch (error) {
-      toast.error(errorMessage(error, MESSAGES.MFA_LOAD_FAILED));
+      toast.error(mfaErrorMessage(error, MESSAGES.MFA_LOAD_FAILED));
     } finally {
       setDisabling(false);
     }

@@ -72,7 +72,21 @@ export const COGNITO = {
       process.env.BUN_PUBLIC_COGNITO_DOMAIN.length > 0
         ? process.env.BUN_PUBLIC_COGNITO_DOMAIN
         : "auth.tharunsekar.xyz",
-    scopes: ["email", "openid", "profile", "phone"],
+    // aws.cognito.signin.user.admin is requested here as well as allowed on
+    // the app client (infra/terraform/modules/cognito): Cognito only grants a
+    // scope that was BOTH allowed on the client and asked for in this
+    // redirect's `scope` parameter, so listing it on one side alone still
+    // issues a token missing it. Without it, every self-service Cognito call
+    // — GetUser, and the whole MFA family — fails with "Access Token does not
+    // have required scopes" for anyone who signed in through Google, no
+    // matter how many times they sign out and back in.
+    scopes: [
+      "email",
+      "openid",
+      "profile",
+      "phone",
+      "aws.cognito.signin.user.admin",
+    ],
     redirectSignIn: [`${APP_ORIGIN}/callback`],
     redirectSignOut: [APP_ORIGIN],
     responseType: "code",

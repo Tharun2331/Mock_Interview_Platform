@@ -30,7 +30,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { GoogleIcon } from "@/components/GoogleIcon";
-import { errorMessage, isAlreadyAuthenticated } from "@/lib/errors";
+import { errorMessage, isAlreadyAuthenticated, mfaErrorMessage } from "@/lib/errors";
 import { MESSAGES } from "@/lib/messages";
 
 // Reached only for an account that turned on TOTP in Settings. `confirmSignIn`
@@ -112,7 +112,7 @@ export function SignIn() {
       // A wrong or expired code. The pending sign-in survives a failed
       // attempt, so the candidate stays on this step and can retry without
       // re-entering their password.
-      toast.error(errorMessage(error, MESSAGES.AUTH_CODE_INVALID));
+      toast.error(mfaErrorMessage(error, MESSAGES.AUTH_CODE_INVALID));
     }
   });
 
