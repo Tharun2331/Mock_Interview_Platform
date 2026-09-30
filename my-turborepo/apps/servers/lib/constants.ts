@@ -302,6 +302,15 @@ export const METRICS = {
   INTERVIEW_SESSIONS_STARTED: "InterviewSessionsStarted",
   INTERVIEW_SESSIONS_REFUSED: "InterviewSessionsRefused",
 
+  // Security signals, Environment dimension only (one metric each, not one per
+  // route or per user). Alarmed on in infra/terraform/modules/cloudwatch.
+  //   AuthFailures   every 401 from AuthMiddleware and every refused WebSocket
+  //                  handshake. A spike is token stuffing or a broken client.
+  //   AdminRefusals  every request RequireAdmin turns away with its 404. Any
+  //                  sustained count is someone probing the admin surface.
+  AUTH_FAILURES: "AuthFailures",
+  ADMIN_REFUSALS: "AdminRefusals",
+
   // EMF's documented ceiling on metric definitions in one log event. Nothing here
   // approaches it — the largest emission is four values — but the emitter refuses
   // rather than writing an event CloudWatch would silently drop whole.

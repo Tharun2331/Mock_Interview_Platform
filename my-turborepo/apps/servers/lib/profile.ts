@@ -108,6 +108,11 @@ export async function getProfile(args: {
 
   if (response.Item === undefined) return null;
 
+  // An erasure tombstone (see deleteProfileItems) reads as "no profile". It has
+  // none of the profile's fields, so parsing it would be a 500 for what is just
+  // a stale token belonging to a deleted account.
+  if (response.Item.erasedAt !== undefined) return null;
+
   return parseItem(UserProfileSchema, response.Item, PROFILE_CONTEXT);
 }
 
@@ -325,7 +330,6 @@ export async function deleteProfileItems(args: {
     // limiter's window (lib/rateLimitStore.ts). Both name the user.
     { PK: userPk(args.userId), SK: SORT_KEY.USAGE },
     { PK: `${KEY_PREFIX.RATE_LIMIT}${args.userId}`, SK: SORT_KEY.RATE_LIMIT_WINDOW },
-    profileKey(args.userId),
   ]) {
     try {
       await dynamoClient.send(new DeleteCommand({ TableName, Key }));
@@ -333,7 +337,42 @@ export async function deleteProfileItems(args: {
       throw readFailure(error, MESSAGES.PROFILE_DELETE_FAILED);
     }
   }
+
+  // The PROFILE item is REPLACED with a tombstone, not deleted.
+  //
+  // Deleting it re-opened the account to a token that outlived it. Access tokens
+  // are verified locally and stay valid for up to an hour after Cognito deletes
+  // the user, and every profile write is an upsert, so PUT /profile with that
+  // token recreated a profile under the erased user's id. Deleting the Cognito
+  // user already stops refresh, so the access token is the whole gap.
+  //
+  // The tombstone carries `status: "deleting"`, which every write path already
+  // refuses through NOT_DELETING, so no write path needed changing. It holds
+  // nothing but the key, the status and timestamps: the sub is a random id with
+  // nothing left that links it to a person. `expiresAt` lets TTL remove it where
+  // the table has TTL on, well after any token issued to the account has expired.
+  const now = Date.now();
+  try {
+    await dynamoClient.send(
+      new PutCommand({
+        TableName,
+        Item: {
+          ...profileKey(args.userId),
+          status: "deleting",
+          erasedAt: new Date(now).toISOString(),
+          expiresAt: Math.floor(now / 1000) + ERASURE_TOMBSTONE_SECONDS,
+        },
+      }),
+    );
+  } catch (error) {
+    throw readFailure(error, MESSAGES.PROFILE_DELETE_FAILED);
+  }
 }
+
+// How long an erasure tombstone must outlive the account. Cognito access tokens
+// live one hour here; a day leaves a wide margin for clock skew and for the
+// validity being raised later.
+const ERASURE_TOMBSTONE_SECONDS = 24 * 60 * 60;
 
 // Replaces the GitHub half of the candidate's material without touching the
 // resume half.

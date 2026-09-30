@@ -175,6 +175,26 @@ describe("GET /api/v1/profile", () => {
     expect((await profileBody(response)).profile).toBeNull();
   });
 
+  // A token that outlived its deleted account reads the erasure tombstone.
+  // That is "no profile", not a schema failure and not a 500.
+  it("reads an erasure tombstone as no profile", async () => {
+    ddb.on(GetCommand).resolves({
+      Item: {
+        PK: "USER#user-1",
+        SK: "PROFILE",
+        status: "deleting",
+        erasedAt: "2026-09-30T10:00:00.000Z",
+        expiresAt: 1790000000,
+      },
+    });
+    const { url } = await start();
+
+    const response = await fetch(`${url}/api/v1/profile`);
+
+    expect(response.status).toBe(200);
+    expect((await profileBody(response)).profile).toBeNull();
+  });
+
   it("reads strongly consistent, so onboarding cannot bounce a candidate back", async () => {
     ddb.on(GetCommand).resolves({ Item: STORED_PROFILE });
     const { url } = await start();

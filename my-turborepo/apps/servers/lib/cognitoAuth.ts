@@ -2,6 +2,7 @@ import { CognitoJwtVerifier } from "aws-jwt-verify";
 import type { NextFunction, Request, Response } from "express";
 import { config } from "./config";
 import { MESSAGES } from "./messages";
+import { recordAuthFailure } from "./metrics";
 
 // Exported so the WebSocket upgrade handler verifies against the same JWKS
 // cache rather than standing up a second verifier. A browser WebSocket cannot
@@ -21,6 +22,7 @@ export const AuthMiddleware = async (
   // 1. Extract token from the Authorization header (Format: Bearer <token>)
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    recordAuthFailure();
     res.status(401).json({ error: MESSAGES.UNAUTHORIZED_MISSING_TOKEN });
     return;
   }
@@ -55,6 +57,7 @@ export const AuthMiddleware = async (
     } else {
       console.error("Unknown error", e);
     }
+    recordAuthFailure();
     res.status(401).json({ error: MESSAGES.UNAUTHORIZED_INVALID_TOKEN });
   }
 };

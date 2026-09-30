@@ -61,3 +61,21 @@ variable "deletion_protection" {
   description = "Refuse to delete the user pool. Deleting it deletes every account, so this defaults on; turn it off only to deliberately tear an environment down."
   default     = true
 }
+
+variable "app_origins" {
+  type        = list(string)
+  description = "Origins the web app is served from in THIS environment, without a trailing slash, e.g. [\"http://localhost:3000\"] for dev or [\"https://preppilot.tharunsekar.xyz\"] for prod. Each becomes an allowed sign-in callback (<origin>/callback) and sign-out URL. Never list another environment's origin here."
+}
+
+variable "block_plus_addressing" {
+  type        = bool
+  description = "Refuse native sign-ups whose address has a + tag (name+1@example.com). Every tag lands in one inbox, so leaving it open lets one mailbox create unlimited accounts, each with its own free interviews."
+  default     = true
+}
+
+variable "extra_blocked_email_domains" {
+  type        = list(string)
+  description = "Disposable-mail domains to refuse on top of the list built into pre_sign_up/index.mjs. Subdomains of each are refused too."
+  default     = []
+}
+

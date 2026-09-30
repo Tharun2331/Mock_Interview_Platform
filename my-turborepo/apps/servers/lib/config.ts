@@ -143,7 +143,11 @@ export const config = {
   port: Number(env("PORT", "8000")),
   // True only outside production AND only when explicitly asked for.
   interviewTestMode:
-    !isProduction() && env("INTERVIEW_TEST_MODE", "") === "false",
+    //
+    // Compares against "true". It compared against "false" for a while, which
+    // turned test mode ON for anyone who wrote INTERVIEW_TEST_MODE=false to
+    // turn it off; __tests__/setup.ts documents the intended contract.
+    !isProduction() && env("INTERVIEW_TEST_MODE", "") === "true",
   interviewTestTargetMinutes: testTargetMinutes(),
   corsOrigins: resolveCorsOrigins(process.env.CORS_ORIGIN, isProduction()),
   // Caps the JSON parser. Every current route takes a small object; resume

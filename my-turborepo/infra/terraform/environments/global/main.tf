@@ -164,3 +164,16 @@ module "budgets" {
   alert_emails              = var.budget_alert_emails
   tags                      = local.common_tags
 }
+
+# ---------------------------------------------------------------------------
+# Audit trail
+#
+# Account-wide, so it lives here with the other shared resources. Management
+# events only, which keeps it free; see the module.
+# ---------------------------------------------------------------------------
+
+module "cloudtrail" {
+  source = "../../modules/cloudtrail"
+
+  tags = local.common_tags
+}

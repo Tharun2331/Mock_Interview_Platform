@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { config } from "./config";
 import { MESSAGES } from "./messages";
+import { recordAdminRefusal } from "./metrics";
 
 // The single admin check. Every /admin route mounts behind this one middleware
 // rather than testing membership in its own handler — a per-handler check is a
@@ -48,6 +49,7 @@ export const RequireAdmin = (
         `${user?.id ?? "unauthenticated"} — not in group ` +
         `"${config.adminGroupName}"`,
     );
+    recordAdminRefusal();
     res.status(404).json({ message: MESSAGES.NOT_FOUND });
     return;
   }

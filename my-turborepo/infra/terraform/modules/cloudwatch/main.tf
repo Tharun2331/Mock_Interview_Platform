@@ -259,3 +259,60 @@ resource "aws_cloudwatch_metric_alarm" "eval_dlq_depth" {
 
   tags = local.common_tags
 }
+
+# ---------------------------------------------------------------------------
+# Security alarms
+#
+# Both read Environment-only EMF counters the API emits (apps/servers/lib/
+# metrics.ts). Missing data is treated as not breaching, so both read OK, not
+# INSUFFICIENT_DATA, until the service ships logs here. That is also the
+# healthy steady state: the counters are only emitted when something is refused.
+#
+# Cost: each alarm is within CloudWatch's 10 free standard alarms (this module
+# now has 7), and each counter is one custom metric.
+# ---------------------------------------------------------------------------
+
+resource "aws_cloudwatch_metric_alarm" "auth_failures" {
+  alarm_name        = "prepilot-auth-failures-${var.environment}"
+  alarm_description = "${var.auth_failure_threshold} or more requests were refused for a missing, expired or forged token in five minutes. Either someone is replaying or guessing tokens, or a client release broke token refresh; the API log has the verifier's reason per request."
+
+  namespace   = var.metrics_namespace
+  metric_name = "AuthFailures"
+  dimensions  = local.metric_dimensions
+
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = var.auth_failure_threshold
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+
+  # Emitted only when something is refused, so a quiet period has no data and
+  # that is the healthy state.
+  treat_missing_data = "notBreaching"
+  alarm_actions      = var.alarm_actions
+  ok_actions         = var.alarm_actions
+
+  tags = local.common_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "admin_refusals" {
+  alarm_name        = "prepilot-admin-refusals-${var.environment}"
+  alarm_description = "${var.admin_refusal_threshold} or more signed-in callers were turned away from the admin API in fifteen minutes. The client never shows a non-admin the admin page, so this is someone probing /api/v1/admin by hand, or an admin who lost group membership. The API log names the subject of each refusal."
+
+  namespace   = var.metrics_namespace
+  metric_name = "AdminRefusals"
+  dimensions  = local.metric_dimensions
+
+  statistic           = "Sum"
+  period              = 900
+  evaluation_periods  = 1
+  threshold           = var.admin_refusal_threshold
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+
+  treat_missing_data = "notBreaching"
+  alarm_actions      = var.alarm_actions
+  ok_actions         = var.alarm_actions
+
+  tags = local.common_tags
+}
+

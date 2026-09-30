@@ -52,6 +52,11 @@ const define = {
   "process.env.BUN_PUBLIC_API_URL": JSON.stringify(
     requireHttpsApiUrl("BUN_PUBLIC_API_URL"),
   ),
+  // Optional: unset falls back to dev's hosted-UI domain in lib/config.ts.
+  // Defined either way, so the bundle never reads `process.env` at runtime.
+  "process.env.BUN_PUBLIC_COGNITO_DOMAIN": JSON.stringify(
+    process.env.BUN_PUBLIC_COGNITO_DOMAIN ?? "",
+  ),
 };
 
 const outdir = path.join(process.cwd(), "dist");
@@ -65,7 +70,10 @@ const result = await Bun.build({
   plugins: [tailwind],
   minify: true,
   target: "browser",
-  sourcemap: "linked",
+  // No source maps in the deployed bundle. "linked" published a .map next to
+  // every chunk, which served the whole unminified frontend (comments included)
+  // to anyone who asked. Debug locally with `bun --hot` instead.
+  sourcemap: "none",
   define,
 });
 
