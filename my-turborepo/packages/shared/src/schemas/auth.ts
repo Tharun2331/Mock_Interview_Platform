@@ -45,3 +45,14 @@ export const SigninSchema = z.object({
 });
 
 export type SignInInput = z.infer<typeof SigninSchema>;
+
+// A 6-digit code from an authenticator app. Same shape as ConfirmSignupSchema's
+// email code, kept separate because the two mean different things and a shared
+// name would blur which flow a validation error belongs to: this one covers
+// both TOTP enrollment (verifyTOTPSetup) and the sign-in challenge
+// (confirmSignIn), which take the same input shape.
+export const TotpCodeSchema = z.object({
+  code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code from your app."),
+});
+
+export type TotpCodeInput = z.infer<typeof TotpCodeSchema>;

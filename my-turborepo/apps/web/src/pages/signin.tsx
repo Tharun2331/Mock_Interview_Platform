@@ -1,9 +1,15 @@
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
-import { signIn, signInWithRedirect } from "aws-amplify/auth";
-import { SigninSchema, type SignInInput } from "@repo/shared";
+import { confirmSignIn, signIn, signInWithRedirect } from "aws-amplify/auth";
+import {
+  SigninSchema,
+  TotpCodeSchema,
+  type SignInInput,
+  type TotpCodeInput,
+} from "@repo/shared";
 
 import {
   Field,
@@ -27,14 +33,29 @@ import { GoogleIcon } from "@/components/GoogleIcon";
 import { errorMessage, isAlreadyAuthenticated } from "@/lib/errors";
 import { MESSAGES } from "@/lib/messages";
 
+// Reached only for an account that turned on TOTP in Settings. `confirmSignIn`
+// continues the SAME pending Cognito sign-in `signIn()` started, using no
+// stored credentials of its own — which is why this is a second render mode
+// of this page rather than a route: navigating away would mean re-mounting
+// this component and losing whatever in-memory state Amplify is tracking for
+// that pending sign-in.
+type Step = "credentials" | "totp";
+
 export function SignIn() {
   const navigate = useNavigate();
+  const [step, setStep] = useState<Step>("credentials");
+
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<SignInInput>({
     resolver: zodResolver(SigninSchema),
+    mode: "onTouched",
+  });
+
+  const totpForm = useForm<TotpCodeInput>({
+    resolver: zodResolver(TotpCodeSchema),
     mode: "onTouched",
   });
 
@@ -56,6 +77,15 @@ export function SignIn() {
         return;
       }
 
+      // The password checked out; a code from their authenticator app is the
+      // second factor. The pool's MFA setting is OPTIONAL, so this step only
+      // appears for an account that has already enrolled in Settings.
+      if (nextStep.signInStep === "CONFIRM_SIGN_IN_WITH_TOTP_CODE") {
+        totpForm.reset();
+        setStep("totp");
+        return;
+      }
+
       if (nextStep.signInStep === "DONE") {
         navigate("/form");
       }
@@ -65,6 +95,24 @@ export function SignIn() {
         return;
       }
       toast.error(errorMessage(error, MESSAGES.AUTH_SIGNIN_FAILED));
+    }
+  });
+
+  const onVerifyTotp = totpForm.handleSubmit(async ({ code }) => {
+    try {
+      const { nextStep } = await confirmSignIn({ challengeResponse: code });
+      if (nextStep.signInStep === "DONE") {
+        navigate("/form");
+      }
+      // Any other nextStep here is a pool configuration this app does not
+      // otherwise produce (a second MFA method, a further challenge) — left
+      // unhandled rather than guessed at, the same way the credentials step
+      // above only acts on the two outcomes it knows.
+    } catch (error) {
+      // A wrong or expired code. The pending sign-in survives a failed
+      // attempt, so the candidate stays on this step and can retry without
+      // re-entering their password.
+      toast.error(errorMessage(error, MESSAGES.AUTH_CODE_INVALID));
     }
   });
 
@@ -82,6 +130,73 @@ export function SignIn() {
       }
       toast.error(errorMessage(error, MESSAGES.AUTH_GOOGLE_FAILED));
     }
+  }
+
+  // One form at a time, same reasoning as the confirm page's email-edit
+  // toggle: two submit actions on screen at once leaves no clear primary.
+  if (step === "totp") {
+    return (
+      <AuthLayout>
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle className="font-display text-3xl font-normal">
+              {MESSAGES.SIGNIN_TOTP_TITLE}
+            </CardTitle>
+            <CardDescription>
+              {MESSAGES.SIGNIN_TOTP_DESCRIPTION}
+            </CardDescription>
+          </CardHeader>
+
+          <form onSubmit={onVerifyTotp} noValidate>
+            <CardContent>
+              <FieldGroup>
+                <Field data-invalid={!!totpForm.formState.errors.code}>
+                  <FieldLabel htmlFor="totp-code">
+                    {MESSAGES.SIGNIN_TOTP_CODE_LABEL}
+                  </FieldLabel>
+                  <Input
+                    id="totp-code"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder={MESSAGES.CONFIRM_CODE_PLACEHOLDER}
+                    aria-invalid={!!totpForm.formState.errors.code}
+                    {...totpForm.register("code")}
+                  />
+                  <FieldError
+                    errors={
+                      totpForm.formState.errors.code
+                        ? [totpForm.formState.errors.code]
+                        : undefined
+                    }
+                  />
+                </Field>
+              </FieldGroup>
+            </CardContent>
+
+            <CardFooter className="mt-6 flex-col gap-2">
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={totpForm.formState.isSubmitting}
+              >
+                {totpForm.formState.isSubmitting
+                  ? MESSAGES.SIGNIN_TOTP_SUBMIT_PENDING
+                  : MESSAGES.SIGNIN_TOTP_SUBMIT}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full cursor-pointer text-ink-subtle hover:text-ink"
+                disabled={totpForm.formState.isSubmitting}
+                onClick={() => setStep("credentials")}
+              >
+                {MESSAGES.SIGNIN_TOTP_BACK}
+              </Button>
+            </CardFooter>
+          </form>
+        </Card>
+      </AuthLayout>
+    );
   }
 
   return (

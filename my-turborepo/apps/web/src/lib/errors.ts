@@ -17,6 +17,18 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   CodeMismatchException: MESSAGES.AUTH_CODE_INVALID,
   ExpiredCodeException: MESSAGES.AUTH_CODE_EXPIRED,
   InvalidPasswordException: MESSAGES.AUTH_PASSWORD_REQUIREMENTS,
+  // Raised when the pre sign-up Lambda refuses the address. Cognito wraps the
+  // Lambda's own message in "PreSignUp failed with error ...", which is not
+  // copy a candidate should see.
+  UserLambdaValidationException: MESSAGES.AUTH_EMAIL_NOT_ALLOWED,
+  // Wrong code during TOTP setup (VerifySoftwareToken) or during the sign-in
+  // challenge (VerifySoftwareTokenMfa). CodeMismatchException is Cognito's name
+  // for the same failure in the sign-up path, already mapped to identical copy.
+  EnableSoftwareTokenMFAException: MESSAGES.AUTH_CODE_INVALID,
+  // Raised by updateMFAPreference({ totp: "DISABLED" }) if setup was never
+  // completed — the settings screen only ever shows Disable once it has, so
+  // this reads as "something already changed" rather than a real failure mode.
+  SoftwareTokenMFANotFoundException: MESSAGES.AUTH_MFA_NOT_FOUND,
   LimitExceededException: MESSAGES.AUTH_TOO_MANY_ATTEMPTS,
   TooManyRequestsException: MESSAGES.AUTH_TOO_MANY_ATTEMPTS,
   TooManyFailedAttemptsException: MESSAGES.AUTH_TOO_MANY_ATTEMPTS,

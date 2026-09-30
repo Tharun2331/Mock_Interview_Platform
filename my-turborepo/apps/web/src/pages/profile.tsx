@@ -22,6 +22,7 @@ import {
   CardHeader,
 } from "@/components/ui/card";
 import { ResumeField } from "@/components/ResumeField";
+import { MfaSettings } from "@/components/MfaSettings";
 import { DeleteAccount } from "@/components/DeleteAccount";
 import { useProfile } from "@/lib/profile";
 import {
@@ -477,6 +478,17 @@ function ProfileForm({
               : MESSAGES.PROFILE_SUBMIT_EDIT}
         </Button>
       </div>
+
+      {/* Not gated on isOnboarding, unlike Account below. This is a Cognito
+          identity setting, not a property of the application profile, so it
+          exists — and is worth offering — before a candidate ever attaches a
+          resume. */}
+      <ProfileSection
+        heading={MESSAGES.PROFILE_SECTION_SECURITY}
+        body={MESSAGES.PROFILE_SECTION_SECURITY_BODY}
+      >
+        <MfaSettings />
+      </ProfileSection>
 
       {/* Hidden during onboarding. There is nothing to delete before the first
           save, and offering it beside the form someone is still filling in

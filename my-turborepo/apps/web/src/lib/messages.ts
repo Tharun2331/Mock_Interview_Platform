@@ -54,6 +54,13 @@ export const MESSAGES = {
   AUTH_CODE_EXPIRED: "That code has expired. Request a new one.",
   AUTH_TOO_MANY_ATTEMPTS: "Too many attempts. Wait a moment and try again.",
   AUTH_PASSWORD_REQUIREMENTS: "That password does not meet the requirements.",
+  // The pre sign-up trigger refused the address: a disposable-mail domain or a
+  // + tag (infra/terraform/modules/cognito/pre_sign_up). Names both causes,
+  // because the candidate can fix either and cannot see which one it was.
+  AUTH_MFA_NOT_FOUND:
+    "Two-factor authentication was already turned off.",
+  AUTH_EMAIL_NOT_ALLOWED:
+    "That email can't be used to sign up. Use your main address, without a + tag and not a temporary inbox.",
   AUTH_NOT_CONFIRMED: "Confirm your email to finish signing in.",
   AUTH_SIGNED_UP_NOW_SIGN_IN: "Account confirmed. Sign in to continue.",
   AUTH_CONFIRM_FAILED: "Confirmation failed. Check the code and try again.",
@@ -101,6 +108,18 @@ export const MESSAGES = {
   CONFIRM_EDIT_EMAIL_CANCEL: "Cancel",
   CONFIRM_EDIT_EMAIL_UNCHANGED:
     "That is already the address we sent the code to.",
+
+  // --- Sign-in: two-factor challenge ---
+  // Reached only by an account that turned MFA on in Settings. Distinct copy
+  // from the sign-up confirmation code above, which is emailed; this one is
+  // read off an authenticator app the candidate already has open.
+  SIGNIN_TOTP_TITLE: "Enter your code",
+  SIGNIN_TOTP_DESCRIPTION:
+    "Open your authenticator app and enter the current code.",
+  SIGNIN_TOTP_CODE_LABEL: "Authentication code",
+  SIGNIN_TOTP_SUBMIT: "Verify and sign in",
+  SIGNIN_TOTP_SUBMIT_PENDING: "Verifying…",
+  SIGNIN_TOTP_BACK: "Use a different account",
 
   // --- Hosted-UI redirect landing ---
   CALLBACK_SIGNING_IN: "Signing you in…",
@@ -480,9 +499,42 @@ export const MESSAGES = {
   PROFILE_SECTION_MATERIAL: "Material",
   PROFILE_SECTION_MATERIAL_BODY:
     "What every interview is built from. Personal details are stripped from your resume before it reaches the interviewer, and the original is never shown to it.",
+  PROFILE_SECTION_SECURITY: "Security",
+  PROFILE_SECTION_SECURITY_BODY:
+    "An authenticator app code, asked for alongside your password at sign-in. Optional, and you can turn it off at any time.",
   PROFILE_SECTION_ACCOUNT: "Account",
   PROFILE_SECTION_ACCOUNT_BODY:
     "Deleting removes your resume, your repositories and every interview you have held. It cannot be undone.",
+
+  // --- Two-factor authentication (settings) ---
+  // The authenticator app's own vocabulary ("account", "setup key") shows up
+  // here because that is the screen the candidate is looking at while reading
+  // this — matching it beats staying consistent with our own terms.
+  MFA_CHECKING: "Checking your security settings…",
+  MFA_OFF_TITLE: "Two-factor authentication is off",
+  MFA_OFF_BODY:
+    "Turning it on means your password alone can no longer sign in to your account.",
+  MFA_ENABLE: "Turn on two-factor authentication",
+  MFA_ON_TITLE: "Two-factor authentication is on",
+  MFA_ON_BODY: "An authenticator app code is required every time you sign in.",
+  MFA_DISABLE: "Turn off",
+  MFA_SETUP_TITLE: "Set up your authenticator app",
+  MFA_SETUP_SCAN: "Scan this code with your authenticator app:",
+  MFA_SETUP_MANUAL_LABEL: "Or enter this setup key by hand:",
+  MFA_SETUP_CODE_LABEL: "Code from your app",
+  MFA_SETUP_VERIFY: "Verify and turn on",
+  MFA_SETUP_VERIFY_PENDING: "Verifying…",
+  MFA_SETUP_CANCEL: "Cancel",
+  MFA_ENABLED: "Two-factor authentication is on.",
+  MFA_DISABLED: "Two-factor authentication is off.",
+  MFA_START_FAILED:
+    "We could not start setup. This is on our side — try again shortly.",
+  MFA_LOAD_FAILED: "We could not read your security settings.",
+  MFA_DISABLE_TITLE: "Turn off two-factor authentication?",
+  MFA_DISABLE_BODY:
+    "Your password alone will be enough to sign in again. You can turn it back on any time.",
+  MFA_DISABLE_CONFIRM: "Turn off",
+  MFA_DISABLE_CANCEL: "Keep it on",
 
   PROFILE_FIRST_LABEL: "First name",
   PROFILE_LAST_LABEL: "Last name",

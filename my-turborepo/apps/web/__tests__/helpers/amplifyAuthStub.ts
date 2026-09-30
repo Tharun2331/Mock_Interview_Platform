@@ -42,6 +42,25 @@ export const signInWithRedirect = mock(async () => {});
 export const signUp = mock(async () => ({ isSignUpComplete: false }));
 export const confirmSignUp = mock(async () => ({ isSignUpComplete: true }));
 export const autoSignIn = mock(async () => ({ isSignedIn: true }));
+// The TOTP sign-in challenge (signin.tsx) and self-service enrolment
+// (MfaSettings.tsx). Permissive shapes, matching the rest of this file — no
+// test currently renders either caller, so these exist for the day one does
+// rather than to model a real Cognito response.
+export const confirmSignIn = mock(async () => ({
+  isSignedIn: true,
+  nextStep: { signInStep: "DONE" as const },
+}));
+export const setUpTOTP = mock(async () => ({
+  sharedSecret: "TESTSECRET234567",
+  getSetupUri: (appName: string) =>
+    new URL(`otpauth://totp/${appName}?secret=TESTSECRET234567`),
+}));
+export const verifyTOTPSetup = mock(async () => {});
+export const updateMFAPreference = mock(async () => {});
+export const fetchMFAPreference = mock(async () => ({
+  enabled: [] as string[],
+  preferred: undefined as string | undefined,
+}));
 
 // Groups the fake access token carries. Mutable so a test can put the Header in
 // the admin case and back without re-registering the module, which is not
@@ -74,6 +93,11 @@ export function resetAmplifyAuthStub(): void {
     signUp,
     confirmSignUp,
     autoSignIn,
+    confirmSignIn,
+    setUpTOTP,
+    verifyTOTPSetup,
+    updateMFAPreference,
+    fetchMFAPreference,
   ]) {
     fn.mockClear();
   }
@@ -93,4 +117,9 @@ mock.module("aws-amplify/auth", () => ({
   signUp,
   confirmSignUp,
   autoSignIn,
+  confirmSignIn,
+  setUpTOTP,
+  verifyTOTPSetup,
+  updateMFAPreference,
+  fetchMFAPreference,
 }));
