@@ -401,3 +401,24 @@ export function recordInterviewSession(args: { started: boolean }): void {
     dimensionSets: ENVIRONMENT_SET,
   });
 }
+
+// A request refused for a missing, expired or forged token, over HTTP or at the
+// WebSocket handshake. Counted rather than only logged, so an alarm can notice a
+// spike nobody is watching the log for.
+export function recordAuthFailure(): void {
+  safeEmit({
+    metrics: [{ name: METRICS.AUTH_FAILURES, value: 1, unit: "Count" }],
+    dimensions: environmentOnly(),
+    dimensionSets: ENVIRONMENT_SET,
+  });
+}
+
+// A signed-in caller turned away from the admin surface. The response is a
+// deliberately bland 404, so this metric is the only place the probe shows up.
+export function recordAdminRefusal(): void {
+  safeEmit({
+    metrics: [{ name: METRICS.ADMIN_REFUSALS, value: 1, unit: "Count" }],
+    dimensions: environmentOnly(),
+    dimensionSets: ENVIRONMENT_SET,
+  });
+}

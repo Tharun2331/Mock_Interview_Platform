@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import {
   DeleteCommand,
   DynamoDBDocumentClient,
+  PutCommand,
   QueryCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
@@ -29,6 +30,7 @@ beforeEach(() => {
   ddb.on(UpdateCommand).resolves({});
   ddb.on(QueryCommand).resolves({ Items: [] });
   ddb.on(DeleteCommand).resolves({});
+  ddb.on(PutCommand).resolves({});
   s3.reset();
   s3.on(DeleteObjectCommand).resolves({});
   cognito.reset();
@@ -56,7 +58,6 @@ describe("eraseUserAccount", () => {
       .filter((key) => key?.PK === userPk(USER))
       .map((key) => key?.SK);
 
-    expect(deleted).toContain(SORT_KEY.PROFILE);
     expect(deleted).toContain(SORT_KEY.PLAN);
     expect(deleted).toContain(SORT_KEY.COACH);
     // The daily model-call counter from lib/budget.ts.
@@ -76,19 +77,49 @@ describe("eraseUserAccount", () => {
     });
   });
 
-  it("removes the cached coaching report before the profile it was built from", async () => {
-    // Same ordering logic as the plan cache: a derived item outliving its
-    // source is an orphan nothing reads and nothing will ever delete.
+  // The PROFILE item is replaced with a tombstone rather than deleted. Access
+  // tokens outlive the Cognito user by up to an hour, and every profile write
+  // is an upsert, so a deleted PROFILE let a stale token recreate the account.
+  it("leaves a data-free tombstone in place of the profile", async () => {
     await eraseUserAccount({ userId: USER, username: "tharun" });
 
-    const order = ddb
+    const deletedProfile = ddb
       .commandCalls(DeleteCommand)
-      .map((call) => call.args[0].input.Key)
-      .filter((key) => key?.PK === userPk(USER))
-      .map((key) => key?.SK);
+      .some((call) => call.args[0].input.Key?.SK === SORT_KEY.PROFILE);
+    expect(deletedProfile).toBe(false);
 
-    expect(order.indexOf(SORT_KEY.COACH)).toBeLessThan(
-      order.indexOf(SORT_KEY.PROFILE),
+    const tombstone = ddb
+      .commandCalls(PutCommand)
+      .map((call) => call.args[0].input.Item)
+      .find((item) => item?.PK === userPk(USER) && item?.SK === SORT_KEY.PROFILE);
+
+    // `deleting` is the status every write path already refuses.
+    expect(tombstone?.status).toBe("deleting");
+    expect(tombstone?.erasedAt).toBeDefined();
+    expect(tombstone?.expiresAt).toBeGreaterThan(Date.now() / 1000);
+    // Nothing that identifies a person survives in it.
+    expect(Object.keys(tombstone ?? {}).sort()).toEqual(
+      ["PK", "SK", "erasedAt", "expiresAt", "status"].sort(),
     );
+  });
+
+  it("removes the derived items before writing the tombstone", async () => {
+    // Same ordering logic as before: the profile slot is the record that a
+    // sweep started, so it is the last thing to change.
+    await eraseUserAccount({ userId: USER, username: "tharun" });
+
+    const calls = ddb.calls();
+    const coachDelete = calls.findIndex(
+      (call) =>
+        (call.args[0].input as { Key?: { SK?: string } }).Key?.SK ===
+        SORT_KEY.COACH,
+    );
+    const tombstoneWrite = calls.findIndex(
+      (call) =>
+        (call.args[0].input as { Item?: { SK?: string } }).Item?.SK ===
+        SORT_KEY.PROFILE,
+    );
+    expect(coachDelete).toBeGreaterThanOrEqual(0);
+    expect(coachDelete).toBeLessThan(tombstoneWrite);
   });
 });

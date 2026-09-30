@@ -24,7 +24,11 @@ import {
   nudgeSchedule,
   type InterviewPhase,
 } from "../lib/interviewClock";
-import { recordSonicError, recordSonicStream } from "../lib/metrics";
+import {
+  recordAuthFailure,
+  recordSonicError,
+  recordSonicStream,
+} from "../lib/metrics";
 import { claimInterviewSlot, refundInterviewSlot } from "../lib/profile";
 import { classifyAnswer } from "../lib/scoreableAnswer";
 import { SonicConversation } from "../lib/sonic";
@@ -774,9 +778,11 @@ async function handleConnection(
             // path where the interviewer can end a session early on its own,
             // and without this line an early finish is indistinguishable from
             // a timeout or a dropped socket.
-            console.log(
-              `[interview] ${sessionId} toolUse ${event.toolName} ${event.content}`,
-            );
+            //
+            // The tool NAME only. Its content is model-generated and can quote
+            // or summarise what the candidate just said, and interview answers
+            // do not belong in operational logs.
+            console.log(`[interview] ${sessionId} toolUse ${event.toolName}`);
             const result = runTool(event, state);
             sonic?.sendToolResult(event.toolUseId, result);
             break;
@@ -1036,7 +1042,10 @@ export function attachInterviewSocket(server: Server): WebSocketServer {
           void handleConnection(ws, payload.sub, sessionId);
         });
       })
-      .catch(() => refuse(socket));
+      .catch(() => {
+        recordAuthFailure();
+        refuse(socket);
+      });
   });
 
   // Liveness. A half-open socket — laptop lid closed, network dropped — never

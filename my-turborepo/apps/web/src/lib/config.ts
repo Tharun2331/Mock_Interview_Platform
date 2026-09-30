@@ -30,14 +30,20 @@ export const API_TIMEOUT_MS = 120_000;
 // Terraform `cognito` module outputs whenever the pool is re-provisioned.
 //
 // `oauth` drives the hosted-UI redirect flow used for social sign-in (Google).
-// The values mirror the `cognito` module: `domain` is the custom auth domain
-// (`aws_acm_custom_domain`), and the redirect arrays match the client's
-// `callback_urls` / `logout_urls`. Amplify selects the entry whose origin
-// matches the current `window.location.origin`, so dev and prod both work.
+// `domain` is the pool's custom auth domain (`aws_acm_custom_domain` in the
+// cognito module). The redirects are this page's own origin: each
+// environment's app client lists only its own callback URLs, so the bundle
+// needs no list of every environment, and Cognito's allowlist stays the
+// control over where a sign-in code may be sent.
 // Bun's bundler inlines these at build time. A missing var becomes the empty
 // string, which would configure Amplify with an empty pool id and turn every
 // auth call into an obscure runtime failure — so fail loudly at startup instead,
 // the same way the server's `requireEnv` does.
+// Where this bundle is being served from. Guarded because tests and tooling
+// can import this module without a browser window.
+const APP_ORIGIN: string =
+  typeof window === "undefined" ? "" : window.location.origin;
+
 const requirePublicEnv = (key: string, value: string | undefined): string => {
   if (!value) {
     throw new Error(
@@ -59,16 +65,16 @@ export const COGNITO = {
     process.env.BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID,
   ),
   oauth: {
-    domain: "auth.tharunsekar.xyz",
+    // Per environment, since each pool has its own hosted-UI domain. The
+    // default is dev's.
+    domain:
+      process.env.BUN_PUBLIC_COGNITO_DOMAIN !== undefined &&
+      process.env.BUN_PUBLIC_COGNITO_DOMAIN.length > 0
+        ? process.env.BUN_PUBLIC_COGNITO_DOMAIN
+        : "auth.tharunsekar.xyz",
     scopes: ["email", "openid", "profile", "phone"],
-    redirectSignIn: [
-      "http://localhost:3000/callback",
-      "https://preppilot.tharunsekar.xyz/callback",
-    ],
-    redirectSignOut: [
-      "http://localhost:3000",
-      "https://preppilot.tharunsekar.xyz",
-    ],
+    redirectSignIn: [`${APP_ORIGIN}/callback`],
+    redirectSignOut: [APP_ORIGIN],
     responseType: "code",
   },
 } as const;
