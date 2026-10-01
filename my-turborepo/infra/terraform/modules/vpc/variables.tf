@@ -28,20 +28,14 @@ variable "private_subnet_cidrs" {
   default     = ["10.0.11.0/24", "10.0.12.0/24"]
 }
 
-variable "enable_nat_gateway" {
+variable "enable_nat_instance" {
   type        = bool
-  description = "Create a NAT gateway + EIP for private-subnet egress. Off during local dev to avoid ~$32/mo; turn on when deploying ECS."
+  description = "Create the NAT instance and the private subnets' default route through it. Off until an app server runs in the private subnets (~$7/mo when on)."
   default     = false
 }
 
-variable "container_port" {
-  type        = number
-  description = "Port the ECS service listens on (ALB forwards to this)"
-  default     = 3000
-}
-
-variable "redis_port" {
-  type        = number
-  description = "Port ElastiCache Redis listens on"
-  default     = 6379
+variable "nat_instance_type" {
+  type        = string
+  description = "Instance type for the NAT instance. Must be Graviton (arm64): the AMI is the arm64 AL2023 image."
+  default     = "t4g.nano"
 }

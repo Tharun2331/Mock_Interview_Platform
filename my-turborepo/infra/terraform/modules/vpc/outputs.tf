@@ -14,18 +14,16 @@ output "private_subnet_ids" {
   value = aws_subnet.private[*].id
 }
 
-output "nat_gateway_id" {
-  value = one(aws_nat_gateway.nat[*].id)
+output "private_route_table_id" {
+  value = aws_route_table.private.id
 }
 
-output "alb_security_group_id" {
-  value = aws_security_group.alb.id
+output "nat_instance_id" {
+  description = "Null when enable_nat_instance is false."
+  value       = one(aws_instance.nat[*].id)
 }
 
-output "ecs_security_group_id" {
-  value = aws_security_group.ecs.id
-}
-
-output "redis_security_group_id" {
-  value = aws_security_group.redis.id
+output "nat_security_group_id" {
+  description = "Null when enable_nat_instance is false."
+  value       = one(aws_security_group.nat[*].id)
 }
