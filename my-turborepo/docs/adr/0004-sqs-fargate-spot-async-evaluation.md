@@ -1,9 +1,20 @@
 # ADR-0004: SQS + Fargate Spot for asynchronous evaluation
 
-- **Status:** Accepted, with the completion counter amended
+- **Status:** **Superseded** by [ADR-0009](0009-containerized-bun-lambda-not-fargate-spot.md)
 - **Date:** 2026-08-11
 - **Amended:** 2026-09-09 — the counter below was replaced by a derived count,
   and the rollup item moved off the `EVAL#` prefix. See "Idempotency".
+- **Superseded:** 2026-10-01 — the choice of Fargate Spot specifically, once
+  [ADR-0008](0008-cloudfront-private-ec2-not-alb-ecs.md) moved the main API
+  off ECS and removed the "shared deployment story" this ADR's rejection of
+  Lambda rested on. The SQS design, the idempotency reasoning, and the
+  derived-completion-count fix below are unaffected and still describe how
+  the queue and DynamoDB are used — see ADR-0009 for what changed and why.
+
+> **Nothing below was built.** No `evaluator` ECS service or task definition
+> was ever provisioned. This document is kept as the record of a decision
+> that was reversed before implementation, not as a description of the
+> system.
 
 ## Context
 
