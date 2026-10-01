@@ -1,3 +1,5 @@
+import { Link } from "react-router";
+
 import { MESSAGES } from "@/lib/messages";
 
 export function Footer() {
@@ -8,7 +10,17 @@ export function Footer() {
       </span>
       {/* Worth the line: a microphone-first product owes the person holding it
           a plain statement about where their voice goes. */}
-      <span className="hidden sm:inline">{MESSAGES.FOOTER_NOTE}</span>
+      <span className="hidden md:inline">{MESSAGES.FOOTER_NOTE}</span>
+      {/* Always visible, including at phone width, because a policy someone
+          cannot find is a policy they were never shown. */}
+      <nav aria-label={MESSAGES.LEGAL_NAV_LABEL} className="flex gap-4">
+        <Link to="/privacy" className="hover:text-ink">
+          {MESSAGES.LEGAL_PRIVACY}
+        </Link>
+        <Link to="/terms" className="hover:text-ink">
+          {MESSAGES.LEGAL_TERMS}
+        </Link>
+      </nav>
     </footer>
   );
 }

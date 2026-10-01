@@ -30,6 +30,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { GoogleIcon } from "@/components/GoogleIcon";
+import { LegalNotice } from "@/components/LegalNotice";
 import { errorMessage, isAlreadyAuthenticated, mfaErrorMessage } from "@/lib/errors";
 import { MESSAGES } from "@/lib/messages";
 
@@ -274,6 +275,9 @@ export function SignIn() {
                 ? MESSAGES.SIGNIN_SUBMIT_PENDING
                 : MESSAGES.SIGNIN_SUBMIT}
             </Button>
+            {/* Here too, because "Continue with Google" on this page creates an
+                account for someone who has never signed up. */}
+            <LegalNotice className="text-center" />
             <p className="text-sm text-ink-subtle">
               {MESSAGES.SIGNIN_NO_ACCOUNT}{" "}
               <Link

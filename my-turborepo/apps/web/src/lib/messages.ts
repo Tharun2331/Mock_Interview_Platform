@@ -28,7 +28,27 @@ export const MESSAGES = {
       body: "Every answer is written down as you give it, ready to read back afterwards.",
     },
   ],
-  FOOTER_NOTE: "Built for practice. Nothing you say here is shared.",
+  // Was "Nothing you say here is shared", which the privacy policy contradicts:
+  // transcripts go to the AI models that score them. A promise in the chrome
+  // that the policy walks back is worse than no promise, so this says only what
+  // is true without qualification.
+  FOOTER_NOTE: "Your voice is never recorded. Your data is never sold.",
+
+  // --- Legal ---
+  LEGAL_PRIVACY: "Privacy",
+  LEGAL_TERMS: "Terms",
+  LEGAL_EFFECTIVE: "Effective",
+  LEGAL_CONTENTS: "Contents",
+  LEGAL_HOME_LABEL: "PrepPilot home",
+  LEGAL_NAV_LABEL: "Legal",
+  LEGAL_CONTACT_LEAD:
+    "Questions, requests about your data, or concerns about these documents:",
+  // Shown above both sign-up paths, so the Google button is covered as well as
+  // the form. Split around the two links, which LegalNotice renders between.
+  LEGAL_NOTICE_PREFIX: "By continuing, you agree to the",
+  LEGAL_NOTICE_TERMS: "Terms of Service",
+  LEGAL_NOTICE_JOIN: "and acknowledge the",
+  LEGAL_NOTICE_PRIVACY: "Privacy Policy",
 
   // Names where the control takes you, not where you are.
   THEME_TO_DARK: "Switch to dark theme",

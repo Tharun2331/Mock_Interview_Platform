@@ -25,6 +25,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { GoogleIcon } from "@/components/GoogleIcon";
+import { LegalNotice } from "@/components/LegalNotice";
 import { errorMessage, isAlreadyAuthenticated } from "@/lib/errors";
 import { MESSAGES } from "@/lib/messages";
 
@@ -201,6 +202,7 @@ export function Signup() {
                 ? MESSAGES.SIGNUP_SUBMIT_PENDING
                 : MESSAGES.SIGNUP_SUBMIT}
             </Button>
+            <LegalNotice className="text-center" />
             <p className="text-sm text-ink-subtle">
               {MESSAGES.SIGNUP_HAS_ACCOUNT}{" "}
               <Link

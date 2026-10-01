@@ -14,6 +14,8 @@ import { Signup } from "./pages/signup";
 import { SignIn } from "./pages/signin";
 import { Confirm } from "./pages/confirm";
 import { Callback } from "./pages/callback";
+import { Privacy } from "./pages/privacy";
+import { Terms } from "./pages/terms";
 import { ThemeProvider } from "next-themes";
 import { AppToaster } from "./components/AppToaster";
 import { AppShell } from "./components/layout/AppShell";
@@ -52,6 +54,12 @@ export function App() {
         finish the hosted-UI code exchange. */}
             <Route path="/confirm" element={<Confirm />} />
             <Route path="/callback" element={<Callback />} />
+
+            {/* Unguarded in both directions: the terms have to be readable before
+        an account exists, and a signed-in user following the footer link must
+        not be redirected away from them. */}
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/terms" element={<Terms />} />
 
             {/* ProfileProvider sits inside RequireAuth, not outside it: there is no
         profile to fetch until we know who is asking, and mounting it above the
