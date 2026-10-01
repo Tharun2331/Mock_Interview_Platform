@@ -1,6 +1,13 @@
 # ADR-0002: ALB, not API Gateway
 
-**Status:** Accepted · **Date:** 2026-08-11
+- **Status:** **Superseded** by [ADR-0008](0008-cloudfront-private-ec2-not-alb-ecs.md)
+- **Date:** 2026-08-11
+- **Superseded:** 2026-10-01
+
+> **Nothing below was built.** `environments/prod` stayed empty from this
+> decision's acceptance to its reversal. This document is kept as the record
+> of a decision that was reversed before implementation, not as a description
+> of the system.
 
 ## Context
 

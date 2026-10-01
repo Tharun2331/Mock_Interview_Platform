@@ -4,7 +4,7 @@
 > and public on GitHub — deliberately, as a record of how the build progressed.
 > The `.claude.local.md` entry in `.gitignore` is a different file and does not
 > match this one. Write nothing here you would not publish.
-> Updated as work progresses. Last updated: 2026-09-24 (admin surface + observability)
+> Updated as work progresses. Last updated: 2026-09-30 (security audit fixes, MFA, production hosting decision)
 
 ---
 
@@ -30,17 +30,9 @@ now load-bearing:
 | Session Summarizer | once per completed session                   | what the whole round showed, per category             |
 | Coach              | on GET /coach                                | trends per topic, two-track roadmap                   |
 
-**The one thing that has never been deployed is the application.** There is no
-ECS, so nothing runs outside a laptop. That is the whole of what remains.
-
-**Unrelated defect found while working here, NOT fixed — it needs your call.**
-`lib/config.ts` reads `interviewTestMode` as `env("INTERVIEW_TEST_MODE", "") === "false"`,
-so test mode turns on when the variable is the string `"false"` and stays off when
-it is `"true"`. That inverts the documented workflow in this file (which says to set
-`INTERVIEW_TEST_MODE=true`) and the comment in `__tests__/setup.ts` (which says the
-config tests for `"true"`). Commit 1a4cc96 changed it deliberately, so it may have
-been a quick way to disable the mode rather than a typo — the tests are unaffected
-either way, because `setup.ts` pins the variable to `""`.
+**The one thing that has never been deployed is the application.** Nothing runs
+outside a laptop. That is the whole of what remains. The hosting plan changed on
+2026-09-30: **no ECS, no ALB, no NAT Gateway** — see "Production hosting" below.
 
 | Phase                                 | Status                                                                                  |
 | ------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -52,12 +44,54 @@ either way, because `setup.ts` pins the variable to `""`.
 | 5 — Evaluator + SQS                   | ✅ Complete — the `ecs` module moved to Phase 7, where it belongs                       |
 | 5.5 — Gap + Company Intel agents      | ✅ Complete — not in the original plan                                                  |
 | 6 — Coach                             | ✅ Complete **without RAG**, deliberately — see the phase below                         |
-| 7 — Deploy + CI/CD + Observability    | 🔸 ~60% — CI gates every PR; alarms + admin surface written, not applied; no ECS, no CD |
+| 7 — Deploy + CI/CD + Observability    | 🔸 ~60% — CI gates every PR; security hardening applied to dev + global; hosting decided (ADR-0008/0009), not built; no CD |
 | Testing (cross-cutting)               | 🟢 1188 tests: 921 backend, 153 web, 118 shared                                         |
 
-**Next highest-leverage step: the `ecs` module.** It is the only thing between
-this and a URL somebody else can open, and it blocks every other Phase 7 item.
-It is also where the bill starts — see the cost note in Phase 7.
+**Next highest-leverage step: the VPC + EC2 backend in `environments/prod`.**
+It is the only thing between this and a URL somebody else can open. It is also
+where the bill starts — see the cost note in Phase 7.
+
+## Production hosting (decided 2026-09-30, not built)
+
+Replaces [ADR-0002](docs/adr/0002-alb-not-api-gateway.md) and
+[ADR-0004](docs/adr/0004-sqs-fargate-spot-async-evaluation.md); recorded in
+[ADR-0008](docs/adr/0008-cloudfront-private-ec2-not-alb-ecs.md) and
+[ADR-0009](docs/adr/0009-containerized-bun-lambda-not-fargate-spot.md). Reason:
+an ALB and a NAT Gateway are fixed costs (~$50-70/month) the EC2 path avoids.
+
+- **Edge:** CloudFront stays the only internet-facing entry, and reaches the
+  backend through a VPC origin with WebSocket support.
+- **API + interview WebSocket:** one Bun/Express EC2 instance in a private subnet,
+  no public IP. A single point of failure, accepted. Managed through SSM Session
+  Manager, with no inbound ports.
+- **Outbound:** a small NAT instance in a public subnet (SG: 443 in from the
+  private CIDR, 443 out). S3 and DynamoDB use free gateway endpoints; everything
+  else (Bedrock, SQS, Cognito, CloudWatch Logs, GitHub) goes through the NAT
+  instance rather than paid interface endpoints.
+- **Evaluator worker:** a container-image Lambda running Bun, triggered by the
+  eval SQS queue. It has its own execution role, no VPC attachment, and replaces
+  `worker.ts`'s hand-rolled poll loop. The eval DLQ carries over unchanged.
+- **Still open:** the NAT instance's patching/AMI story, the Lambda handler and
+  Dockerfile, and whether the worker log group is reused (the cloudwatch alarms
+  target `/prepilot/<env>/worker`).
+- **To build:** vpc extension, compute module, ECR + lambda module, CloudFront VPC
+  origin, CloudWatch agent on the instance (EMF metrics need it), CD.
+
+## Since 2026-09-24
+
+- **Security audit (2026-09-29/30):** quota-bypass fix (`claimInterviewSlot`),
+  WebSocket payload cap, daily/per-session spend counters, Cognito hardening,
+  CloudFront security headers, spend budgets, CloudTrail, auth-failure alarms, a
+  pre-sign-up Lambda refusing disposable emails, account-deletion tombstones.
+  Applied to dev and global.
+- **TOTP MFA:** enrol/disable in Profile > Security and a TOTP step at sign-in.
+  Native sign-in only; Google Hosted-UI sign-in bypasses Cognito's challenge flow.
+- **Dependency cleanup:** removed `@octokit/rest`, `oidc-client-ts` and
+  `react-oidc-context`; bumped axios, react-router and express-rate-limit.
+- The `INTERVIEW_TEST_MODE` inversion is fixed (compares to `"true"`).
+- **Manual follow-ups:** rotate the `prepilot-terraform` key, set
+  `budget_alert_emails` / `alert_emails` / `api_origins`, and add yourself to the
+  Cognito admin group.
 
 **Phase 4.5 — candidate material is user-scoped (2026-09-09).** Resume and
 GitHub moved off the session and onto `USER#<uid>/PROFILE`, captured once
@@ -680,9 +714,9 @@ module regains control. There is a regression test for the impossible shape.
       carries the Google OAuth pair and the table name, but nothing in the
       application reads Parameter Store at runtime any more, so the server
       role's read and decrypt grants went with `lib/ssm.ts`
-- [ ] **`ecs` module — cluster, API service, Spot worker service.** The blocker:
-      nothing else in this phase can land without it, and nothing runs outside a
-      laptop until it does
+- [ ] ~~`ecs` module~~ — **replaced 2026-09-30** by a VPC extension, an EC2
+      backend instance, a NAT instance and a container-image Lambda worker (see
+      "Production hosting"). Still the blocker: nothing runs outside a laptop
 - [x] ~~`cloudwatch` module — log groups, alarms~~ — **written 2026-09-24, not
       applied.** Error rate, p95 latency, Sonic stream errors, Sonic billed minutes
       (the leaked-stream detector CLAUDE.md asks for) and DLQ depth. Four of the
