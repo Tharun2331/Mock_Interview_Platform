@@ -142,4 +142,39 @@ module "cognito" {
 module "vpc" {
   source      = "../../modules/vpc"
   environment = var.environment
+
+  # The NAT instance exists only to give the API server egress, so it follows
+  # the same switch.
+  enable_nat_instance = var.api_server_enabled
+}
+
+# The API server (ADR-0008). Off by default in dev: together with the NAT
+# instance it is ~$20/month whether or not anyone is testing. Turn it on for a
+# session and off afterwards, the same discipline infra/terraform/CLAUDE.md
+# describes for every always-on resource.
+module "compute" {
+  count  = var.api_server_enabled ? 1 : 0
+  source = "../../modules/compute"
+
+  environment = var.environment
+  vpc_id      = module.vpc.vpc_id
+  # Index 0 is the NAT instance's AZ; the other would pay cross-AZ transfer.
+  subnet_id = module.vpc.private_subnet_ids[0]
+
+  server_role_name = module.iam.server_role_name
+  log_group_name   = module.cloudwatch.api_log_group_name
+  log_group_arn    = module.cloudwatch.api_log_group_arn
+
+  environment_variables = {
+    APP_ENV                     = var.environment
+    AWS_REGION                  = var.aws_region
+    COGNITO_USER_POOL_ID        = module.cognito.cognito_user_pool_id
+    COGNITO_USER_POOL_CLIENT_ID = module.cognito.cognito_user_pool_client_id
+    SESSIONS_TABLE              = module.dynamodb.table_name
+    UPLOADS_BUCKET              = module.s3.uploads_bucket_id
+    EVAL_QUEUE_URL              = module.sqs.eval_queue_url
+    # Production mode refuses any origin that is not https://, so this is the
+    # dev distribution rather than localhost.
+    CORS_ORIGIN = "https://${module.cloudfront.distribution_domain_name}"
+  }
 }

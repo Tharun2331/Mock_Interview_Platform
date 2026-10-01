@@ -96,3 +96,14 @@ output "alarm_names" {
   description = "Every CloudWatch alarm created for this environment"
   value       = module.cloudwatch.alarm_names
 }
+
+# Null while api_server_enabled is false.
+output "api_server_instance_id" {
+  description = "The API server instance. Connect with `aws ssm start-session --target <id>`."
+  value       = one(module.compute[*].instance_id)
+}
+
+output "api_artifact_uri" {
+  description = "Where a deploy uploads the compiled server before running /opt/prepilot/bin/deploy on the instance"
+  value       = one(module.compute[*].artifact_uri)
+}

@@ -38,3 +38,9 @@ variable "app_origins" {
   default     = ["http://localhost:3000"]
 }
 
+variable "api_server_enabled" {
+  type        = bool
+  description = "Run the API server and the NAT instance it needs (~$20/month together). Off between test sessions."
+  default     = false
+}
+

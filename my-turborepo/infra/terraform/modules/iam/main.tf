@@ -362,9 +362,9 @@ resource "aws_iam_policy" "evaluator_worker" {
 
 resource "aws_iam_role" "evaluator_worker" {
   name = "prepilot-evaluator-worker-role-${var.environment}"
-  # Same trust policy as the server: both are ECS tasks. The separation is in
-  # what each role permits, not in who may assume it.
-  assume_role_policy = data.aws_iam_policy_document.server_assume_role.json
+  # Still an ECS trust: nothing assumes this role until the Evaluator moves to
+  # a Lambda (ADR-0009), which will switch it to lambda.amazonaws.com.
+  assume_role_policy = data.aws_iam_policy_document.worker_assume_role.json
 
   tags = local.common_tags
 }
@@ -374,7 +374,7 @@ resource "aws_iam_role_policy_attachment" "evaluator_worker" {
   policy_arn = aws_iam_policy.evaluator_worker.arn
 }
 
-data "aws_iam_policy_document" "server_assume_role" {
+data "aws_iam_policy_document" "worker_assume_role" {
   statement {
     effect  = "Allow"
     actions = ["sts:AssumeRole"]
@@ -382,6 +382,20 @@ data "aws_iam_policy_document" "server_assume_role" {
     principals {
       type        = "Service"
       identifiers = ["ecs-tasks.amazonaws.com"]
+    }
+  }
+}
+
+# The API server runs on one EC2 instance (ADR-0008), which assumes this role
+# through the instance profile in the compute module.
+data "aws_iam_policy_document" "server_assume_role" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
     }
   }
 }
