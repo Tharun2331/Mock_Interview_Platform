@@ -20,8 +20,10 @@ data "aws_region" "current" {}
 locals {
   # The browser app's Content-Security-Policy, built from what it actually loads:
   #
-  #   script-src  blob:   the microphone AudioWorklet is registered from a Blob
-  #                       URL (apps/web/src/lib/audio/capture.ts)
+  #   script-src  'self'  only. The microphone AudioWorklet is a static file on
+  #                       this origin (apps/web/src/lib/audio/pcmCaptureWorklet.js),
+  #                       not a blob: URL, so no script source outside the
+  #                       origin is allowed
   #   style-src   unsafe-inline + Google Fonts CSS. Radix and sonner inject
   #                       style elements at runtime; there is no nonce plumbing.
   #   font-src    Google Fonts files
@@ -31,7 +33,7 @@ locals {
   # frame-ancestors 'none' replaces X-Frame-Options for clickjacking.
   # The rest is the strictest setting that loads nothing else.
   #
-  # Matters beyond the usual reasons here: Amplify keeps the access and 30-day
+  # Matters beyond the usual reasons here: Amplify keeps the access and 7-day
   # refresh tokens in localStorage, so any script injection is session theft.
   connect_src = join(" ", concat(
     [
@@ -44,7 +46,7 @@ locals {
 
   content_security_policy = join("; ", [
     "default-src 'self'",
-    "script-src 'self' blob:",
+    "script-src 'self'",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data:",

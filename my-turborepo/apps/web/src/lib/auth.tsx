@@ -11,7 +11,7 @@ import { Hub } from "aws-amplify/utils";
 // Mirrors the four auth conditions a screen can be in: bootstrapping (loading),
 // signed out, signed in, and expired-mid-session (treated as signed out —
 // tokenRefresh_failure fires when a refresh token can no longer renew the
-// session, e.g. after 30 days or a revoked session).
+// session, e.g. after 7 days or a revoked session).
 export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
 const AuthContext = createContext<AuthStatus | undefined>(undefined);

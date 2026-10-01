@@ -160,9 +160,19 @@ resource "aws_cognito_user_pool_client" "client" {
   # stated so it cannot be switched off unnoticed.
   enable_token_revocation = true
 
-  id_token_validity      = 1  # Valid for 1 hour
-  access_token_validity  = 1  # Valid for 1 hour
-  refresh_token_validity = 30 # Valid for 30 days
+  id_token_validity     = 1 # Valid for 1 hour
+  access_token_validity = 1 # Valid for 1 hour
+  # 7 days, not 30. Amplify keeps this token in localStorage, so it is the one a
+  # script injection would steal; the lifetime is how long that theft stays
+  # useful. A candidate who has not opened the app for a week signs in again.
+  refresh_token_validity = 7 # Valid for 7 days
+
+  # Refresh-token rotation is deliberately NOT enabled. Cognito refuses it while
+  # ALLOW_REFRESH_TOKEN_AUTH is an allowed flow ("ALLOW_REFRESH_TOKEN_AUTH is not
+  # a permitted ExplicitAuthFlow when refresh token rotation is enabled",
+  # confirmed against dev 2026-10-01), and Amplify refreshes through exactly that
+  # flow, so enabling it would stop every session renewing after an hour.
+  # Rotation only covers the OAuth /oauth2/token refresh grant.
 
   depends_on = [aws_cognito_identity_provider.google]
 }
