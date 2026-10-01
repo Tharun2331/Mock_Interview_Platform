@@ -77,6 +77,14 @@ const result = await Bun.build({
   define,
 });
 
+// The microphone AudioWorklet is loaded by URL, so it ships as its own
+// unhashed file at the path lib/audio/capture.ts requests. Copied rather than
+// bundled: it runs on the audio thread and imports nothing.
+await Bun.write(
+  path.join(outdir, "pcm-capture.worklet.js"),
+  Bun.file("src/lib/audio/pcmCaptureWorklet.js"),
+);
+
 for (const output of result.outputs) {
   console.log(
     ` ${path.relative(process.cwd(), output.path)}  ${(output.size / 1024).toFixed(1)} KB`,

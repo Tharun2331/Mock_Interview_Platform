@@ -6,43 +6,10 @@ import { AUDIO } from "@/lib/audioConstants";
 // containers and the interview stream needs raw 16 kHz 16-bit PCM mono frames.
 //
 // The worklet runs on the audio thread, so its source cannot be bundled with
-// the rest of the app — addModule() takes a URL. Rather than add a static-asset
-// route to Bun.serve and a copy step to build.ts, it is loaded from a blob URL:
-// same origin, identical in dev and production, no build configuration at all.
-const WORKLET_SOURCE = `
-class PcmCaptureProcessor extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    this._buffer = new Int16Array(${AUDIO.FRAME_SAMPLES});
-    this._offset = 0;
-  }
-
-  process(inputs) {
-    const channel = inputs[0] && inputs[0][0];
-    // No input yet, or the track ended. Returning true keeps the node alive.
-    if (!channel) return true;
-
-    for (let i = 0; i < channel.length; i += 1) {
-      // Float32 [-1, 1] to signed 16-bit. Clamped first: values slightly
-      // outside the range are legal in Web Audio and would wrap to the
-      // opposite sign, which is audible as a click.
-      const clamped = Math.max(-1, Math.min(1, channel[i]));
-      this._buffer[this._offset] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
-      this._offset += 1;
-
-      if (this._offset === this._buffer.length) {
-        // Transferred, not copied — the buffer is handed to the main thread and
-        // a fresh one allocated, so no frame is ever seen half-written.
-        this.port.postMessage(this._buffer.buffer, [this._buffer.buffer]);
-        this._buffer = new Int16Array(${AUDIO.FRAME_SAMPLES});
-        this._offset = 0;
-      }
-    }
-    return true;
-  }
-}
-registerProcessor(${JSON.stringify(AUDIO.WORKLET_NAME)}, PcmCaptureProcessor);
-`;
+// the rest of the app — addModule() takes a URL. It is a static file served from
+// this origin (src/index.ts in dev, copied into dist/ by build.ts), NOT a blob:
+// URL, so the CSP's script-src needs no blob: allowance.
+export const WORKLET_URL = "/pcm-capture.worklet.js";
 
 export type CaptureHandle = {
   // Real measured amplitude, 0..1, read from the analyser. The level meter is
@@ -75,17 +42,12 @@ export async function startCapture(args: CaptureArgs): Promise<CaptureHandle> {
   // be more code and worse audio.
   const context = new AudioContext({ sampleRate: AUDIO.INPUT_SAMPLE_RATE });
 
-  const blob = new Blob([WORKLET_SOURCE], { type: "application/javascript" });
-  const url = URL.createObjectURL(blob);
-  try {
-    await context.audioWorklet.addModule(url);
-  } finally {
-    // The module is compiled by now; holding the object URL would leak it.
-    URL.revokeObjectURL(url);
-  }
+  await context.audioWorklet.addModule(WORKLET_URL);
 
   const source = context.createMediaStreamSource(stream);
-  const worklet = new AudioWorkletNode(context, AUDIO.WORKLET_NAME);
+  const worklet = new AudioWorkletNode(context, AUDIO.WORKLET_NAME, {
+    processorOptions: { frameSamples: AUDIO.FRAME_SAMPLES },
+  });
   const analyser = context.createAnalyser();
   analyser.fftSize = AUDIO.ANALYSER_FFT_SIZE;
   const samples = new Float32Array(analyser.fftSize);
