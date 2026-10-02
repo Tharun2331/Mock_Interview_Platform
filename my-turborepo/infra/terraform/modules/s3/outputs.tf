@@ -25,3 +25,25 @@ output "uploads_bucket_arn" {
   description = "ARN of the candidate uploads bucket"
   value       = aws_s3_bucket.uploads.arn
 }
+
+# API build artifacts — consumed by the compute module (where its instance pulls
+# the build from) and by whoever uploads a build.
+output "artifacts_bucket_id" {
+  description = "Bucket the compiled API server is uploaded to"
+  value       = aws_s3_bucket.artifacts.id
+}
+
+output "artifacts_bucket_arn" {
+  description = "ARN of the artifacts bucket, for scoping the instance's read"
+  value       = aws_s3_bucket.artifacts.arn
+}
+
+output "api_artifact_key" {
+  description = "Object key of the compiled API server inside the artifacts bucket"
+  value       = local.api_artifact_key
+}
+
+output "api_artifact_uri" {
+  description = "Where a deploy uploads the compiled server before running /opt/prepilot/bin/deploy on the instance"
+  value       = "s3://${aws_s3_bucket.artifacts.id}/${local.api_artifact_key}"
+}

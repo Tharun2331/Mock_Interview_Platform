@@ -25,13 +25,3 @@ output "security_group_id" {
 output "app_port" {
   value = var.app_port
 }
-
-output "artifacts_bucket" {
-  description = "Bucket the compiled server is uploaded to, at the key in artifact_uri"
-  value       = aws_s3_bucket.artifacts.id
-}
-
-output "artifact_uri" {
-  description = "Where a deploy uploads the compiled server before running /opt/prepilot/bin/deploy on the instance"
-  value       = "s3://${aws_s3_bucket.artifacts.id}/${local.artifact_key}"
-}

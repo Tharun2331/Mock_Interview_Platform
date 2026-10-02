@@ -50,3 +50,20 @@ variable "environment_variables" {
   type        = map(string)
   description = "The server's environment, stored as SSM parameters under /prepilot/<env>/api/env/ and loaded on every service start. Not for secrets. PORT is set from app_port."
 }
+
+# The build lives outside this module (the s3 module), so it survives the
+# server being switched off. See the note on the bucket there.
+variable "artifacts_bucket_id" {
+  type        = string
+  description = "Bucket the instance pulls the compiled server from (s3 module)"
+}
+
+variable "artifacts_bucket_arn" {
+  type        = string
+  description = "ARN of the artifacts bucket, for scoping the instance's s3:GetObject to the one build object"
+}
+
+variable "artifact_key" {
+  type        = string
+  description = "Object key of the compiled server inside the artifacts bucket (s3 module's api_artifact_key)"
+}
