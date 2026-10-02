@@ -310,9 +310,10 @@ data "aws_iam_policy_document" "evaluator_worker" {
   # sort-key prefix. There is no sort-key condition.
   #
   # What is enforceable is the action list, and it is deliberately narrower than
-  # the server's: no DeleteItem, no UpdateItem, no BatchWriteItem. The worker
-  # can add an evaluation and read what it needs to produce one. It cannot
-  # remove a transcript, mutate a session's status, or run an erasure sweep.
+  # the server's: no DeleteItem, no BatchWriteItem, and UpdateItem only through
+  # the attribute-scoped statement below. The worker can add an evaluation, read
+  # what it needs to produce one, and close a session out. It cannot remove a
+  # transcript, rewrite one, or run an erasure sweep.
   statement {
     sid    = "SessionsTableEvaluationAccess"
     effect = "Allow"
@@ -323,6 +324,43 @@ data "aws_iam_policy_document" "evaluator_worker" {
       "dynamodb:Query",
     ]
     resources = [var.sessions_table_arn]
+  }
+
+  # Closing out a session — and only that.
+  #
+  # The statement above withholds UpdateItem, and finalisation needs it: three
+  # conditional updates once the last answer is scored —
+  #   SESSION#<id> / the eval rollup   SET averages  (the once-only election)
+  #   SESSION#<id> / META              SET status    (evaluating -> complete)
+  #   USER#<id> / its history row      SET summary
+  # Without it every session stayed at `evaluating` and its feedback never
+  # appeared. That went unseen until the worker first ran under this role, as a
+  # Lambda (2026-10-02): the local poller ran on a developer's credentials.
+  #
+  # IAM cannot scope an item by sort key, so the attribute list is the control.
+  # `dynamodb:Attributes` is every top-level attribute the request names, key
+  # and condition attributes included; ForAllValues means a request naming
+  # anything outside this list is denied. The worker can mark a session done
+  # and attach a summary, and still cannot rewrite a transcript, a plan or a
+  # score. ReturnValues is pinned too, so ALL_OLD cannot read a whole item back
+  # through an allowed update.
+  statement {
+    sid       = "SessionsTableFinalize"
+    effect    = "Allow"
+    actions   = ["dynamodb:UpdateItem"]
+    resources = [var.sessions_table_arn]
+
+    condition {
+      test     = "ForAllValues:StringEquals"
+      variable = "dynamodb:Attributes"
+      values   = ["PK", "SK", "averages", "status", "summary"]
+    }
+
+    condition {
+      test     = "StringEqualsIfExists"
+      variable = "dynamodb:ReturnValues"
+      values   = ["NONE", "UPDATED_OLD", "UPDATED_NEW"]
+    }
   }
 
   # Consume only. No SendMessage: a worker that could enqueue could loop itself,

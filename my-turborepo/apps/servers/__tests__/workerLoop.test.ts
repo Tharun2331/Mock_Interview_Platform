@@ -434,6 +434,40 @@ describe("the session summary", () => {
     expect(deletedReceipts()).toEqual(["receipt-0"]);
   });
 
+  // Any outcome can be the one that finishes a session. Here the message is a
+  // redelivered duplicate — its answer already scored — and it still wins the
+  // election, which is exactly how a finalise that failed once (IAM, in dev,
+  // 2026-10-02) gets completed by SQS's retry. It used to close the session
+  // with no summary, because only the scored path summarised.
+  it("still summarises when a redelivered duplicate finishes the session", async () => {
+    lastAnswerOfSession();
+    ddb
+      .on(BatchGetCommand)
+      .resolves({ Responses: { [TABLE]: [ANSWER, META, SCORED_ROW] } });
+    ddb.on(QueryCommand).callsFake((input) => {
+      const prefix = String(
+        (input as { ExpressionAttributeValues?: Record<string, unknown> })
+          .ExpressionAttributeValues?.[":prefix"] ?? "",
+      );
+      if (prefix.startsWith("ANSWER")) return { Items: [ANSWER] };
+      return { Items: [SCORED_ROW] };
+    });
+    setStructuredReplies([SUMMARY_REPLY]);
+    queued(JSON.stringify(JOB));
+
+    await pollOnce();
+
+    const summaryWrite = ddb
+      .commandCalls(UpdateCommand)
+      .map((call) => call.args[0].input)
+      .find((input) => String(input.Key?.PK ?? "").startsWith("USER#"));
+
+    expect(JSON.stringify(summaryWrite?.ExpressionAttributeValues)).toContain(
+      "Strong on delivery",
+    );
+    expect(deletedReceipts()).toEqual(["receipt-0"]);
+  });
+
   // Runs AFTER the session is closed out and its history card written, so a
   // failure costs a paragraph. A throw would redeliver the message, re-run the
   // completion check, and leave the summary to a worker with nothing new to say.
