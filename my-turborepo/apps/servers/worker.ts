@@ -82,8 +82,8 @@ export async function handleMessage(body: string): Promise<MessageOutcome> {
   // nothing ever asked whether the last answer had landed. A redelivery is
   // exactly when that question needs asking again.
   if (state.kind === "already-scored") {
-    const finalized = await finalizeIfComplete({ sessionId });
-    return { kind: "already-scored", questionId, finalized: finalized.kind };
+    const finalized = await closeOutIfComplete(sessionId);
+    return { kind: "already-scored", questionId, finalized };
   }
 
   // Nothing to score and nothing that will ever score it, so this answer can
@@ -91,8 +91,8 @@ export async function handleMessage(body: string): Promise<MessageOutcome> {
   // session finished while this message was in flight, this is the last chance
   // to notice.
   if (state.kind === "no-answer") {
-    const finalized = await finalizeIfComplete({ sessionId });
-    return { kind: "no-answer", questionId, finalized: finalized.kind };
+    const finalized = await closeOutIfComplete(sessionId);
+    return { kind: "no-answer", questionId, finalized };
   }
 
   const result = await runEvaluator(state.input);
@@ -120,22 +120,37 @@ export async function handleMessage(body: string): Promise<MessageOutcome> {
   // guard catches the re-score and the check runs again. Swallowing it instead
   // would leave a finished session parked at `evaluating` with nothing left in
   // the queue to ever look again.
-  const finalized = await finalizeIfComplete({ sessionId });
-
-  // The session summary hangs off the same once-only election, which is the
-  // whole reason that conditional write exists. Two workers finishing their
-  // last message milliseconds apart both count the same total; exactly one
-  // gets `finalized`, so exactly one pays for this generation.
-  if (finalized.kind === "finalized" && finalized.historyRow !== undefined) {
-    await summariseSession(sessionId, finalized.historyRow);
-  }
+  const finalized = await closeOutIfComplete(sessionId);
 
   return {
     kind: "scored",
     questionId,
     modelId: result.modelId,
-    finalized: finalized.kind,
+    finalized,
   };
+}
+
+// The completion check, and the session summary for whoever wins it.
+//
+// Shared by every outcome that reaches DynamoDB, because ANY of them can be the
+// message that finishes a session — not only one that just scored. It used to
+// summarise on the scored path alone, so a session finished by a redelivered
+// duplicate, or by a last question nobody answered, closed with no summary.
+// Seen in dev 2026-10-02: a finalise that failed on IAM was retried by SQS,
+// the retry was a duplicate, and it finished the session without one.
+//
+// The summary hangs off the same once-only election, which is the whole reason
+// that conditional write exists. Two workers finishing their last message
+// milliseconds apart both count the same total; exactly one gets `finalized`,
+// so exactly one pays for this generation.
+async function closeOutIfComplete(sessionId: string): Promise<FinalizedKind> {
+  const finalized = await finalizeIfComplete({ sessionId });
+
+  if (finalized.kind === "finalized" && finalized.historyRow !== undefined) {
+    await summariseSession(sessionId, finalized.historyRow);
+  }
+
+  return finalized.kind;
 }
 
 // Reads the finished interview back and writes what it showed onto the

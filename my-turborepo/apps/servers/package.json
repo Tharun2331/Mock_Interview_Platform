@@ -9,6 +9,7 @@
     "dev:worker": "bun --hot worker.ts",
     "start:worker": "NODE_ENV=production bun worker.ts",
     "build:server": "bun build index.ts --compile --minify --sourcemap --target=bun-linux-arm64 --outfile dist/server",
+    "deploy:evaluator": "bun scripts/deploy-evaluator.ts",
     "check-types": "tsc --noEmit",
     "test": "bun test"
   },

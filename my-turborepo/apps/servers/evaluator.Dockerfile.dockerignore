@@ -1,0 +1,24 @@
+# Applies to evaluator.Dockerfile only (BuildKit reads <Dockerfile>.dockerignore
+# from beside the Dockerfile), with the monorepo root as the build context.
+#
+# An ALLOWLIST: everything is excluded, then only what the build needs is let
+# back in. A denylist fails open — a new .env, a credentials file or a 100 MB
+# dist/ appears in the context the day someone forgets to list it. Here,
+# forgetting fails the build instead.
+
+*
+
+!package.json
+!bun.lock
+!apps/servers
+!apps/web/package.json
+!packages
+
+# Never in the image, wherever they appear inside what was let back in.
+**/.env
+**/.env.*
+**/node_modules
+**/dist
+**/__tests__
+**/coverage
+apps/servers/scripts
