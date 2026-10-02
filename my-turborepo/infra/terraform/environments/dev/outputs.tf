@@ -103,9 +103,11 @@ output "api_server_instance_id" {
   value       = one(module.compute[*].instance_id)
 }
 
+# Set even while the server is off: the bucket outlives it, so a build can be
+# uploaded first and the next instance boots straight into it.
 output "api_artifact_uri" {
   description = "Where a deploy uploads the compiled server before running /opt/prepilot/bin/deploy on the instance"
-  value       = one(module.compute[*].artifact_uri)
+  value       = module.s3.api_artifact_uri
 }
 
 # Null while api_server_enabled is false. Build the web app with this as

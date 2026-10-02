@@ -110,3 +110,79 @@ resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
     }
   }
 }
+
+# ---------------------------------------------------------------------------
+# API build artifacts: one object, the compiled server, at local.api_artifact_key.
+#
+# Here rather than in the compute module, deliberately. In dev the compute
+# module sits behind api_server_enabled, and while the bucket lived there,
+# switching the server off deleted the last build with it: the next instance
+# booted to an empty bucket and the API answered 504 until someone rebuilt and
+# redeployed by hand. Out here it outlives the server, so a fresh instance
+# boots straight into the last build. Storage for one ~100 MB object is under
+# a cent a month.
+#
+# Versioned so a bad deploy can be rolled back by restoring the previous
+# version and re-running deploy. force_destroy because everything in it is
+# rebuildable from git, so tearing an environment down is never blocked by it.
+# ---------------------------------------------------------------------------
+locals {
+  # A contract with the instance's deploy script, which pulls this key. Owned
+  # here and passed to the compute module, so the two cannot drift.
+  api_artifact_key = "api/server"
+}
+
+resource "aws_s3_bucket" "artifacts" {
+  bucket        = "prepilot-artifacts-${var.environment}-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true
+
+  tags = local.common_tags
+}
+
+resource "aws_s3_bucket_public_access_block" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_versioning" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+
+  rule {
+    id     = "expire-old-builds"
+    status = "Enabled"
+
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
+  }
+
+  depends_on = [aws_s3_bucket_versioning.artifacts]
+}

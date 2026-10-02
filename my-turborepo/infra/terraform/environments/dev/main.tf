@@ -174,6 +174,12 @@ module "compute" {
   log_group_name   = module.cloudwatch.api_log_group_name
   log_group_arn    = module.cloudwatch.api_log_group_arn
 
+  # Outside this switch on purpose, so the last build survives the server
+  # being turned off. See the artifacts bucket in the s3 module.
+  artifacts_bucket_id  = module.s3.artifacts_bucket_id
+  artifacts_bucket_arn = module.s3.artifacts_bucket_arn
+  artifact_key         = module.s3.api_artifact_key
+
   environment_variables = {
     APP_ENV                     = var.environment
     AWS_REGION                  = var.aws_region
