@@ -18,9 +18,10 @@ import { metricsMiddleware } from "./lib/metrics";
 import { apiRateLimiter } from "./lib/rateLimit";
 const app = express();
 
-// Behind the ALB, req.ip is the load balancer without this. One hop, not `true`
-// — a blanket trust lets a client spoof X-Forwarded-For and defeat any IP-based
-// limiting. The limiter keys on the Cognito subject so this barely matters
+// Behind CloudFront, req.ip is CloudFront's VPC-origin ENI without this.
+// CloudFront appends the viewer's address to X-Forwarded-For, so trusting one
+// hop yields the viewer. One hop, not `true` — a blanket trust lets a client
+// spoof X-Forwarded-For and defeat any IP-based limiting. The limiter keys on the Cognito subject so this barely matters
 // today, but the IP fallback and future IP logging both depend on it.
 app.set("trust proxy", 1);
 

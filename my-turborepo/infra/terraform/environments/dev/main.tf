@@ -116,9 +116,18 @@ module "cloudfront" {
   bucket_arn                  = module.s3.bucket_arn
   bucket_regional_domain_name = module.s3.bucket_regional_domain_name
 
-  # The API's origins for the CSP's connect-src. Empty until the API has a
-  # public endpoint; set both the https:// and wss:// forms when it does.
-  api_origins = var.api_origins
+  # The API's origins for the CSP's connect-src, both schemes: REST calls and
+  # the interview WebSocket. Independent of api_server_enabled on purpose, so
+  # toggling the server does not republish the security-headers function.
+  api_origins = ["https://${local.api_domain}", "wss://${local.api_domain}"]
+}
+
+locals {
+  # Where dev's web app is served (the web distribution's alias) and where its
+  # API is. Two hostnames because the web distribution's Free plan cannot use a
+  # VPC origin — see the api_edge module.
+  web_origin = "https://tharunsekar.xyz"
+  api_domain = "api-dev.tharunsekar.xyz"
 }
 
 module "cognito" {
@@ -173,8 +182,26 @@ module "compute" {
     SESSIONS_TABLE              = module.dynamodb.table_name
     UPLOADS_BUCKET              = module.s3.uploads_bucket_id
     EVAL_QUEUE_URL              = module.sqs.eval_queue_url
-    # Production mode refuses any origin that is not https://, so this is the
-    # dev distribution rather than localhost.
-    CORS_ORIGIN = "https://${module.cloudfront.distribution_domain_name}"
+    # The page calling the API. Cross-origin, since the API has its own
+    # hostname. Production mode refuses anything not https://, so localhost
+    # cannot be listed here.
+    CORS_ORIGIN = local.web_origin
   }
+}
+
+# CloudFront in front of the API server, on its own pay-as-you-go distribution.
+# Follows the same switch: the VPC origin targets the instance, so it cannot
+# outlive it. Creating or deleting a distribution takes several minutes, which
+# makes toggling the server slower than before.
+module "api_edge" {
+  count  = var.api_server_enabled ? 1 : 0
+  source = "../../modules/api_edge"
+
+  environment                = var.environment
+  api_domain                 = local.api_domain
+  vpc_id                     = module.vpc.vpc_id
+  instance_arn               = module.compute[0].instance_arn
+  instance_private_dns       = module.compute[0].private_dns
+  instance_security_group_id = module.compute[0].security_group_id
+  app_port                   = module.compute[0].app_port
 }

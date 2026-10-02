@@ -12,6 +12,11 @@ output "private_ip" {
   value = aws_instance.api.private_ip
 }
 
+output "private_dns" {
+  description = "Private DNS name of the API server, the CloudFront VPC origin's origin domain"
+  value       = aws_instance.api.private_dns
+}
+
 output "security_group_id" {
   description = "The API server's security group. The CloudFront VPC origin ingress rule attaches here."
   value       = aws_security_group.api.id

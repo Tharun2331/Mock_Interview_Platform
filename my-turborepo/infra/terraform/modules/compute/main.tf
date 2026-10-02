@@ -76,10 +76,12 @@ resource "aws_instance" "api" {
   depends_on = [aws_ssm_parameter.env]
 }
 
-# No ingress yet: the only thing allowed to reach this instance is CloudFront's
-# VPC origin, whose service-managed security group exists only once that origin
-# does. The rule admitting it lands with the CloudFront wiring. Management is
-# Session Manager, which needs no inbound port.
+# No inline ingress: the only thing allowed to reach this instance is
+# CloudFront's VPC origin, whose service-managed security group exists only
+# once that origin does. The api_edge module adds that rule as a separate
+# resource, so it must never be declared inline here — an inline block would
+# make Terraform remove it on every apply. Management is Session Manager, which
+# needs no inbound port.
 #
 # Egress is HTTPS only. That covers the NAT instance path (Bedrock, SQS,
 # Cognito, SSM, CloudWatch Logs, GitHub) and the S3/DynamoDB gateway endpoints.
