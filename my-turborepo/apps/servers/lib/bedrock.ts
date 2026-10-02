@@ -163,6 +163,14 @@ export type ConverseStructuredArgs = {
   toolDescription: string;
   inputSchema: ToolInputSchema;
   maxTokens?: number;
+  // Defaults to 0 — see the note at the call below. Overridable for an agent
+  // whose output is judgement rather than classification.
+  temperature?: number;
+  // Deliberately no exampleTurns, unlike converseText. A demonstrated assistant
+  // turn written as JSON text teaches the transport as well as the content:
+  // with one, Ministral ignored the forced tool on a third of Evaluator calls,
+  // against none without it (2026-10-02). Describe an exemplar in the system
+  // prompt instead — see agents/evaluator.ts.
 };
 
 export type StructuredResult = {
@@ -202,10 +210,9 @@ export async function converseStructured(
           messages: [{ role: "user", content: [{ text: args.prompt }] }],
           inferenceConfig: {
             maxTokens: args.maxTokens ?? BEDROCK.MAX_TOKENS,
-            // Zero, not BEDROCK.TEMPERATURE. This is a classification into a
-            // fixed set of buckets, and there is no version of it that benefits
-            // from variety.
-            temperature: 0,
+            // Zero by default, not BEDROCK.TEMPERATURE. The first callers were
+            // classifications into fixed buckets, where variety buys nothing.
+            temperature: args.temperature ?? 0,
           },
           toolConfig: {
             tools: [
