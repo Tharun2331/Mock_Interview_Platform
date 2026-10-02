@@ -376,8 +376,7 @@ resource "aws_iam_policy" "evaluator_worker" {
 
 resource "aws_iam_role" "evaluator_worker" {
   name = "prepilot-evaluator-worker-role-${var.environment}"
-  # Still an ECS trust: nothing assumes this role until the Evaluator moves to
-  # a Lambda (ADR-0009), which will switch it to lambda.amazonaws.com.
+  # The Evaluator Lambda's execution role (ADR-0009).
   assume_role_policy = data.aws_iam_policy_document.worker_assume_role.json
 
   tags = local.common_tags
@@ -395,7 +394,7 @@ data "aws_iam_policy_document" "worker_assume_role" {
 
     principals {
       type        = "Service"
-      identifiers = ["ecs-tasks.amazonaws.com"]
+      identifiers = ["lambda.amazonaws.com"]
     }
   }
 }

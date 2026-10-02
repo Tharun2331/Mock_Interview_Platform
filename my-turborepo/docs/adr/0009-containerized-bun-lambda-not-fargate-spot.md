@@ -42,3 +42,12 @@ Breaks the project's locked Bun decision without being asked to. The container-i
 - **The existing DLQ and its redrive policy (`maxReceiveCount`) carry over unchanged** — that's a property of the queue, not the consumer, so nothing about failure handling changes.
 - **Logging needs revisiting.** Lambda's default log group is `/aws/lambda/<function-name>`, not the `/prepilot/<env>/worker` group the `cloudwatch` module's alarms and EMF metric extraction already target. Either the function's logging config is pointed at the existing group, or the `cloudwatch` module's `worker_log_group` wiring is updated to match. Not yet decided.
 - **`WORKER.RECEIVE_BATCH_SIZE` and `WORKER.LONG_POLL_SECONDS` in `apps/servers/lib/constants.ts` stop applying** once the event-source mapping owns polling and batching; `WORKER.VISIBILITY_TIMEOUT_SECONDS` still matters, since that's enforced by SQS regardless of consumer. Cleaning up the now-dead constants is a task for when this is actually built, not before.
+
+## As built (2026-10-02)
+
+- **Packaging.** `apps/servers/evaluator.Dockerfile`: the Evaluator compiled with `bun build --compile` into one executable that is itself the custom runtime (`lambda.ts` speaks the Lambda Runtime API), on AWS's `provided:al2023` base, arm64. The build stage runs on the build machine's architecture and cross-compiles, so an x86 laptop never emulates arm64. `bun run deploy:evaluator` builds, pushes and updates the function by digest.
+- **The "no Docker in v1" constraint was lifted** by the project owner to build this as decided, rather than switching to a zip deployment.
+- **Logging, decided:** the function's `logging_config` points at the existing `/prepilot/<env>/worker` group, which the worker role is already scoped to write.
+- **Failure handling, unchanged in substance:** `handleMessage` still decides per message, and its throw-means-retry contract maps onto SQS partial batch responses (`ReportBatchItemFailures`), so one failed answer never re-runs the others. `batch_size` is 1 and `maximum_concurrency` 2 caps Bedrock generations in flight.
+- **Timeouts:** 150s function timeout (three Evaluator attempts at Bedrock's 30s, plus the session summary), and the queue's visibility timeout is derived as 6x that (900s), per AWS's guidance for SQS triggers. A message that *fails* now returns after 15 minutes rather than 2.
+- **The poll loop is kept for now**, as `bun dev:worker` for local debugging. Run it only with the Lambda's trigger disabled, or the two compete for the same messages.

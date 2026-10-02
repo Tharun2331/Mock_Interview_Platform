@@ -127,3 +127,14 @@ output "frontend_distribution_id" {
   description = "The web app's distribution, invalidated after each deploy"
   value       = module.cloudfront.distribution_id
 }
+
+# Read by apps/servers/scripts/deploy-evaluator.ts.
+output "evaluator_repository_url" {
+  description = "ECR repository the Evaluator image is pushed to"
+  value       = module.evaluator.repository_url
+}
+
+output "evaluator_function_name" {
+  description = "The Evaluator Lambda function"
+  value       = module.evaluator.function_name
+}

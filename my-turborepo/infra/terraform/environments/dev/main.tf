@@ -71,6 +71,39 @@ module "alerts" {
 module "sqs" {
   source      = "../../modules/sqs"
   environment = var.environment
+
+  # Lambda refuses an SQS trigger whose visibility timeout is shorter than the
+  # function's timeout, and AWS recommends 6x so a throttled or retried batch is
+  # not redelivered while still in flight. Derived, so the two cannot drift.
+  visibility_timeout_seconds = 6 * local.evaluator_timeout_seconds
+}
+
+# The Evaluator worker (ADR-0009). NOT behind api_server_enabled: it bills
+# nothing while idle, and whenever an interview has run there are answers in
+# the queue that need a consumer.
+module "evaluator" {
+  source      = "../../modules/evaluator"
+  environment = var.environment
+
+  role_arn        = module.iam.evaluator_worker_role_arn
+  eval_queue_arn  = module.sqs.eval_queue_arn
+  log_group_name  = module.cloudwatch.worker_log_group_name
+  timeout_seconds = local.evaluator_timeout_seconds
+
+  environment_variables = {
+    NODE_ENV = "production"
+    APP_ENV  = var.environment
+    # One model, no fallback chain: SQS redrive is the retry. See the note at
+    # the top of apps/servers/worker.ts.
+    BEDROCK_TEXT_MODEL_IDS = "mistral.ministral-3-8b-instruct"
+    SESSIONS_TABLE         = module.dynamodb.table_name
+    # Required at import by lib/config, which the worker shares with the API:
+    # Cognito ids for the auth module, and an https origin because production
+    # mode refuses to boot without one. The worker uses neither.
+    COGNITO_USER_POOL_ID        = module.cognito.cognito_user_pool_id
+    COGNITO_USER_POOL_CLIENT_ID = module.cognito.cognito_user_pool_client_id
+    CORS_ORIGIN                 = local.web_origin
+  }
 }
 
 module "ssm" {
@@ -128,6 +161,11 @@ locals {
   # VPC origin — see the api_edge module.
   web_origin = "https://tharunsekar.xyz"
   api_domain = "api-dev.tharunsekar.xyz"
+
+  # Worst case for one answer: three Evaluator attempts at Bedrock's 30s
+  # request timeout, the session summary's call, and the DynamoDB writes —
+  # about 125s, if Bedrock hangs. A typical answer takes 2-5s.
+  evaluator_timeout_seconds = 150
 }
 
 module "cognito" {

@@ -65,8 +65,10 @@ state file**. `terraform` commands run from inside one of them, never from
 
 ### Not yet built
 
-The Evaluator `lambda` module (and its ECR repo). Note that the API is served
-by its own pay-as-you-go distribution (`api_edge`), not the web app's: the web
+Nothing from ADR-0008/0009 remains unbuilt: `vpc`, `compute`, `api_edge` and
+`evaluator` (the Evaluator Lambda and its ECR repo) cover them. `environments/
+prod` is still empty. Note that the API is served by its own pay-as-you-go
+distribution (`api_edge`), not the web app's: the web
 distribution is on CloudFront's flat-rate Free plan, which cannot use VPC
 origins — see the ADR-0008 addendum before adding anything plan-gated to
 either distribution. Scaffold as new modules following the conventions below rather
