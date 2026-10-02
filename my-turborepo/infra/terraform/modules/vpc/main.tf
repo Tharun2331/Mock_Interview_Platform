@@ -209,10 +209,21 @@ resource "aws_instance" "nat" {
   # `releasever=latest` dnf-automatic would never find anything to install.
   # Kernel updates still need a reboot, which is left manual on purpose: a
   # reboot drops every live interview's Bedrock stream.
+  #
+  # The swap file comes first. A t4g.nano has 512 MB, and dnf loading the full
+  # AL2023 repo metadata gets OOM-killed without it — which left the first
+  # NAT instance with forwarding off and no iptables at all. It stays in fstab
+  # so dnf-automatic's daily runs have it too.
   user_data_replace_on_change = true
   user_data                   = <<-EOT
     #!/bin/bash
     set -euo pipefail
+
+    fallocate -l 1G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    echo "/swapfile none swap defaults 0 0" >> /etc/fstab
 
     echo latest > /etc/dnf/vars/releasever
     dnf install -y iptables-services dnf-automatic

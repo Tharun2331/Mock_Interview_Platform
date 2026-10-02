@@ -3,6 +3,11 @@ output "server_role_arn" {
   value       = aws_iam_role.server.arn
 }
 
+output "server_role_name" {
+  description = "Name of the PrepPilot server IAM role, for the compute module's instance profile"
+  value       = aws_iam_role.server.name
+}
+
 output "bedrock_policy_arn" {
   description = "ARN of the Bedrock invoke policy"
   value       = aws_iam_policy.bedrock_invoke.arn

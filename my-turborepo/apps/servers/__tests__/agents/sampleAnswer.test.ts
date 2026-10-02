@@ -8,12 +8,20 @@ import {
 // all of it. See the helper's header.
 import {
   resetBedrockStub,
-  setModelReply,
-  lastConverseCall,
-  converseCallCount,
+  resetStructuredStub,
+  setToolReply,
+  lastToolCall,
+  toolCallCount,
 } from "../helpers/bedrockStub";
 
-const { runEvaluator } = await import("../../agents/evaluator");
+const { runEvaluator, EVALUATOR_TOOL_NAME } = await import(
+  "../../agents/evaluator"
+);
+
+// The Evaluator answers through a forced tool call; an object is that reply.
+function setModelReply(value: unknown): void {
+  setToolReply(EVALUATOR_TOOL_NAME, value);
+}
 
 const BASE: EvaluatorInput = {
   questionText: "How do you decide between a message queue and a direct call?",
@@ -34,16 +42,17 @@ function reply(scores: {
   clarity: number;
   depth: number;
   sampleAnswer?: string;
-}): string {
-  return JSON.stringify({
+}): Record<string, unknown> {
+  return {
     rationale:
       "You named the tradeoff but did not ground it in anything you built.",
     ...scores,
-  });
+  };
 }
 
 beforeEach(() => {
   resetBedrockStub();
+  resetStructuredStub();
 });
 
 // The gate itself, without a model in the way. Each category pairs the two
@@ -265,7 +274,7 @@ describe("the Evaluator's use of the gate", () => {
 
     await runEvaluator(BASE);
 
-    expect(converseCallCount()).toBe(1);
+    expect(toolCallCount(EVALUATOR_TOOL_NAME)).toBe(1);
   });
 
   it("states the conditional rule in the prompt so the common case stays cheap", async () => {
@@ -273,7 +282,7 @@ describe("the Evaluator's use of the gate", () => {
 
     await runEvaluator(BASE);
 
-    expect(lastConverseCall()?.system).toContain("sampleAnswer is CONDITIONAL");
+    expect(lastToolCall(EVALUATOR_TOOL_NAME)?.system).toContain("sampleAnswer is CONDITIONAL");
   });
 
   // A rewrite of THEIR answer, not a model answer about work they never did —
@@ -283,7 +292,7 @@ describe("the Evaluator's use of the gate", () => {
 
     await runEvaluator(BASE);
 
-    expect(lastConverseCall()?.system).toContain("rewrite THEIR answer");
+    expect(lastToolCall(EVALUATOR_TOOL_NAME)?.system).toContain("rewrite THEIR answer");
   });
 
   it("still returns the scores unchanged", async () => {

@@ -1,0 +1,141 @@
+#!/bin/bash
+# Bootstraps the PrepPilot API host. Runs once, at first boot.
+#
+# The server ships as one self-contained executable (`bun build --compile`),
+# so the host needs no Bun, no node_modules and no build step: deploying is
+# copying one file from S3 and restarting the service.
+set -euo pipefail
+
+# --- Packages ----------------------------------------------------------------
+# AL2023 locks dnf to the AMI's release; `latest` lets dnf-automatic find the
+# security updates published since. The retry covers the NAT instance still
+# coming up on a fresh apply (most repos resolve through the S3 gateway
+# endpoint anyway).
+echo latest > /etc/dnf/vars/releasever
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  dnf install -y amazon-cloudwatch-agent dnf-automatic logrotate && break
+  echo "dnf install failed (attempt $attempt), retrying"
+  sleep 15
+done
+rpm -q amazon-cloudwatch-agent dnf-automatic logrotate
+
+sed -i 's/^upgrade_type.*/upgrade_type = security/; s/^apply_updates.*/apply_updates = yes/' /etc/dnf/automatic.conf
+systemctl enable --now dnf-automatic.timer
+
+# --- Layout ------------------------------------------------------------------
+useradd --system --no-create-home --shell /sbin/nologin prepilot
+install -d -m 0755 /opt/prepilot/bin /var/log/prepilot
+
+# Writes the service's environment from SSM on every start, so changing a
+# value is `terraform apply` plus a restart, never a new instance. Runs as
+# root (the `+` in the unit) and the file is root-only: systemd reads it, the
+# service user never needs to.
+cat > /opt/prepilot/bin/load-env <<'EOF'
+#!/bin/bash
+set -euo pipefail
+umask 077
+aws ssm get-parameters-by-path --region ${region} --path "${ssm_env_path}" \
+  --query 'Parameters[].[Name,Value]' --output text \
+  | awk -F'\t' '{ n = $1; sub(".*/", "", n); print n "=" $2 }' > /run/prepilot/api.env.tmp
+mv /run/prepilot/api.env.tmp /run/prepilot/api.env
+EOF
+
+# Pulls the current build and restarts. A restart drops every live interview's
+# WebSocket, so deploy between sessions.
+cat > /opt/prepilot/bin/deploy <<'EOF'
+#!/bin/bash
+set -euo pipefail
+aws s3 cp --region ${region} "s3://${artifacts_bucket}/${artifact_key}" /opt/prepilot/server.new
+chmod 0755 /opt/prepilot/server.new
+mv /opt/prepilot/server.new /opt/prepilot/server
+systemctl restart prepilot-api
+EOF
+chmod 0755 /opt/prepilot/bin/load-env /opt/prepilot/bin/deploy
+
+# --- Service -----------------------------------------------------------------
+# stdout goes to a file rather than journald because the CloudWatch agent
+# tails files. That file is also where the EMF metrics land, so it is what
+# every custom-metric alarm reads from.
+#
+# EnvironmentFile has the `-` prefix because ExecStartPre runs before
+# load-env has written it; ExecStart reads it fresh.
+#
+# No MemoryDenyWriteExecute: Bun's JIT needs writable executable memory.
+cat > /etc/systemd/system/prepilot-api.service <<'EOF'
+[Unit]
+Description=PrepPilot API
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/prepilot/server
+
+[Service]
+User=prepilot
+Group=prepilot
+RuntimeDirectory=prepilot
+ExecStartPre=+/opt/prepilot/bin/load-env
+EnvironmentFile=-/run/prepilot/api.env
+Environment=NODE_ENV=production
+ExecStart=/opt/prepilot/server
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/prepilot/api.log
+StandardError=append:/var/log/prepilot/api.log
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# copytruncate because the service holds the file open; the CloudWatch agent
+# follows the truncation.
+cat > /etc/logrotate.d/prepilot <<'EOF'
+/var/log/prepilot/*.log {
+  daily
+  rotate 3
+  missingok
+  notifempty
+  compress
+  copytruncate
+}
+EOF
+
+# --- Log shipping --------------------------------------------------------------
+# Logs only. No metrics section: the agent would need cloudwatch:PutMetricData,
+# which the server role withholds on purpose (see the iam module).
+cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'EOF'
+{
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/prepilot/api.log",
+            "log_group_name": "${log_group_name}",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": -1
+          }
+        ]
+      }
+    }
+  }
+}
+EOF
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config -m ec2 -s \
+  -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+# --- First start ---------------------------------------------------------------
+# A replacement instance comes back serving the last deployed build. On a
+# brand-new environment there is no build yet; the unit's
+# ConditionPathExists keeps it idle until the first deploy.
+systemctl daemon-reload
+systemctl enable prepilot-api
+/opt/prepilot/bin/deploy || echo "No build at s3://${artifacts_bucket}/${artifact_key} yet; waiting for the first deploy"

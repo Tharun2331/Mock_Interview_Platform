@@ -18,14 +18,24 @@ import {
   type EvalJob,
 } from "@repo/shared";
 import {
-  lastConverseCall,
+  lastToolCall,
   resetBedrockStub,
+  resetStructuredStub,
   setAnsweringModel,
-  setModelFailure,
-  setModelReply,
+  setToolFailure,
+  setToolReply,
 } from "./helpers/bedrockStub";
 
 const { handleMessage } = await import("../worker");
+const { EVALUATOR_TOOL_NAME } = await import("../agents/evaluator");
+
+// The Evaluator answers through a forced tool call. These keep this file's
+// vocabulary: an object is the tool's reply, a string a model answering in prose.
+const setModelReply = (value: unknown) =>
+  setToolReply(EVALUATOR_TOOL_NAME, value);
+const setModelFailure = (error: Error) =>
+  setToolFailure(EVALUATOR_TOOL_NAME, error);
+const lastConverseCall = () => lastToolCall(EVALUATOR_TOOL_NAME);
 const { BedrockError, ServiceError } = await import("../lib/errors");
 
 const ddb = mockClient(DynamoDBDocumentClient);
@@ -120,7 +130,8 @@ function evaluationsScored(count: number) {
 beforeEach(() => {
   ddb.reset();
   resetBedrockStub();
-  setModelReply(JSON.stringify(SCORES));
+  resetStructuredStub();
+  setModelReply(SCORES);
   ddb.on(PutCommand).resolves({});
   ddb.on(UpdateCommand).resolves({});
   summaryIs(undefined);

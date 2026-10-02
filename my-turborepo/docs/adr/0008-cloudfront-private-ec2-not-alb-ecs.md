@@ -37,4 +37,16 @@ It also isn't obviously cheaper. Pricing is $1 per million messages plus $0.25 p
 - **Instance management needs Systems Manager Session Manager**, not SSH or a bastion host — the private instance has no public IP and no inbound port opened for management; SSM's agent only makes outbound connections, the same shape as everything else this instance does.
 - **Free DynamoDB and S3 gateway VPC endpoints are used regardless of the NAT instance.** Only interface endpoints (Bedrock, SQS, Cognito, CloudWatch Logs — ~$7-8/month each per AZ) are the cost this ADR avoids; gateway endpoints cost nothing and keep DynamoDB, almost certainly the backend's highest-volume call, off both the NAT instance and the public internet entirely.
 - **CloudWatch Logs now needs its own path to AWS**, since there is no ECS `awslogs` driver doing it automatically — the CloudWatch agent (or equivalent) running on the instance, routed through the NAT instance like everything else, is the only way the existing EMF metrics and alarms keep working.
-- Nothing in `infra/terraform` reflects this yet. Building it needs a VPC extension (public + private subnet, the NAT instance, route tables, the two gateway endpoints), a compute module for the backend instance, and CloudFront's VPC origin wired to it.
+- Built in three modules: `vpc` (the NAT instance and the gateway endpoints), `compute` (the API server), and `api_edge` (CloudFront in front of it).
+
+## Addendum (2026-10-01): a second distribution for the API
+
+The Decision above assumed the API would sit behind the **same** distribution as the web app. It can't. The web app's distribution is on CloudFront's flat-rate **Free** plan, and AWS's plan feature table lists "Private origins within VPC" only for the **Business** ($200/month) and Premium tiers. Custom origin request policies are Business-only as well.
+
+Three ways out were weighed:
+
+- **Upgrade the web distribution to Business.** Same-origin and no other changes, but $200/month is roughly ten times the rest of the stack combined.
+- **Make the API server a public custom origin**, locked to CloudFront's origin-facing prefix list. It stays on the Free plan and stays same-origin, but it reverses this ADR's private-subnet decision for the sake of a pricing tier.
+- **A second distribution, on pay-as-you-go, for the API alone.** Chosen.
+
+What the choice costs: the API is cross-origin (`api-<env>.tharunsekar.xyz` vs the web app's own host). The server's `CORS_ORIGIN`, the web app's CSP `connect-src` and its `BUN_PUBLIC_API_URL` all name the API host, and a request carrying the `Authorization` header pays a CORS preflight. What it keeps: the server stays in a private subnet with no public IP, and the pay-as-you-go distribution has no monthly floor. VPC origins carry no charge of their own, and this project's traffic sits inside CloudFront's always-free allowance. The web app's distribution and its plan are untouched.

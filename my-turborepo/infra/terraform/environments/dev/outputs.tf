@@ -96,3 +96,32 @@ output "alarm_names" {
   description = "Every CloudWatch alarm created for this environment"
   value       = module.cloudwatch.alarm_names
 }
+
+# Null while api_server_enabled is false.
+output "api_server_instance_id" {
+  description = "The API server instance. Connect with `aws ssm start-session --target <id>`."
+  value       = one(module.compute[*].instance_id)
+}
+
+output "api_artifact_uri" {
+  description = "Where a deploy uploads the compiled server before running /opt/prepilot/bin/deploy on the instance"
+  value       = one(module.compute[*].artifact_uri)
+}
+
+# Null while api_server_enabled is false. Build the web app with this as
+# BUN_PUBLIC_API_URL.
+output "api_url" {
+  description = "The API's public base URL"
+  value       = one(module.api_edge[*].api_url)
+}
+
+# Read by apps/web/scripts/deploy.ts, which publishes the web app here.
+output "frontend_bucket_id" {
+  description = "Bucket the built web app is uploaded to"
+  value       = module.s3.bucket_id
+}
+
+output "frontend_distribution_id" {
+  description = "The web app's distribution, invalidated after each deploy"
+  value       = module.cloudfront.distribution_id
+}

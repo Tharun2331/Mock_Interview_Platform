@@ -70,9 +70,43 @@ type StructuredBehaviour =
 let structuredQueue: StructuredBehaviour[] = [];
 let lastStructuredArgs: unknown;
 
+// Per-tool replies, checked before the queue. A worker test drives two agents
+// through this one function — the Evaluator on every answer, then the Session
+// Summarizer once — and a single shared queue would have to predict how their
+// calls interleave. Keyed by tool name, each agent gets its own answer.
+export type StructuredArgs = {
+  system: string;
+  prompt: string;
+  toolName: string;
+  temperature?: number;
+};
+
+// A sequence per tool; the last entry repeats once the rest are used, the same
+// rule as the queue below. One entry means "every call answers this".
+const toolBehaviours = new Map<string, StructuredBehaviour[]>();
+const toolCalls = new Map<string, StructuredArgs[]>();
+
 export const converseStructured = mock(
   async (args: unknown): Promise<ConverseStructuredResult> => {
     lastStructuredArgs = args;
+
+    const toolName = (args as Partial<StructuredArgs>).toolName;
+    if (toolName !== undefined) {
+      toolCalls.set(toolName, [
+        ...(toolCalls.get(toolName) ?? []),
+        args as StructuredArgs,
+      ]);
+      const sequence = toolBehaviours.get(toolName);
+      const forTool =
+        sequence !== undefined && sequence.length > 1
+          ? sequence.shift()
+          : sequence?.[0];
+      if (forTool !== undefined) {
+        if (forTool.kind === "error") throw forTool.error;
+        // Read at call time, so setAnsweringModel applies whenever it is set.
+        return { ...forTool.result, modelId };
+      }
+    }
 
     // The last entry repeats once the queue is exhausted, so a test that wants
     // the same answer every time configures one.
@@ -123,7 +157,46 @@ export function structuredCallCount(): number {
 export function resetStructuredStub(): void {
   structuredQueue = [];
   lastStructuredArgs = undefined;
+  toolBehaviours.clear();
+  toolCalls.clear();
   converseStructured.mockClear();
+}
+
+/**
+ * What one tool's calls return, every time. An object is a tool-use reply; a
+ * string is a model that ignored toolChoice and answered in prose.
+ */
+export function setToolReply(toolName: string, value: unknown): void {
+  setToolReplies(toolName, [value]);
+}
+
+/** One reply per call, in order; the last repeats. For retry tests. */
+export function setToolReplies(toolName: string, values: unknown[]): void {
+  toolBehaviours.set(
+    toolName,
+    values.map((value) => ({
+      kind: "value",
+      result: {
+        value,
+        modelId: DEFAULT_STRUCTURED_MODEL,
+        via: typeof value === "string" ? "text" : "toolUse",
+      },
+    })),
+  );
+}
+
+/** Make one tool's calls fail — the Bedrock chain exhausted, or a hang. */
+export function setToolFailure(toolName: string, error: Error): void {
+  toolBehaviours.set(toolName, [{ kind: "error", error }]);
+}
+
+/** The arguments of the most recent call for one tool. */
+export function lastToolCall(toolName: string): StructuredArgs | undefined {
+  return toolCalls.get(toolName)?.at(-1);
+}
+
+export function toolCallCount(toolName: string): number {
+  return toolCalls.get(toolName)?.length ?? 0;
 }
 
 /** What the model should return on the next call, and every call after it. */

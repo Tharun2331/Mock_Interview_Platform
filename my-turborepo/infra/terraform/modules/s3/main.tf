@@ -26,12 +26,16 @@ resource "aws_s3_bucket_public_access_block" "frontend" {
   restrict_public_buckets = true
 }
 
-# Placeholder landing page — swap once apps/web has a real build.
-resource "aws_s3_object" "placeholder_index" {
-  bucket       = aws_s3_bucket.frontend.id
-  key          = "index.html"
-  content      = "<h1>PrepPilot AI — coming soon</h1>"
-  content_type = "text/html"
+# The bucket's contents belong to the web app's deploy (apps/web/scripts/deploy.ts),
+# not to Terraform. This used to manage a placeholder index.html, which would
+# have reverted every real deploy on the next apply. `destroy = false` drops it
+# from state without deleting the object, so the live page is never removed.
+removed {
+  from = aws_s3_object.placeholder_index
+
+  lifecycle {
+    destroy = false
+  }
 }
 
 # ---------------------------------------------------------------------------

@@ -65,10 +65,16 @@ state file**. `terraform` commands run from inside one of them, never from
 
 ### Not yet built
 
-`alb`, `ecs` (or `compute`), `cloudwatch`. Scaffold as new modules following
-the conventions below rather than dropping loose resources into an environment
-root. There is deliberately **no `elasticache`** —
-see [ADR-0006](../../docs/adr/0006-drop-redis-dynamodb-alone.md).
+The Evaluator `lambda` module (and its ECR repo). Note that the API is served
+by its own pay-as-you-go distribution (`api_edge`), not the web app's: the web
+distribution is on CloudFront's flat-rate Free plan, which cannot use VPC
+origins — see the ADR-0008 addendum before adding anything plan-gated to
+either distribution. Scaffold as new modules following the conventions below rather
+than dropping loose resources into an environment root. There is deliberately
+**no `alb` or `ecs`** — see
+[ADR-0008](../../docs/adr/0008-cloudfront-private-ec2-not-alb-ecs.md) — and
+**no `elasticache`** — see
+[ADR-0006](../../docs/adr/0006-drop-redis-dynamodb-alone.md).
 
 A `bedrock` module is also unbuilt and, as of the Coach landing without RAG,
 unplanned: it was only ever going to carry the Knowledge Base, and there is no
@@ -102,8 +108,8 @@ setting `var.region` for an environment.** This is not a normal region choice:
   model-not-found error, not at plan or apply time. Terraform will happily
   build a complete, working, useless environment.
 - If the app region and Sonic's region ever have to differ, that is a
-  cross-region call from ECS through the NAT Gateway, with the latency and
-  data-processing cost that implies. Raise it as a design decision rather than
+  cross-region call from the app server through the NAT instance, with the
+  latency and bandwidth that implies. Raise it as a design decision rather than
   quietly configuring a second region.
 
 ---
@@ -168,8 +174,9 @@ Least privilege, and be specific about it:
 - Never `"Action": "s3:*"` or similar service wildcards. List the actions.
 - Scope S3 to prefixes (`resumes/*`, `audio/*`), SQS to a single queue ARN,
   DynamoDB to the table plus the specific index.
-- **Two ECS task roles, never shared** — one for the main API service, one for
-  the Evaluator worker. Their action lists are in
+- **Two roles, never shared** — one for the API server (assumed by its EC2
+  instance), one for the Evaluator worker (an ECS trust today, its Lambda once
+  that module exists). Their action lists are in
   `docs/architecture/overview.md` §8. Sharing a role collapses the entire point
   of splitting the services.
 - Build policies with `data "aws_iam_policy_document"`, not heredoc JSON.
@@ -177,12 +184,18 @@ Least privilege, and be specific about it:
 
 ### Bedrock actions
 
-Two distinct permissions, and they are not interchangeable:
+Two statements, separated by resource:
 
 - `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` — the text
   agents, scoped to the Llama and Mistral foundation-model ARNs.
-- `bedrock:InvokeModelWithBidirectionalStream` — the voice loop, scoped to the
-  Nova 2 Sonic foundation-model ARN only.
+- `bedrock:InvokeModel` and `bedrock:InvokeModelWithBidirectionalStream` — the
+  voice loop, scoped to the Nova 2 Sonic foundation-model ARN only. **The
+  bidirectional stream API is authorised against `bedrock:InvokeModel`**;
+  granting only the action named after the API fails every interview at
+  startup. Verified on the first EC2 run, 2026-10-01.
+
+What separates the two is the model ARN, not the action name, so that is what
+must never be widened.
 
 Scope each to model ARNs of the form
 `arn:aws:bedrock:${region}::foundation-model/${model_id}`, taking the model IDs
@@ -235,10 +248,13 @@ DynamoDB table — is a stop-and-discuss, not a proceed.
 
 Two things bill whether or not anyone uses the app:
 
-- **NAT Gateway** — roughly $32/month per AZ plus data processing. With no ECS
-  tasks running it is pure waste. During scaffold weeks, destroy and recreate
-  it between sessions.
-- **ElastiCache** and **ALB** — same shape of problem, smaller numbers.
+- **The NAT instance** — ~$7/month (t4g.nano, its public IPv4, the root
+  volume). It replaced a NAT Gateway (~$33/month plus $0.045/GB), see
+  [ADR-0008](../../docs/adr/0008-cloudfront-private-ec2-not-alb-ecs.md). Off by
+  default (`enable_nat_instance`).
+- **The API server instance** — ~$13/month at t4g.small with its root volume.
+  In `dev` both are behind one switch, `api_server_enabled`; turn it off
+  between sessions, the same discipline the NAT Gateway used to need.
 
 When a change adds an always-on resource, or multiplies one across AZs, say so
 in the same response. Don't let a second NAT Gateway land silently because the
@@ -255,9 +271,9 @@ deliberately:
   This is the closest thing to a safety net infrastructure can offer.
 - **A budget alarm** in `global`, since spend is account-wide rather than
   per-environment.
-- **ECS task count in `dev`** — every running task can hold open streams.
-  Scaling `dev` to zero between sessions is the same discipline as destroying
-  the NAT Gateway.
+- **The `dev` API server** — a running server can hold open streams. Turning
+  `api_server_enabled` off between sessions removes it along with the NAT
+  instance.
 
 ### S3 audio lifecycle
 

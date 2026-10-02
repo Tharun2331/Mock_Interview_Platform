@@ -26,9 +26,9 @@ import { WORKER } from "../lib/constants";
 import {
   resetBedrockStub,
   resetStructuredStub,
-  setModelFailure,
-  setModelReply,
   setStructuredReplies,
+  setToolFailure,
+  setToolReply,
 } from "./helpers/bedrockStub";
 
 // The poll loop, and the one decision it makes that cannot be walked back:
@@ -48,6 +48,14 @@ const ddb = mockClient(DynamoDBDocumentClient);
 const sqs = mockClient(SQSClient);
 
 const { runWorker } = await import("../worker");
+const { EVALUATOR_TOOL_NAME } = await import("../agents/evaluator");
+
+// The Evaluator answers through its own forced tool call, kept apart from the
+// Session Summarizer's queued replies by tool name.
+const setModelReply = (value: unknown) =>
+  setToolReply(EVALUATOR_TOOL_NAME, value);
+const setModelFailure = (error: Error) =>
+  setToolFailure(EVALUATOR_TOOL_NAME, error);
 
 const TABLE = "prepilot-sessions-test";
 const SESSION_ID = "01J000000000000000000000";
@@ -128,12 +136,12 @@ beforeEach(() => {
   sqs.reset();
   receives = 0;
   resetBedrockStub();
-  // Both halves of the shared stub. The Evaluator goes through `converseText`
-  // and the Session Summarizer through `converseStructured`, and their call
-  // counts are cumulative for the whole process — without this reset they
-  // carry over from whichever file ran first.
+  // Both agents go through `converseStructured` — the Evaluator by tool name,
+  // the Session Summarizer through the queue — and its call counts are
+  // cumulative for the whole process. Without this reset they carry over from
+  // whichever file ran first.
   resetStructuredStub();
-  setModelReply(JSON.stringify(SCORES));
+  setModelReply(SCORES);
 
   // A scoreable job by default: the answer and meta exist, nothing scored yet.
   ddb.on(BatchGetCommand).resolves({ Responses: { [TABLE]: [ANSWER, META] } });
@@ -335,12 +343,11 @@ describe("shutting down", () => {
 // milliseconds apart both count the same total, exactly one gets `finalized`,
 // so exactly one pays for this generation.
 describe("the session summary", () => {
-  // The two agents on this path use DIFFERENT halves of the Bedrock stub: the
-  // Evaluator calls `converseText`, the Session Summarizer calls
-  // `converseStructured`. Setting only the text reply leaves the summariser
-  // with no behaviour configured, which surfaces as "produced nothing usable"
-  // rather than as a failure — the agent returns null on anything it cannot
-  // parse, by design.
+  // Both agents on this path call `converseStructured`, kept apart in the stub:
+  // the Evaluator by its tool name, the Session Summarizer through the queue.
+  // Setting only the Evaluator's reply leaves the summariser with no behaviour
+  // configured, which surfaces as "produced nothing usable" rather than as a
+  // failure — the agent returns null on anything it cannot parse, by design.
   const SUMMARY_REPLY = {
     summaryText: "Strong on delivery, thin on systems depth.",
     flaggedExamples: [],
