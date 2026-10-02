@@ -74,6 +74,26 @@ const result = await Bun.build({
   // every chunk, which served the whole unminified frontend (comments included)
   // to anyone who asked. Debug locally with `bun --hot` instead.
   sourcemap: "none",
+  // Load-bearing: without it Google sign-in hangs forever on /callback.
+  //
+  // Amplify registers the listener that exchanges the hosted-UI `?code=` for
+  // tokens as a side-effect import inside signInWithRedirect, and declares that
+  // file in @aws-amplify/auth's `sideEffects` list. Bun's bundler does not apply
+  // that list, treats the import as dead and drops it — and an explicit
+  // `import "aws-amplify/auth/enable-oauth-listener"` is dropped the same way.
+  // With no listener, getCurrentUser() waits on an exchange nobody starts.
+  // `bun --hot` does not tree-shake, so this only ever breaks deployed builds.
+  //
+  // The cost is ~50 KB of minified JS (~5%), from also ignoring @__PURE__
+  // hints. Check before removing: in dist/, the Symbol("oauth-listener")
+  // variable must be called as `X[sym](...)`, not only defined as a method.
+  ignoreDCEAnnotations: true,
+  // Root-absolute asset URLs. Bun emits `./chunk-x.js` by default, which
+  // resolves against the current path: fine on /signin, but a full load of a
+  // nested route like /results/:sessionId asked for /results/chunk-x.js, which
+  // the CloudFront route rewrite (it only rewrites dotless paths) passed to S3
+  // as a missing key — a 403 and a blank page on refresh.
+  publicPath: "/",
   define,
 });
 

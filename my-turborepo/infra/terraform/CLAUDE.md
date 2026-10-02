@@ -65,8 +65,11 @@ state file**. `terraform` commands run from inside one of them, never from
 
 ### Not yet built
 
-The Evaluator `lambda` module (and its ECR repo) and CloudFront's VPC origin to
-the app server. Scaffold as new modules following the conventions below rather
+The Evaluator `lambda` module (and its ECR repo). Note that the API is served
+by its own pay-as-you-go distribution (`api_edge`), not the web app's: the web
+distribution is on CloudFront's flat-rate Free plan, which cannot use VPC
+origins — see the ADR-0008 addendum before adding anything plan-gated to
+either distribution. Scaffold as new modules following the conventions below rather
 than dropping loose resources into an environment root. There is deliberately
 **no `alb` or `ecs`** — see
 [ADR-0008](../../docs/adr/0008-cloudfront-private-ec2-not-alb-ecs.md) — and
@@ -181,12 +184,18 @@ Least privilege, and be specific about it:
 
 ### Bedrock actions
 
-Two distinct permissions, and they are not interchangeable:
+Two statements, separated by resource:
 
 - `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` — the text
   agents, scoped to the Llama and Mistral foundation-model ARNs.
-- `bedrock:InvokeModelWithBidirectionalStream` — the voice loop, scoped to the
-  Nova 2 Sonic foundation-model ARN only.
+- `bedrock:InvokeModel` and `bedrock:InvokeModelWithBidirectionalStream` — the
+  voice loop, scoped to the Nova 2 Sonic foundation-model ARN only. **The
+  bidirectional stream API is authorised against `bedrock:InvokeModel`**;
+  granting only the action named after the API fails every interview at
+  startup. Verified on the first EC2 run, 2026-10-01.
+
+What separates the two is the model ARN, not the action name, so that is what
+must never be widened.
 
 Scope each to model ARNs of the form
 `arn:aws:bedrock:${region}::foundation-model/${model_id}`, taking the model IDs

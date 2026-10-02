@@ -83,10 +83,24 @@ data "aws_iam_policy_document" "bedrock_invoke" {
 
   # Scoped to Nova 2 Sonic alone. A bidirectional stream bills for as long as it
   # stays open, so this permission is deliberately narrower than the text one.
+  #
+  # **Bedrock authorises the InvokeModelWithBidirectionalStream API against the
+  # `bedrock:InvokeModel` action**, not an action of the same name. Granting
+  # only the latter fails every interview at startup with "not authorized to
+  # perform: bedrock:InvokeModel on resource: ...nova-2-sonic-v1:0". It went
+  # unnoticed until the server first ran under this role on EC2; local
+  # development uses a developer's own credentials. Both are listed so the grant
+  # holds whichever name a future API revision checks.
+  #
+  # This does not weaken the worker separation: what keeps the Evaluator off
+  # Sonic is the resource, and its role lists text model ARNs only.
   statement {
-    sid       = "BedrockInvokeSpeechBidirectional"
-    effect    = "Allow"
-    actions   = ["bedrock:InvokeModelWithBidirectionalStream"]
+    sid    = "BedrockInvokeSpeechBidirectional"
+    effect = "Allow"
+    actions = [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithBidirectionalStream",
+    ]
     resources = [local.speech_model_arn]
   }
 
