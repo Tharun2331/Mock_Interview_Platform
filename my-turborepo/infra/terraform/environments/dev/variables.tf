@@ -29,8 +29,9 @@ variable "alert_emails" {
 variable "app_origins" {
   type        = list(string)
   description = "Origins dev's web app is served from. Sign-in callbacks and sign-out redirects are allowed to these and nothing else."
-  # Local `bun --hot`, and the deployed dev site behind CloudFront.
-  default = ["http://localhost:3000", "https://tharunsekar.xyz"]
+  # Local `bun --hot`, and the deployed dev site behind CloudFront (its
+  # subdomain, plus the apex while the move from it is in progress).
+  default = ["http://localhost:3000", "https://preppilot-dev.tharunsekar.xyz", "https://tharunsekar.xyz"]
 }
 
 variable "api_server_enabled" {

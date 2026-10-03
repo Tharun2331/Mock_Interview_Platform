@@ -148,6 +148,7 @@ module "cloudfront" {
   bucket_id                   = module.s3.bucket_id
   bucket_arn                  = module.s3.bucket_arn
   bucket_regional_domain_name = module.s3.bucket_regional_domain_name
+  aliases                     = local.web_domains
 
   # The API's origins for the CSP's connect-src, both schemes: REST calls and
   # the interview WebSocket. Independent of api_server_enabled on purpose, so
@@ -156,11 +157,17 @@ module "cloudfront" {
 }
 
 locals {
-  # Where dev's web app is served (the web distribution's alias) and where its
-  # API is. Two hostnames because the web distribution's Free plan cannot use a
-  # VPC origin — see the api_edge module.
-  web_origin = "https://tharunsekar.xyz"
-  api_domain = "api-dev.tharunsekar.xyz"
+  # Where dev's web app is served (the web distribution's aliases) and where its
+  # API is. Separate hostnames because the web distribution's Free plan cannot
+  # use a VPC origin — see the api_edge module.
+  #
+  # preppilot-dev is the app's home; preppilot.tharunsekar.xyz is reserved for
+  # prod. The apex still serves the app during the move, and its A record must
+  # stay regardless: Cognito's auth.tharunsekar.xyz needs the apex to resolve.
+  # Drop it from this list once nothing links to it.
+  web_domains = ["preppilot-dev.tharunsekar.xyz", "tharunsekar.xyz"]
+  web_origin  = join(",", [for domain in local.web_domains : "https://${domain}"])
+  api_domain  = "api-dev.tharunsekar.xyz"
 
   # Worst case for one answer: three Evaluator attempts at Bedrock's 30s
   # request timeout, the session summary's call, and the DynamoDB writes —

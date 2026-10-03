@@ -20,7 +20,7 @@ variable "bucket_regional_domain_name" {
 
 variable "aliases" {
   type        = list(string)
-  description = "Domain aliases served by this distribution"
+  description = "Domain aliases served by this distribution. Each one other than the apex also gets a Route 53 A record."
   default     = ["tharunsekar.xyz"]
 }
 
