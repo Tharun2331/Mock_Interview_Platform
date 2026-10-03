@@ -239,3 +239,20 @@ resource "aws_route53_record" "apex" {
     evaluate_target_health = false
   }
 }
+
+# One A record per subdomain alias (e.g. preppilot-dev.tharunsekar.xyz). The
+# apex is excluded because the record above already owns it. The ACM cert's
+# *.tharunsekar.xyz SAN covers any single-level subdomain listed here.
+resource "aws_route53_record" "subdomain" {
+  for_each = toset([for alias in var.aliases : alias if alias != var.acm_domain])
+
+  zone_id = data.aws_route53_zone.primary.zone_id
+  name    = each.value
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.frontend.domain_name
+    zone_id                = aws_cloudfront_distribution.frontend.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
