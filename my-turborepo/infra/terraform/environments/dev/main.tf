@@ -173,6 +173,17 @@ locals {
   # request timeout, the session summary's call, and the DynamoDB writes —
   # about 125s, if Bedrock hangs. A typical answer takes 2-5s.
   evaluator_timeout_seconds = 150
+
+  # Turnstile (step 5). Rolled out through `monitor`, which verified and logged
+  # without refusing; enforced once the trigger's log showed "turnstile
+  # verified on preppilot-dev.tharunsekar.xyz" for a real sign-up (2026-10-05).
+  # A sign-up without a valid token — a direct call to Cognito's SignUp API —
+  # is now refused.
+  turnstile_mode = "enforce"
+
+  # Public by design: it is rendered into the sign-up page. The secret half is
+  # in SSM at /prepilot/dev/turnstile/secret_key, never here.
+  turnstile_site_key = "0x4AAAAAAFM7wOo4Dycm7rLa"
 }
 
 module "cognito" {
@@ -183,6 +194,12 @@ module "cognito" {
 
   # Dev's pages only. The production origin belongs to the prod pool's client.
   app_origins = var.app_origins
+
+  # Turnstile on native sign-ups. Hostnames are the sign-up page's own, from
+  # the same list as CORS, plus localhost for `bun --hot`; they must match the
+  # widget's list in the Cloudflare dashboard.
+  turnstile_mode      = local.turnstile_mode
+  turnstile_hostnames = concat(local.web_domains, ["localhost"])
 
   # NOTE: intentionally NO depends_on = [module.cloudfront]. The apex record
   # (created by module.cloudfront) only needed to exist for the FIRST creation

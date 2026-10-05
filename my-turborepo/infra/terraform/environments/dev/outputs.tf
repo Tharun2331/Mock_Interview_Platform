@@ -138,3 +138,9 @@ output "evaluator_function_name" {
   description = "The Evaluator Lambda function"
   value       = module.evaluator.function_name
 }
+
+# Read by apps/web/scripts/deploy.ts as BUN_PUBLIC_TURNSTILE_SITE_KEY.
+output "turnstile_site_key" {
+  description = "Public Turnstile site key the sign-up page renders its widget with"
+  value       = local.turnstile_site_key
+}
