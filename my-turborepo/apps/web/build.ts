@@ -52,6 +52,11 @@ const define = {
   "process.env.BUN_PUBLIC_API_URL": JSON.stringify(
     requireHttpsApiUrl("BUN_PUBLIC_API_URL"),
   ),
+  // Required: a deployed sign-up form without its human check would have every
+  // sign-up refused once the pre sign-up trigger enforces it.
+  "process.env.BUN_PUBLIC_TURNSTILE_SITE_KEY": JSON.stringify(
+    requireBuildEnv("BUN_PUBLIC_TURNSTILE_SITE_KEY"),
+  ),
   // Optional: unset falls back to dev's hosted-UI domain in lib/config.ts.
   // Defined either way, so the bundle never reads `process.env` at runtime.
   "process.env.BUN_PUBLIC_COGNITO_DOMAIN": JSON.stringify(

@@ -58,7 +58,27 @@ const MFA_ERROR_MESSAGES: Record<string, string> = {
 
 // Returns text safe to display. Never returns `error.message` — an unrecognised
 // error yields the caller's fallback rather than leaking provider internals.
+// The pre sign-up Lambda refuses for two unrelated reasons under one exception
+// name: an address it will not accept, and a failed human check (Turnstile).
+// Telling a person who failed the human check that their email is not allowed
+// sends them off to find another address that will fail the same way.
+//
+// Told apart by the Lambda's own refusal text, which Cognito wraps in
+// "PreSignUp failed with error ...". MUST stay in step with TURNSTILE_REFUSAL in
+// infra/terraform/modules/cognito/pre_sign_up/index.mjs; a drift there falls
+// back to the address message, which is wrong but not dangerous.
+const HUMAN_CHECK_REFUSAL_MARKER = "confirm you are a person";
+
+export function isHumanCheckRefusal(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.name === "UserLambdaValidationException" &&
+    error.message.includes(HUMAN_CHECK_REFUSAL_MARKER)
+  );
+}
+
 export function errorMessage(error: unknown, fallback: string): string {
+  if (isHumanCheckRefusal(error)) return MESSAGES.AUTH_HUMAN_CHECK_FAILED;
   if (error instanceof Error) {
     const mapped = AUTH_ERROR_MESSAGES[error.name];
     if (mapped !== undefined) return mapped;

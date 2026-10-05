@@ -79,3 +79,20 @@ variable "extra_blocked_email_domains" {
   default     = []
 }
 
+
+variable "turnstile_mode" {
+  type        = string
+  description = "Turnstile check on native sign-ups: off, monitor (verify and log, never refuse) or enforce. Roll out through monitor first — see pre_sign_up/index.mjs."
+  default     = "off"
+
+  validation {
+    condition     = contains(["off", "monitor", "enforce"], var.turnstile_mode)
+    error_message = "turnstile_mode must be off, monitor or enforce."
+  }
+}
+
+variable "turnstile_hostnames" {
+  type        = list(string)
+  description = "Hostnames a Turnstile token may have been solved on: the sign-up page's own. Must match the widget's hostname list in the Cloudflare dashboard."
+  default     = []
+}

@@ -85,6 +85,12 @@ export const MESSAGES = {
   AUTH_SIGNED_UP_NOW_SIGN_IN: "Account confirmed. Sign in to continue.",
   AUTH_CONFIRM_FAILED: "Confirmation failed. Check the code and try again.",
   AUTH_SIGNUP_FAILED: "Sign-up failed. Please try again.",
+  AUTH_HUMAN_CHECK_FAILED:
+    "We couldn't confirm you're a person. Please try again.",
+  // The sign-up form's human check (Turnstile). The widget shows its own
+  // progress; this is only for when it cannot load at all.
+  HUMAN_CHECK_FAILED:
+    "The security check couldn't load. Refresh the page — and if it keeps failing, pause any extension that blocks challenges.cloudflare.com.",
   AUTH_SIGNIN_FAILED: "Sign-in failed. Check your credentials.",
   AUTH_GOOGLE_FAILED: "Google sign-in failed. Please try again.",
   AUTH_CODE_SENT: "We emailed you a 6-digit confirmation code.",

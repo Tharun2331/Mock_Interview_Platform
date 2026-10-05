@@ -54,6 +54,7 @@ await $`bun run build.ts`.cwd(webDir).env({
     "cognito_user_pool_client_id",
   ),
   BUN_PUBLIC_API_URL: apiUrl,
+  BUN_PUBLIC_TURNSTILE_SITE_KEY: requireOutput("turnstile_site_key"),
 });
 
 // --- Publish -----------------------------------------------------------------

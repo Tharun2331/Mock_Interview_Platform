@@ -20,10 +20,12 @@ data "aws_region" "current" {}
 locals {
   # The browser app's Content-Security-Policy, built from what it actually loads:
   #
-  #   script-src  'self'  only. The microphone AudioWorklet is a static file on
-  #                       this origin (apps/web/src/lib/audio/pcmCaptureWorklet.js),
-  #                       not a blob: URL, so no script source outside the
-  #                       origin is allowed
+  #   script-src  'self', plus Cloudflare Turnstile (the sign-up form's human
+  #                       check) and nothing else. The microphone AudioWorklet is
+  #                       a static file on this origin
+  #                       (apps/web/src/lib/audio/pcmCaptureWorklet.js), not a
+  #                       blob: URL, so no other outside script source is allowed
+  #   frame-src   Turnstile's challenge iframe, and nothing else
   #   style-src   unsafe-inline + Google Fonts CSS. Radix and sonner inject
   #                       style elements at runtime; there is no nonce plumbing.
   #   font-src    Google Fonts files
@@ -46,7 +48,12 @@ locals {
 
   content_security_policy = join("; ", [
     "default-src 'self'",
-    "script-src 'self'",
+    # Turnstile, the sign-up form's human check: its script, and the iframe it
+    # renders the challenge in. Without frame-src the iframe falls back to
+    # default-src 'self' and is blocked silently — the form then waits for a
+    # token that never comes.
+    "script-src 'self' https://challenges.cloudflare.com",
+    "frame-src https://challenges.cloudflare.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data:",
