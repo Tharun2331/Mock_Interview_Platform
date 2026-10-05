@@ -14,6 +14,14 @@ export const BACKEND_URL: string =
     ? process.env.BUN_PUBLIC_API_URL
     : DEV_BACKEND_URL;
 
+// The sign-up form's Turnstile site key: public by design, it is rendered into
+// the page. Inlined at build time; build.ts refuses a production build without
+// it. Empty only under `bun --hot` with no key in .env, where the form shows no
+// check — fine while the pre sign-up trigger is in monitor mode, and a refused
+// sign-up once it enforces.
+export const TURNSTILE_SITE_KEY: string =
+  process.env.BUN_PUBLIC_TURNSTILE_SITE_KEY ?? "";
+
 // Upper bound on any single API call. Without one, axios waits forever: a
 // request the server never answers leaves the form pinned on its progress bar
 // with no error, no retry and nothing on screen that says anything is wrong.

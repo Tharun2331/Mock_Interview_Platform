@@ -26,6 +26,11 @@ import { Separator } from "@/components/ui/separator";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { GoogleIcon } from "@/components/GoogleIcon";
 import { LegalNotice } from "@/components/LegalNotice";
+import {
+  HumanCheckField,
+  humanCheckToken,
+  useHumanCheck,
+} from "@/components/HumanCheck";
 import { errorMessage, isAlreadyAuthenticated } from "@/lib/errors";
 import { MESSAGES } from "@/lib/messages";
 
@@ -55,6 +60,8 @@ export function Signup() {
     mode: "onTouched",
     defaultValues: { email: prefilledEmail(state) },
   });
+  const humanCheck = useHumanCheck();
+  const { canSubmit, token } = humanCheckToken(humanCheck.state);
 
   const onSubmit = handleSubmit(async (values) => {
     try {
@@ -66,6 +73,10 @@ export function Signup() {
         options: {
           userAttributes: { email: values.email },
           autoSignIn: true,
+          // Handed to the pre sign-up trigger, which verifies it with
+          // Cloudflare. validationData is never stored on the user.
+          validationData:
+            token === undefined ? undefined : { turnstileToken: token },
         },
       });
 
@@ -84,6 +95,9 @@ export function Signup() {
       }
     } catch (error) {
       toast.error(errorMessage(error, MESSAGES.AUTH_SIGNUP_FAILED));
+      // The token was spent on this attempt whatever went wrong, so the next
+      // one needs a new check.
+      humanCheck.reset();
     }
   });
 
@@ -197,7 +211,12 @@ export function Signup() {
           </CardContent>
 
           <CardFooter className="mt-6 flex-col gap-4">
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
+            <HumanCheckField check={humanCheck} />
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isSubmitting || !canSubmit}
+            >
               {isSubmitting
                 ? MESSAGES.SIGNUP_SUBMIT_PENDING
                 : MESSAGES.SIGNUP_SUBMIT}
