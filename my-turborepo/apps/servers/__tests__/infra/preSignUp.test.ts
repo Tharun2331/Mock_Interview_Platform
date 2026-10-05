@@ -126,13 +126,24 @@ const VERIFIED = {
   action: TURNSTILE_ACTION,
 };
 
-function withToken(token?: string, email = "tharun@example.com") {
+// The shape Cognito hands the trigger. Annotated rather than inferred: the
+// inferred union `{} | { turnstileToken: string }` is not a Record<string,
+// string>, which is what the handler declares.
+type PreSignUpEvent = {
+  triggerSource: string;
+  request: {
+    userAttributes: Record<string, string>;
+    validationData: Record<string, string>;
+  };
+};
+
+function withToken(token?: string, email = "tharun@example.com"): PreSignUpEvent {
+  const validationData: Record<string, string> = {};
+  if (token !== undefined) validationData.turnstileToken = token;
+
   return {
     triggerSource: "PreSignUp_SignUp",
-    request: {
-      userAttributes: { email },
-      validationData: token === undefined ? {} : { turnstileToken: token },
-    },
+    request: { userAttributes: { email }, validationData },
   };
 }
 
