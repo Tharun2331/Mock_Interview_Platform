@@ -305,7 +305,13 @@ export function Result() {
     );
   }
 
-  const scoring = result.averages === undefined;
+  // Not `averages === undefined` alone: a round whose every answer was blocked
+  // from scoring completes with no averages, and keying on them would spin
+  // forever on a finished session.
+  const scoring = result.averages === undefined && result.status !== "complete";
+  // Blocked answers are accounted for, just never scored, so they belong in
+  // the progress count or it stops short of its total.
+  const accounted = result.completed + result.unscored;
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 p-6 pb-16">
@@ -329,17 +335,21 @@ export function Result() {
             <div className="flex items-center gap-3">
               <Progress
                 value={
-                  result.total === 0
-                    ? 0
-                    : (result.completed / result.total) * 100
+                  result.total === 0 ? 0 : (accounted / result.total) * 100
                 }
                 className="h-1.5 max-w-xs"
               />
               <span className="font-mono text-xs tabular-nums text-ink-subtle">
-                {MESSAGES.RESULT_PROGRESS(result.completed, result.total)}
+                {MESSAGES.RESULT_PROGRESS(accounted, result.total)}
               </span>
             </div>
           </div>
+        ) : null}
+
+        {result.unscored > 0 ? (
+          <p className="max-w-xl text-sm leading-relaxed text-ink-muted">
+            {MESSAGES.RESULT_UNSCORED(result.unscored)}
+          </p>
         ) : null}
       </header>
 

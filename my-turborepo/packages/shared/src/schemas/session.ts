@@ -405,6 +405,21 @@ export const SessionEvalSummarySchema = z.object({
       depth: z.number().min(0).max(10),
     })
     .optional(),
+  // Answers the Evaluator could not score because the Bedrock Guardrail blocked
+  // the call (ADR-0010). They count toward completion — without that, one
+  // blocked answer would leave its session at `evaluating` forever, since no
+  // EVAL# item will ever be written for it — and are excluded from `averages`.
+  //
+  // A DynamoDB string set, written with ADD, so a redelivered message re-adds
+  // the same id rather than counting it twice. The document client reads a set
+  // back as a JS Set; it is normalised to a sorted array here so nothing
+  // downstream has to know.
+  unscoredQuestionIds: z
+    .preprocess(
+      (value) => (value instanceof Set ? [...value].sort() : value),
+      z.array(z.string().min(1)),
+    )
+    .optional(),
 });
 
 export type SessionEvalSummary = z.infer<typeof SessionEvalSummarySchema>;

@@ -225,6 +225,46 @@ describe("GET /api/v1/sessions/:sessionId/evaluation", () => {
     expect(body.averages).toEqual({ correctness: 7, clarity: 6, depth: 5 });
   });
 
+  // ADR-0010. Blocked answers are reported so the page can say so, and an id
+  // blocked once then scored on a later attempt is shown as scored, once.
+  it("reports answers the guardrail blocked from scoring", async () => {
+    partitionHolds({
+      meta: { ...META, status: "complete" },
+      summary: {
+        ...SUMMARY,
+        averages: { correctness: 7, clarity: 6, depth: 5 },
+        // A DynamoDB string set comes back from the document client as a Set.
+        unscoredQuestionIds: new Set([Q1, Q2]),
+      },
+      answers: [answer(Q1), answer(Q2)],
+      evaluations: [evaluation(Q1)],
+    });
+    const { url } = await start();
+
+    const body = EvaluationResponseSchema.parse(
+      await (await getEvaluation(url)).json(),
+    );
+
+    expect(body.completed).toBe(1);
+    expect(body.unscored).toBe(1);
+  });
+
+  it("reports no unscored answers when the rollup has none", async () => {
+    partitionHolds({
+      meta: META,
+      summary: SUMMARY,
+      answers: [answer(Q1)],
+      evaluations: [evaluation(Q1)],
+    });
+    const { url } = await start();
+
+    const body = EvaluationResponseSchema.parse(
+      await (await getEvaluation(url)).json(),
+    );
+
+    expect(body.unscored).toBe(0);
+  });
+
   it("orders answers as they were asked", async () => {
     partitionHolds({
       meta: META,

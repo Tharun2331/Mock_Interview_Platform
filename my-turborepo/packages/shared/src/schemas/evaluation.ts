@@ -182,6 +182,11 @@ export const EvaluationResponseSchema = z.object({
   // finished session reading as permanently incomplete.
   completed: z.number().int().min(0),
   total: z.number().int().min(0),
+  // Answers that will never be scored, because the guardrail blocked their
+  // evaluation (ADR-0010). Counted against `total` alongside `completed`, and
+  // reported so the page can say so rather than showing a count that never
+  // reaches its total. Defaulted so a response from before this field parses.
+  unscored: z.number().int().min(0).default(0),
   // Absent until every answer is scored. Its presence is what tells the client
   // the round is genuinely finished, and it is written by the same conditional
   // update that completes the session.

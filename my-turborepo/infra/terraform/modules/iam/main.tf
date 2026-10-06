@@ -367,6 +367,11 @@ data "aws_iam_policy_document" "evaluator_worker" {
   # and attach a summary, and still cannot rewrite a transcript, a plan or a
   # score. ReturnValues is pinned too, so ALL_OLD cannot read a whole item back
   # through an allowed update.
+  #
+  # `unscoredQuestionIds` is the rollup's record of answers the guardrail
+  # blocked from scoring (ADR-0010). It is what lets a session with a blocked
+  # answer still complete; leave it out and markAnswerUnscored is denied, and
+  # that session sits at `evaluating` again.
   statement {
     sid       = "SessionsTableFinalize"
     effect    = "Allow"
@@ -376,7 +381,7 @@ data "aws_iam_policy_document" "evaluator_worker" {
     condition {
       test     = "ForAllValues:StringEquals"
       variable = "dynamodb:Attributes"
-      values   = ["PK", "SK", "averages", "status", "summary"]
+      values   = ["PK", "SK", "averages", "status", "summary", "unscoredQuestionIds"]
     }
 
     condition {

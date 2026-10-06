@@ -242,6 +242,13 @@ export async function loadSessionEvaluations(args: {
   // order the questions were asked.
   views.sort((a, b) => a.questionId.localeCompare(b.questionId));
 
+  // Blocked answers that never got a score. An id that was blocked once and
+  // scored on a later attempt is shown as scored, not counted twice.
+  const scoredIds = new Set(views.map((view) => view.questionId));
+  const unscored = (summary?.unscoredQuestionIds ?? []).filter(
+    (questionId) => !scoredIds.has(questionId),
+  ).length;
+
   return {
     // `planning`, `ready` and `in_progress` cannot reach this route — the
     // handler rejects them — so the remaining states are the three below.
@@ -256,6 +263,7 @@ export async function loadSessionEvaluations(args: {
     // to the number scored keeps a session with no rollup from reporting
     // "3 of 0".
     total: summary?.questionCount ?? views.length,
+    unscored,
     averages: summary?.averages,
     evaluations: views,
     role: meta.role,
@@ -630,6 +638,10 @@ export type FinalizeOutcome =
   // Another worker's final message got there first. Not an error — exactly one
   // of the two was always going to win.
   | { kind: "already-finalized" }
+  // Every answer was blocked by the guardrail, so there is nothing to average.
+  // The session is completed without `averages` and without a history row —
+  // there are no scores for either to carry.
+  | { kind: "all-unscored" }
   // No rollup to complete against. Only reachable for a session enqueued before
   // this existed, or one whose items have been erased mid-flight.
   | { kind: "no-summary" };
@@ -656,11 +668,18 @@ function mean(values: number[]): number {
 // the queue to trigger another check. data-model.md §1 calls this out
 // explicitly — the completion check must be strongly consistent or it fires at
 // the wrong time.
+type ScoredEvaluation = EvaluationAverages & {
+  // Read so a blocked answer that was later scored is not counted twice
+  // against the denominator. Optional because the check must not reject an
+  // item for lacking it.
+  questionId?: string | undefined;
+};
+
 async function readEvaluationScores(
   sessionId: string,
-): Promise<EvaluationAverages[]> {
+): Promise<ScoredEvaluation[]> {
   const TableName = requireTable();
-  const scores: EvaluationAverages[] = [];
+  const scores: ScoredEvaluation[] = [];
   let cursor: Record<string, unknown> | undefined;
 
   do {
@@ -686,8 +705,9 @@ async function readEvaluationScores(
           // Worth knowing: aws-sdk-client-mock does not validate expressions
           // against the reserved-word list, so no unit test catches this. It
           // surfaced on the first real run.
-          ProjectionExpression: "#correctness, #clarity, #depth",
+          ProjectionExpression: "#questionId, #correctness, #clarity, #depth",
           ExpressionAttributeNames: {
+            "#questionId": "questionId",
             "#correctness": "correctness",
             "#clarity": "clarity",
             "#depth": "depth",
@@ -705,13 +725,18 @@ async function readEvaluationScores(
     }
 
     for (const item of response.Items ?? []) {
-      const { correctness, clarity, depth } = item;
+      const { questionId, correctness, clarity, depth } = item;
       if (
         typeof correctness === "number" &&
         typeof clarity === "number" &&
         typeof depth === "number"
       ) {
-        scores.push({ correctness, clarity, depth });
+        scores.push({
+          questionId: typeof questionId === "string" ? questionId : undefined,
+          correctness,
+          clarity,
+          depth,
+        });
       }
     }
 
@@ -764,15 +789,35 @@ export async function finalizeIfComplete(args: {
 
   const scores = await readEvaluationScores(args.sessionId);
 
+  // Answers the guardrail blocked count as accounted for, or one blocked
+  // answer would hold its session at `evaluating` forever: no EVAL# item will
+  // ever be written for it (ADR-0010). An id that was blocked and later scored
+  // counts once, as scored.
+  const scoredIds = new Set(scores.map((score) => score.questionId));
+  const blockedOnly = (summary.unscoredQuestionIds ?? []).filter(
+    (questionId) => !scoredIds.has(questionId),
+  ).length;
+  const accounted = scores.length + blockedOnly;
+
   // `>=` rather than `===`. The count cannot exceed the denominator today, but
   // an equality check turns any future off-by-one into a session that waits
   // forever, and that failure is silent.
-  if (scores.length < summary.questionCount) {
+  if (accounted < summary.questionCount) {
     return {
       kind: "incomplete",
-      scored: scores.length,
+      scored: accounted,
       expected: summary.questionCount,
     };
+  }
+
+  // Every answer blocked: nothing to average, and a mean of nothing is NaN,
+  // which the rollup's schema would reject on every later read. The session
+  // still has to leave `evaluating`. completeEvaluation is conditional, so two
+  // workers arriving here together complete it once — no election needed,
+  // because there is no rollup write and no summary to pay for.
+  if (scores.length === 0) {
+    await completeEvaluation({ sessionId: args.sessionId });
+    return { kind: "all-unscored" };
   }
 
   const averages: EvaluationAverages = {
@@ -834,6 +879,47 @@ export async function finalizeIfComplete(args: {
   await completeEvaluation({ sessionId: args.sessionId });
 
   return { kind: "finalized", scored: scores.length, averages, historyRow };
+}
+
+// Records an answer the guardrail would not let the Evaluator score
+// (ADR-0010), so the completion check can count it.
+//
+// ADD to a string set, which is idempotent: a redelivered message adds the same
+// id again and the set does not grow. That is the property an `ADD count 1`
+// lacks and the reason data-model.md §1 rules counters out.
+//
+// Conditioned on the rollup existing. Without it, ADD on a missing item creates
+// one — a SUMMARY with no questionCount, which fails its schema on every later
+// read. A session with no rollup has nothing to complete against anyway.
+//
+// The Evaluator role's UpdateItem is limited by attribute name, so
+// `unscoredQuestionIds` must stay in that list in the iam module, or this
+// fails with AccessDenied only once deployed.
+export async function markAnswerUnscored(args: {
+  sessionId: string;
+  questionId: string;
+}): Promise<void> {
+  try {
+    await dynamoClient.send(
+      new UpdateCommand({
+        TableName: requireTable(),
+        Key: { PK: sessionPk(args.sessionId), SK: SORT_KEY.EVAL_SUMMARY },
+        UpdateExpression: "ADD #unscored :questionIds",
+        ConditionExpression: "attribute_exists(PK)",
+        ExpressionAttributeNames: { "#unscored": "unscoredQuestionIds" },
+        ExpressionAttributeValues: {
+          ":questionIds": new Set([args.questionId]),
+        },
+      }),
+    );
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException) return;
+    throw new ServiceError(
+      `${MESSAGES.EVAL_SUMMARY_WRITE_FAILED} — ${
+        error instanceof Error ? error.message : "unknown"
+      }`,
+    );
+  }
 }
 
 // PutItem, unconditionally. SQS is at-least-once, so a redelivery that slips
