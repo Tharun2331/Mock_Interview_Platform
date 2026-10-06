@@ -235,7 +235,13 @@ resource "aws_s3_bucket_policy" "frontend_oac" {
 
 # Apex A record → CloudFront. Also satisfies Cognito's requirement that the
 # parent domain (tharunsekar.xyz) resolves before auth.tharunsekar.xyz is created.
+#
+# Optional, because only one environment can own the apex: dev does, and prod
+# would fail on a duplicate record. Any auth.* domain needs the apex to resolve,
+# which it does whichever environment owns it.
 resource "aws_route53_record" "apex" {
+  count = var.create_apex_record ? 1 : 0
+
   zone_id = data.aws_route53_zone.primary.zone_id
   name    = var.acm_domain
   type    = "A"
@@ -262,4 +268,12 @@ resource "aws_route53_record" "subdomain" {
     zone_id                = aws_cloudfront_distribution.frontend.hosted_zone_id
     evaluate_target_health = false
   }
+}
+
+# The apex record became optional (count) when prod arrived. This moves the
+# existing record to its new address instead of destroying and recreating the
+# apex — which would briefly break tharunsekar.xyz and everything under auth.*.
+moved {
+  from = aws_route53_record.apex
+  to   = aws_route53_record.apex[0]
 }

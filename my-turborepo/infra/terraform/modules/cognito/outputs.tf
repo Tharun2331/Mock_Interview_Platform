@@ -25,3 +25,11 @@ output "admin_group_name" {
   description = "Cognito group whose members reach the admin API. Set as ADMIN_GROUP_NAME on the API service — the server's default matches, so this exists to make a change to the variable propagate rather than drift."
   value       = aws_cognito_user_group.admins.name
 }
+
+# The hosted-UI domain as a plain string (auth.<domain>), for the web build's
+# BUN_PUBLIC_COGNITO_DOMAIN. Without it a build falls back to dev's domain, so
+# a prod bundle would send Google sign-in to the dev pool.
+output "custom_domain" {
+  description = "Hosted-UI domain the web app's Google sign-in redirects through"
+  value       = aws_cognito_user_pool_domain.main.domain
+}

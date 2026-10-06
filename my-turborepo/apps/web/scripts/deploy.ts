@@ -36,10 +36,9 @@ const requireOutput = (key: string, hint = ""): string => {
 };
 
 const userPoolId = requireOutput("cognito_user_pool_id");
-const apiUrl = requireOutput(
-  "api_url",
-  "The API is off: apply with api_server_enabled=true first.",
-);
+// Set whether or not the API server is running: its hostname is fixed, so the
+// site can be published while the API is switched off.
+const apiUrl = requireOutput("api_url");
 const bucket = requireOutput("frontend_bucket_id");
 const distributionId = requireOutput("frontend_distribution_id");
 
@@ -55,6 +54,10 @@ await $`bun run build.ts`.cwd(webDir).env({
   ),
   BUN_PUBLIC_API_URL: apiUrl,
   BUN_PUBLIC_TURNSTILE_SITE_KEY: requireOutput("turnstile_site_key"),
+  // Required, not left to config.ts's fallback: that fallback is dev's domain,
+  // so a prod bundle built without this would send Google sign-in to the dev
+  // user pool.
+  BUN_PUBLIC_COGNITO_DOMAIN: requireOutput("cognito_domain"),
 });
 
 // --- Publish -----------------------------------------------------------------

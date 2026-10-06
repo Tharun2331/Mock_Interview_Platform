@@ -110,11 +110,18 @@ output "api_artifact_uri" {
   value       = module.s3.api_artifact_uri
 }
 
-# Null while api_server_enabled is false. Build the web app with this as
-# BUN_PUBLIC_API_URL.
+# Build the web app with this as BUN_PUBLIC_API_URL. Set even while
+# api_server_enabled is false: the hostname is fixed, so the site can be
+# deployed whether or not its API is running.
 output "api_url" {
   description = "The API's public base URL"
-  value       = one(module.api_edge[*].api_url)
+  value       = "https://${local.api_domain}"
+}
+
+# Read by apps/web/scripts/deploy.ts as BUN_PUBLIC_COGNITO_DOMAIN.
+output "cognito_domain" {
+  description = "Hosted-UI domain the web app's Google sign-in redirects through"
+  value       = module.cognito.custom_domain
 }
 
 # Read by apps/web/scripts/deploy.ts, which publishes the web app here.
