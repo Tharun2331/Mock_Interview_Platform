@@ -50,3 +50,15 @@ Three ways out were weighed:
 - **A second distribution, on pay-as-you-go, for the API alone.** Chosen.
 
 What the choice costs: the API is cross-origin (`api-<env>.tharunsekar.xyz` vs the web app's own host). The server's `CORS_ORIGIN`, the web app's CSP `connect-src` and its `BUN_PUBLIC_API_URL` all name the API host, and a request carrying the `Authorization` header pays a CORS preflight. What it keeps: the server stays in a private subnet with no public IP, and the pay-as-you-go distribution has no monthly floor. VPC origins carry no charge of their own, and this project's traffic sits inside CloudFront's always-free allowance. The web app's distribution and its plan are untouched.
+
+## Addendum (2026-10-05): the production environment
+
+`environments/prod` wires the same modules as dev. The decisions that differ, and why:
+
+- **Hostnames are single-level under the existing `*.tharunsekar.xyz` certificate:** `preppilot.` (web), `api-prod.` (API), `auth-prod.` (Cognito's hosted UI). A `*.preppilot.tharunsekar.xyz` certificate would have allowed `api.preppilot.…`, at the cost of a change to the shared `global` environment and an ordering dependency for Cognito's custom domain; not worth it for a name seen only briefly during Google sign-in. `api.tharunsekar.xyz` was unavailable: it is an API Gateway custom domain outside this project's Terraform.
+- **The apex stays dev's.** The cloudfront module's apex record became optional (`create_apex_record`, moved in state for dev, so no change there) because two environments cannot both own it. Cognito's `auth-prod.` domain only needs the apex to resolve, which dev's record does.
+- **The API server is switchable in prod too**, by the owner's choice: about $20/month while on. While off, the site still loads from S3 and CloudFront, but every API call fails, so sign-in and interviews are unavailable. The deploy outputs were changed so the site can be published either way.
+- **Data protection on:** DynamoDB point-in-time recovery and deletion protection, no TTL; the Cognito pool's deletion protection.
+- **Its own credentials:** a separate Google OAuth client and a separate Turnstile widget and secret, so a leaked dev credential cannot reach prod.
+- **Email:** Cognito's default sender, limited to 50 messages a day, for launch. Amazon SES needs domain verification and a request to leave its sandbox, so it is deferred until volume calls for it.
+- **A bug fixed on the way:** the web deploy never passed the Cognito domain, so every build fell back to dev's. A prod bundle would have sent Google sign-in to the dev user pool. The domain now comes from Terraform's `cognito_domain` output.

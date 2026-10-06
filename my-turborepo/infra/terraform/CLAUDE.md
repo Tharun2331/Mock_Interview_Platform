@@ -11,7 +11,8 @@ apply.
 
 ## Branches and state
 
-`dev` is for feature work, `main` for deployment. Terraform makes that split
+`dev` is for feature work, `master` for deployment (this repo's default branch is
+`master`, not `main`). Terraform makes that split
 sharper than it is for application code, because **state is real and branches
 are not**.
 
@@ -19,13 +20,14 @@ are not**.
 different `.tf` for the same environment do not produce two infrastructures —
 they produce one, matching whichever was applied last. A plan run from `dev`
 against the `dev` environment's state is authoritative regardless of what
-`main` contains.
+`master` contains.
 
 So:
 
 - Never apply the same environment from two branches. The `environments/dev`
   root is applied from the `dev` branch; `environments/prod` is applied from
-  `main`.
+  `master`. Prod changes are written and planned on `dev`, merged by PR, and
+  applied from a `master` checkout.
 - Before proposing an apply, confirm which branch is checked out and which
   environment directory the command runs in. They should agree.
 - `environments/global` is shared by both. Applying it from `dev` changes what
@@ -66,8 +68,9 @@ state file**. `terraform` commands run from inside one of them, never from
 ### Not yet built
 
 Nothing from ADR-0008/0009 remains unbuilt: `vpc`, `compute`, `api_edge` and
-`evaluator` (the Evaluator Lambda and its ECR repo) cover them. `environments/
-prod` is still empty. Note that the API is served by its own pay-as-you-go
+`evaluator` (the Evaluator Lambda and its ECR repo) cover them, and
+`environments/prod` wires them for production (see its main.tf header for how
+it differs from dev, and its one-time rollout order). Note that the API is served by its own pay-as-you-go
 distribution (`api_edge`), not the web app's: the web
 distribution is on CloudFront's flat-rate Free plan, which cannot use VPC
 origins — see the ADR-0008 addendum before adding anything plan-gated to

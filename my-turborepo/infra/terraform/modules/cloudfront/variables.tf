@@ -58,3 +58,9 @@ variable "csp_enforce" {
   default     = true
 }
 
+
+variable "create_apex_record" {
+  type        = bool
+  description = "Point the apex (acm_domain) at this distribution. Exactly one environment may own it — dev does. Turn off everywhere else, or the apply fails on a duplicate record."
+  default     = true
+}
