@@ -2,10 +2,58 @@ import {
   BedrockRuntimeClient,
   ConverseCommand,
   type ContentBlock,
+  type ConverseCommandOutput,
 } from "@aws-sdk/client-bedrock-runtime";
 import { config } from "./config";
 import { BEDROCK } from "./constants";
-import { BedrockError } from "./errors";
+import { BedrockError, GuardrailBlockedError } from "./errors";
+import {
+  guardrailConfiguration,
+  guardrailFindings,
+  resolveGuardrail,
+  userTurnContent,
+  wasGuardrailBlocked,
+} from "./guardrail";
+
+// Undefined unless both guardrail variables are set, in which case every text
+// call below carries it (ADR-0010).
+const guardrail = resolveGuardrail(
+  config.bedrockGuardrailId,
+  config.bedrockGuardrailVersion,
+);
+
+const guardrailRequest =
+  guardrail === undefined
+    ? {}
+    : { guardrailConfig: guardrailConfiguration(guardrail) };
+
+// Logs what the guardrail found, then refuses a blocked reply.
+//
+// The log is the point of detect mode: findings arrive in the trace and
+// nowhere else, so without it detect mode watches and tells nobody. Types and
+// actions only — see guardrailFindings for why never the matched text.
+//
+// A block surfaces as a normal 200 whose text is the guardrail's canned
+// message. Returning it would hand the caller that message as if it were the
+// model's answer, and the Evaluator would try to score it.
+function checkGuardrail(
+  response: ConverseCommandOutput,
+  modelId: string,
+): void {
+  const findings = guardrailFindings(response.trace?.guardrail);
+  if (findings.length > 0) {
+    console.warn(
+      `[bedrock] guardrail findings on ${modelId} — ${findings.join(" | ")}`,
+    );
+  }
+
+  if (wasGuardrailBlocked(response.stopReason)) {
+    throw new GuardrailBlockedError(
+      `Bedrock Guardrail blocked the call to ${modelId}`,
+      [modelId],
+    );
+  }
+}
 
 export const bedrockClient = new BedrockRuntimeClient({
   region: config.awsRegion,
@@ -101,15 +149,22 @@ export async function converseText(
           modelId,
           system: [{ text: args.system }],
           messages: [
+            // Unguarded on purpose: the exemplars are this codebase's text.
             ...exampleMessages,
-            { role: "user" as const, content: [{ text: args.prompt }] },
+            {
+              role: "user" as const,
+              content: userTurnContent(args.prompt, guardrail !== undefined),
+            },
           ],
           inferenceConfig: {
             maxTokens: args.maxTokens ?? BEDROCK.MAX_TOKENS,
             temperature: args.temperature ?? BEDROCK.TEMPERATURE,
           },
+          ...guardrailRequest,
         }),
       );
+
+      checkGuardrail(response, modelId);
 
       const text = readText(response.output?.message?.content);
       if (text.length > 0) {
@@ -129,6 +184,9 @@ export async function converseText(
 
       failures.push(`${modelId}: empty response`);
     } catch (error) {
+      // Out of the chain, not into it: the next model sits behind the same
+      // guardrail and would be refused the same way.
+      if (error instanceof GuardrailBlockedError) throw error;
       failures.push(
         `${modelId}: ${error instanceof Error ? error.message : "unknown error"}`,
       );
@@ -207,7 +265,13 @@ export async function converseStructured(
         new ConverseCommand({
           modelId,
           system: [{ text: args.system }],
-          messages: [{ role: "user", content: [{ text: args.prompt }] }],
+          messages: [
+            {
+              role: "user",
+              content: userTurnContent(args.prompt, guardrail !== undefined),
+            },
+          ],
+          ...guardrailRequest,
           inferenceConfig: {
             maxTokens: args.maxTokens ?? BEDROCK.MAX_TOKENS,
             // Zero by default, not BEDROCK.TEMPERATURE. The first callers were
@@ -228,6 +292,8 @@ export async function converseStructured(
           },
         }),
       );
+
+      checkGuardrail(response, modelId);
 
       const content = response.output?.message?.content ?? [];
 
@@ -265,6 +331,7 @@ export async function converseStructured(
 
       failures.push(`${modelId}: empty response`);
     } catch (error) {
+      if (error instanceof GuardrailBlockedError) throw error;
       failures.push(
         `${modelId}: ${error instanceof Error ? error.message : "unknown error"}`,
       );

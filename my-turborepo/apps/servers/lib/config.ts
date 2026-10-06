@@ -158,6 +158,13 @@ export const config = {
     "BEDROCK_TEXT_MODEL_IDS",
     env("BEDROCK_TEXT_MODEL_IDS", DEFAULT_TEXT_MODELS),
   ),
+  // The text agents' Bedrock Guardrail, from the guardrail module's outputs
+  // (ADR-0010). Both or neither: lib/guardrail.ts sends no guardrailConfig
+  // unless both are set, which is the local-development default. Not
+  // requireEnv, for the same reason as the fields below — an unset guardrail
+  // degrades to unguarded calls rather than a service that will not boot.
+  bedrockGuardrailId: env("BEDROCK_GUARDRAIL_ID", ""),
+  bedrockGuardrailVersion: env("BEDROCK_GUARDRAIL_VERSION", ""),
   githubApiBase: env("GITHUB_API_BASE", "https://api.github.com"),
   // From `terraform output uploads_bucket_id`. Not requireEnv: only the upload
   // path needs it, and failing boot would take down /plan and auth with it.

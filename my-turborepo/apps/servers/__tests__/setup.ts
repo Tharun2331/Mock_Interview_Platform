@@ -18,6 +18,12 @@ process.env.EVAL_QUEUE_URL =
   "https://sqs.us-east-1.amazonaws.com/000000000000/prepilot-eval-test";
 process.env.AWS_REGION = "us-east-1";
 
+// No guardrail. Blank, not deleted: a developer's .env may name the dev
+// guardrail, and an unpinned one would wrap every user turn in guardContent on
+// that machine only. lib/guardrail.ts is tested directly instead.
+process.env.BEDROCK_GUARDRAIL_ID = "";
+process.env.BEDROCK_GUARDRAIL_VERSION = "";
+
 // The interview's own clock, pinned to the PRODUCTION shape.
 //
 // `INTERVIEW_TEST_MODE=true` lives in a developer's `.env` so a real interview
