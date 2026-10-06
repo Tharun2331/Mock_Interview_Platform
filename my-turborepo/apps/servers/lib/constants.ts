@@ -33,6 +33,13 @@ export const BEDROCK = {
   MAX_ATTEMPTS: 1,
 } as const;
 
+// The text agents' guardrail (ADR-0010). See lib/guardrail.ts.
+export const GUARDRAIL = {
+  // Converse's stopReason when the guardrail blocked the input or the output.
+  // The reply text is then the guardrail's canned message, not a generation.
+  INTERVENED_STOP_REASON: "guardrail_intervened",
+} as const;
+
 // Tool names the Mock Interview agent calls over the Sonic stream. Referenced
 // by both the system prompt and the tool specs, and later by the dispatcher on
 // the WebSocket side, so a rename cannot desync the prompt from the handler.

@@ -48,8 +48,17 @@ module "iam" {
   sessions_table_arn    = module.dynamodb.table_arn
   cognito_user_pool_arn = module.cognito.cognito_user_pool_arn
   eval_queue_arn        = module.sqs.eval_queue_arn
+  guardrail_arn         = module.guardrail.guardrail_arn
   api_log_group_arn     = module.cloudwatch.api_log_group_arn
   worker_log_group_arn  = module.cloudwatch.worker_log_group_arn
+}
+
+# Its own guardrail, never dev's: tuning dev must not change prod (ADR-0010).
+# Moves to "enforce" only on the evidence dev's detect phase produced.
+module "guardrail" {
+  source      = "../../modules/guardrail"
+  environment = var.environment
+  mode        = "detect"
 }
 
 module "cloudwatch" {
@@ -91,6 +100,8 @@ module "evaluator" {
     COGNITO_USER_POOL_ID        = module.cognito.cognito_user_pool_id
     COGNITO_USER_POOL_CLIENT_ID = module.cognito.cognito_user_pool_client_id
     CORS_ORIGIN                 = local.web_origin
+    BEDROCK_GUARDRAIL_ID        = module.guardrail.guardrail_id
+    BEDROCK_GUARDRAIL_VERSION   = module.guardrail.guardrail_version
   }
 }
 
@@ -188,6 +199,9 @@ module "compute" {
     UPLOADS_BUCKET              = module.s3.uploads_bucket_id
     EVAL_QUEUE_URL              = module.sqs.eval_queue_url
     CORS_ORIGIN                 = local.web_origin
+    # Reaches the running server only on a service restart — see dev.
+    BEDROCK_GUARDRAIL_ID      = module.guardrail.guardrail_id
+    BEDROCK_GUARDRAIL_VERSION = module.guardrail.guardrail_version
   }
 }
 

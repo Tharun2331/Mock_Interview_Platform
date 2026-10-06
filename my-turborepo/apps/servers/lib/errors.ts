@@ -101,3 +101,16 @@ export class BedrockError extends Error {
     this.modelsTried = modelsTried;
   }
 }
+
+// The Bedrock Guardrail blocked the input or the output (ADR-0010).
+//
+// A BedrockError, so every route's existing mapping to a generic failure still
+// applies. Its own class because lib/bedrock.ts must NOT treat it as one model
+// failing: every model in the chain sits behind the same guardrail, so walking
+// on would pay for the same refusal up to three times.
+export class GuardrailBlockedError extends BedrockError {
+  constructor(message: string, modelsTried: string[] = []) {
+    super(message, modelsTried);
+    this.name = "GuardrailBlockedError";
+  }
+}

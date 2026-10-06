@@ -8,12 +8,26 @@ module "iam" {
   sessions_table_arn    = module.dynamodb.table_arn
   cognito_user_pool_arn = module.cognito.cognito_user_pool_arn
   eval_queue_arn        = module.sqs.eval_queue_arn
+  guardrail_arn         = module.guardrail.guardrail_arn
 
   # Two separate groups, never one. Custom metrics are extracted from log content,
   # so write access to the API's group is write access to the metrics its alarms
   # fire on — see the statements in the iam module.
   api_log_group_arn    = module.cloudwatch.api_log_group_arn
   worker_log_group_arn = module.cloudwatch.worker_log_group_arn
+}
+
+# The text agents' Bedrock Guardrail (ADR-0010). Detect mode first: every filter
+# reports in the Converse trace, which the server logs, and nothing is blocked.
+# Switch to "enforce" once the findings from real interviews have been read and
+# the strengths tuned against them.
+#
+# Cost: no always-on charge. Billed per 1,000 characters scanned, per policy, on
+# the user turn and the model's reply only.
+module "guardrail" {
+  source      = "../../modules/guardrail"
+  environment = var.environment
+  mode        = "detect"
 }
 
 # Log groups and alarms.
@@ -103,6 +117,9 @@ module "evaluator" {
     COGNITO_USER_POOL_ID        = module.cognito.cognito_user_pool_id
     COGNITO_USER_POOL_CLIENT_ID = module.cognito.cognito_user_pool_client_id
     CORS_ORIGIN                 = local.web_origin
+    # Takes effect on the next invocation after apply.
+    BEDROCK_GUARDRAIL_ID      = module.guardrail.guardrail_id
+    BEDROCK_GUARDRAIL_VERSION = module.guardrail.guardrail_version
   }
 }
 
@@ -254,6 +271,11 @@ module "compute" {
     # hostname. Production mode refuses anything not https://, so localhost
     # cannot be listed here.
     CORS_ORIGIN = local.web_origin
+    # Read when the service starts, so a new guardrail version reaches the
+    # server only after a restart. The old version is kept until then
+    # (skip_destroy in the guardrail module).
+    BEDROCK_GUARDRAIL_ID      = module.guardrail.guardrail_id
+    BEDROCK_GUARDRAIL_VERSION = module.guardrail.guardrail_version
   }
 }
 

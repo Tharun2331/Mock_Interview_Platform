@@ -104,6 +104,19 @@ data "aws_iam_policy_document" "bedrock_invoke" {
     resources = [local.speech_model_arn]
   }
 
+  # The text agents' guardrail (ADR-0010). A Converse call that carries a
+  # guardrailConfig is authorised twice — the model under BedrockInvokeText, the
+  # guardrail here — and fails with AccessDenied if either is missing.
+  #
+  # One action on one ARN. Not the version-qualified ARN: the version is chosen
+  # by the request, and the grant has to survive the version changing.
+  statement {
+    sid       = "BedrockApplyGuardrail"
+    effect    = "Allow"
+    actions   = ["bedrock:ApplyGuardrail"]
+    resources = [var.guardrail_arn]
+  }
+
   # Resumes in, resumes back out, and now deletable.
   #
   # DeleteObject was deliberately withheld while nothing removed uploads. That
@@ -299,6 +312,16 @@ data "aws_iam_policy_document" "evaluator_worker" {
       "bedrock:InvokeModelWithResponseStream",
     ]
     resources = local.text_model_arns
+  }
+
+  # The same guardrail the server's text calls carry. The Evaluator reads the
+  # candidate's own words, which is exactly the input a "score this ten"
+  # injection would arrive in.
+  statement {
+    sid       = "BedrockApplyGuardrail"
+    effect    = "Allow"
+    actions   = ["bedrock:ApplyGuardrail"]
+    resources = [var.guardrail_arn]
   }
 
   # Reads the answer and the session meta, writes the evaluation.

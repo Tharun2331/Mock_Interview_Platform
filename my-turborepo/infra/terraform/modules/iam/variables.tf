@@ -26,6 +26,11 @@ variable "inference_profile_regions" {
   default     = ["us-east-1", "us-east-2", "us-west-2"]
 }
 
+variable "guardrail_arn" {
+  type        = string
+  description = "ARN of the text agents' Bedrock Guardrail, from the guardrail module. A Converse call carrying a guardrailConfig is also authorised as bedrock:ApplyGuardrail on this ARN, so without the grant every text call fails with AccessDenied the moment the services are given a guardrail id. See ADR-0010."
+}
+
 variable "uploads_bucket_arn" {
   type        = string
   description = "ARN of the candidate uploads bucket, from the s3 module. Object permissions are scoped to prefixes within it, never the whole bucket."
