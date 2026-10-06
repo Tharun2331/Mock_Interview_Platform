@@ -7,11 +7,13 @@ import { EvalJobSchema } from "@repo/shared";
 import { runEvaluator } from "./agents/evaluator";
 import { runSessionSummarizer } from "./agents/sessionSummarizer";
 import { WORKER } from "./lib/constants";
+import { GuardrailBlockedError } from "./lib/errors";
 import {
   attachSessionSummary,
   finalizeIfComplete,
   loadEvaluationJob,
   loadSessionEvaluations,
+  markAnswerUnscored,
   putEvaluation,
 } from "./lib/evaluations";
 import { requireEvalQueue, sqsClient } from "./lib/sqs";
@@ -36,7 +38,11 @@ import { requireEvalQueue, sqsClient } from "./lib/sqs";
 // DynamoDB, because every one of them is a chance to notice the session is
 // done — including the ones that did no scoring.
 type FinalizedKind =
-  "incomplete" | "finalized" | "already-finalized" | "no-summary";
+  | "incomplete"
+  | "finalized"
+  | "already-finalized"
+  | "all-unscored"
+  | "no-summary";
 
 export type MessageOutcome =
   | {
@@ -47,6 +53,10 @@ export type MessageOutcome =
     }
   | { kind: "already-scored"; questionId: string; finalized: FinalizedKind }
   | { kind: "no-answer"; questionId: string; finalized: FinalizedKind }
+  // The guardrail blocked the evaluation (ADR-0010). Deterministic — the same
+  // answer is blocked on every retry — so it is recorded and finished with,
+  // rather than cycled to the DLQ with its session stuck at `evaluating`.
+  | { kind: "unscored"; questionId: string; finalized: FinalizedKind }
   // The body was not a valid job. Retrying cannot fix a malformed message, so
   // it is deleted rather than left to cycle to the DLQ three receives later.
   | { kind: "unparseable" };
@@ -95,7 +105,24 @@ export async function handleMessage(body: string): Promise<MessageOutcome> {
     return { kind: "no-answer", questionId, finalized };
   }
 
-  const result = await runEvaluator(state.input);
+  let result;
+  try {
+    result = await runEvaluator(state.input);
+  } catch (error) {
+    if (!(error instanceof GuardrailBlockedError)) throw error;
+
+    // Not retried: a retry sends the same answer to the same guardrail. A
+    // redelivery of this message — say the completion check below throws —
+    // reaches the guardrail again and re-adds the same id, which the set
+    // absorbs. Only a guardrail call is spent, never a generation, because an
+    // input block stops the request before the model runs.
+    console.warn(
+      `[evaluator] guardrail blocked scoring ${questionId}, recording it as unscored`,
+    );
+    await markAnswerUnscored({ sessionId, questionId });
+    const finalized = await closeOutIfComplete(sessionId);
+    return { kind: "unscored", questionId, finalized };
+  }
 
   await putEvaluation({
     sessionId,

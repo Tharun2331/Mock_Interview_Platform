@@ -351,6 +351,14 @@ export const MESSAGES = {
     "Each answer is read and scored on its own, so they arrive one at a time. You can stay on this page or come back later.",
   RESULT_PROGRESS: (done: number, total: number): string =>
     `${done} of ${total} scored`,
+  // An answer the scorer declined to read (ADR-0010). Said plainly, because a
+  // card that silently never appears reads as lost work. Not blaming: the
+  // check misfires on ordinary technical language as well as on attempts to
+  // game the score, and the page cannot tell which this was.
+  RESULT_UNSCORED: (count: number): string =>
+    count === 1
+      ? "One answer could not be scored, so it is not shown or counted in your averages."
+      : `${count} answers could not be scored, so they are not shown or counted in your averages.`,
 
   // The three dimensions, with what each one actually measures. A bare
   // "7/10 depth" teaches nothing; the subtitle is what makes it actionable.

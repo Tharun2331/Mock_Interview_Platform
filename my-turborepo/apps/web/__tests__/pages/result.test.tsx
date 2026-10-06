@@ -14,6 +14,7 @@ let nextResult: EvaluationResponse | Error = {
   status: "evaluating",
   completed: 0,
   total: 2,
+  unscored: 0,
   evaluations: [],
 };
 
@@ -25,7 +26,9 @@ const fetchEvaluation = mock(async (_sessionId: string) => {
 mock.module("@/lib/resultsApi", () => ({
   fetchEvaluation,
   isEvaluationFinished: (result: EvaluationResponse) =>
-    result.averages !== undefined || result.status === "failed",
+    result.averages !== undefined ||
+    result.status === "complete" ||
+    result.status === "failed",
 }));
 
 const { Result } = await import("@/pages/result");
@@ -70,6 +73,7 @@ beforeEach(() => {
     status: "evaluating",
     completed: 0,
     total: 2,
+    unscored: 0,
     evaluations: [],
   };
 });
@@ -84,6 +88,7 @@ describe("while answers are still being scored", () => {
       status: "evaluating",
       completed: 2,
       total: 6,
+      unscored: 0,
       evaluations: [evaluation()],
     };
     renderAt();
@@ -99,6 +104,7 @@ describe("while answers are still being scored", () => {
       status: "evaluating",
       completed: 1,
       total: 6,
+      unscored: 0,
       evaluations: [evaluation()],
     };
     renderAt();
@@ -117,6 +123,7 @@ describe("while answers are still being scored", () => {
       status: "evaluating",
       completed: 1,
       total: 6,
+      unscored: 0,
       evaluations: [evaluation()],
     };
     renderAt();
@@ -131,6 +138,7 @@ describe("once the round is finished", () => {
     status: "complete",
     completed: 1,
     total: 1,
+    unscored: 0,
     averages: { correctness: 7, clarity: 6, depth: 3 },
     evaluations: [evaluation()],
     role: "Backend Engineer",
@@ -211,6 +219,25 @@ describe("once the round is finished", () => {
     );
   });
 
+  it("says how many answers could not be scored", async () => {
+    nextResult = { ...finished, total: 2, unscored: 1 };
+    renderAt();
+
+    await waitFor(() =>
+      expect(screen.getByText(MESSAGES.RESULT_UNSCORED(1))).toBeDefined(),
+    );
+  });
+
+  it("says nothing about unscored answers when there are none", async () => {
+    nextResult = finished;
+    renderAt();
+
+    await waitFor(() =>
+      expect(screen.getByText(MESSAGES.RESULT_OVERALL)).toBeDefined(),
+    );
+    expect(screen.queryByText(MESSAGES.RESULT_UNSCORED(1))).toBeNull();
+  });
+
   it("does not say so when the question was heard in full", async () => {
     nextResult = finished;
     renderAt();
@@ -229,6 +256,7 @@ describe("states with nothing to show", () => {
       status: "complete",
       completed: 0,
       total: 0,
+      unscored: 0,
       evaluations: [],
     };
     renderAt();
@@ -239,7 +267,13 @@ describe("states with nothing to show", () => {
   });
 
   it("explains an interview that failed before it could be scored", async () => {
-    nextResult = { status: "failed", completed: 0, total: 3, evaluations: [] };
+    nextResult = {
+      status: "failed",
+      completed: 0,
+      total: 3,
+      unscored: 0,
+      evaluations: [],
+    };
     renderAt();
 
     await waitFor(() =>
@@ -270,6 +304,27 @@ describe("states with nothing to show", () => {
 
   // Arriving with no session named is a real screen, not a crash — and it must
   // not fetch anything.
+  // ADR-0010: a round whose every answer the guardrail blocked completes with
+  // no averages. Keyed on averages alone, the page spun on it forever.
+  it("treats a complete round with no averages as finished, not scoring", async () => {
+    nextResult = {
+      status: "complete",
+      completed: 0,
+      total: 2,
+      unscored: 2,
+      evaluations: [],
+    };
+    renderAt();
+
+    await waitFor(() =>
+      expect(screen.getByText(MESSAGES.RESULT_UNSCORED(2))).toBeDefined(),
+    );
+    expect(screen.queryByText(MESSAGES.RESULT_SCORING_TITLE)).toBeNull();
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(fetchEvaluation).toHaveBeenCalledTimes(1);
+  });
+
   it("explains a missing session id without calling the API", async () => {
     renderAt("/results");
 
@@ -288,6 +343,7 @@ describe("the link to the coaching roadmap", () => {
     status: "complete",
     completed: 1,
     total: 1,
+    unscored: 0,
     averages: { correctness: 7, clarity: 6, depth: 3 },
     evaluations: [evaluation()],
     role: "Backend Engineer",
@@ -313,6 +369,7 @@ describe("the link to the coaching roadmap", () => {
       status: "evaluating",
       completed: 1,
       total: 6,
+      unscored: 0,
       evaluations: [evaluation()],
     };
     renderAt();

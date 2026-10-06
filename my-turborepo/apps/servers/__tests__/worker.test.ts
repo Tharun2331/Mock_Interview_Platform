@@ -36,7 +36,8 @@ const setModelReply = (value: unknown) =>
 const setModelFailure = (error: Error) =>
   setToolFailure(EVALUATOR_TOOL_NAME, error);
 const lastConverseCall = () => lastToolCall(EVALUATOR_TOOL_NAME);
-const { BedrockError, ServiceError } = await import("../lib/errors");
+const { BedrockError, GuardrailBlockedError, ServiceError } =
+  await import("../lib/errors");
 
 const ddb = mockClient(DynamoDBDocumentClient);
 
@@ -551,5 +552,197 @@ describe("failures that should be retried", () => {
     setModelReply("the candidate did quite well I think");
 
     await expect(handleMessage(body())).rejects.toThrow(BedrockError);
+  });
+});
+
+// ADR-0010. A guardrail block is deterministic — the same answer is refused on
+// every retry — so it must neither cycle to the DLQ nor leave its session
+// waiting at `evaluating` for an EVAL# item that will never be written.
+describe("an answer the guardrail blocks", () => {
+  const SUMMARY = {
+    PK: sessionPk(SESSION_ID),
+    SK: SORT_KEY.EVAL_SUMMARY,
+    type: ITEM_TYPE.SESSION_EVAL_SUMMARY,
+    questionCount: 3,
+  };
+
+  const blocked = () =>
+    setModelFailure(
+      new GuardrailBlockedError("Bedrock Guardrail blocked the call", [
+        "mistral.ministral-3-8b-instruct",
+      ]),
+    );
+
+  function unscoredWrites() {
+    return ddb
+      .commandCalls(UpdateCommand)
+      .filter((call) => call.args[0].input.UpdateExpression?.startsWith("ADD"));
+  }
+
+  function statusUpdates() {
+    return ddb
+      .commandCalls(UpdateCommand)
+      .filter((call) => call.args[0].input.Key?.SK === SORT_KEY.META);
+  }
+
+  it("returns rather than throwing, so the message is not redelivered", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs(SUMMARY);
+    blocked();
+
+    const outcome = await handleMessage(body());
+
+    expect(outcome).toMatchObject({
+      kind: "unscored",
+      questionId: QUESTION_ID,
+    });
+  });
+
+  it("records the answer on the rollup as a set, so a redelivery cannot double count", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs(SUMMARY);
+    blocked();
+
+    await handleMessage(body());
+
+    const write = unscoredWrites()[0]?.args[0].input;
+    expect(write?.Key).toEqual({
+      PK: sessionPk(SESSION_ID),
+      SK: SORT_KEY.EVAL_SUMMARY,
+    });
+    expect(write?.ExpressionAttributeNames?.["#unscored"]).toBe(
+      "unscoredQuestionIds",
+    );
+    expect(write?.ExpressionAttributeValues?.[":questionIds"]).toEqual(
+      new Set([QUESTION_ID]),
+    );
+    // ADD on a missing item would create a rollup with no questionCount.
+    expect(write?.ConditionExpression).toBe("attribute_exists(PK)");
+  });
+
+  it("writes no evaluation", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs(SUMMARY);
+    blocked();
+
+    await handleMessage(body());
+
+    expect(ddb.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
+  it("completes the session when it was the last answer outstanding", async () => {
+    itemsFound([ANSWER, META]);
+    // Two scored, this one blocked: three of three accounted for.
+    summaryIs({ ...SUMMARY, unscoredQuestionIds: new Set([QUESTION_ID]) });
+    evaluationsScored(2);
+    blocked();
+
+    const outcome = await handleMessage(body());
+
+    expect(outcome).toMatchObject({ kind: "unscored", finalized: "finalized" });
+    expect(
+      statusUpdates()[0]?.args[0].input.ExpressionAttributeValues?.[
+        ":complete"
+      ],
+    ).toBe("complete");
+  });
+
+  it("averages only the answers that were scored", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs({ ...SUMMARY, unscoredQuestionIds: new Set([QUESTION_ID]) });
+    evaluationsScored(2);
+    blocked();
+
+    await handleMessage(body());
+
+    const rollup = ddb
+      .commandCalls(UpdateCommand)
+      .find(
+        (call) =>
+          call.args[0].input.UpdateExpression === "SET averages = :averages",
+      );
+    expect(
+      rollup?.args[0].input.ExpressionAttributeValues?.[":averages"],
+    ).toEqual({ correctness: 6, clarity: 7, depth: 5 });
+  });
+
+  it("does not count an answer twice when it was blocked and later scored", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs({ ...SUMMARY, unscoredQuestionIds: new Set([QUESTION_ID]) });
+    // q1 is in the unscored set AND has a score; q2 scored. Two of three.
+    ddb.on(QueryCommand).resolves({
+      Items: [
+        { questionId: QUESTION_ID, correctness: 6, clarity: 7, depth: 5 },
+        { questionId: "q2", correctness: 6, clarity: 7, depth: 5 },
+      ],
+    });
+    blocked();
+
+    const outcome = await handleMessage(body());
+
+    expect(outcome).toMatchObject({ finalized: "incomplete" });
+    expect(statusUpdates()).toHaveLength(0);
+  });
+
+  // Nothing to average: a mean of nothing is NaN, which the rollup's schema
+  // would reject on every later read. The session must still leave
+  // `evaluating`.
+  it("completes a session whose every answer was blocked, without averages", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs({
+      ...SUMMARY,
+      questionCount: 1,
+      unscoredQuestionIds: new Set([QUESTION_ID]),
+    });
+    evaluationsScored(0);
+    blocked();
+
+    const outcome = await handleMessage(body());
+
+    expect(outcome).toMatchObject({
+      kind: "unscored",
+      finalized: "all-unscored",
+    });
+    expect(
+      ddb
+        .commandCalls(UpdateCommand)
+        .some(
+          (call) =>
+            call.args[0].input.UpdateExpression === "SET averages = :averages",
+        ),
+    ).toBe(false);
+    expect(
+      statusUpdates()[0]?.args[0].input.ExpressionAttributeValues?.[
+        ":complete"
+      ],
+    ).toBe("complete");
+  });
+
+  it("tolerates a session with no rollup to record against", async () => {
+    itemsFound([ANSWER, META]);
+    ddb.on(UpdateCommand).rejects(
+      new ConditionalCheckFailedException({
+        message: "The conditional request failed",
+        $metadata: {},
+      }),
+    );
+    blocked();
+
+    const outcome = await handleMessage(body());
+
+    expect(outcome).toMatchObject({
+      kind: "unscored",
+      finalized: "no-summary",
+    });
+  });
+
+  // Every other Bedrock failure is still the queue's to retry.
+  it("still propagates an ordinary model failure", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs(SUMMARY);
+    setModelFailure(new BedrockError("All Bedrock text models failed"));
+
+    await expect(handleMessage(body())).rejects.toThrow(BedrockError);
+    expect(unscoredWrites()).toHaveLength(0);
   });
 });

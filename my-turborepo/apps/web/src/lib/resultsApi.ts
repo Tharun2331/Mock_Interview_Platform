@@ -29,6 +29,15 @@ export async function fetchEvaluation(
 // progress indicator and can briefly agree while the rollup is still being
 // written, but `averages` is set by the same conditional update that completes
 // the session — so it is the one signal that cannot say "done" early.
+//
+// `complete` as well, for the one round that finishes without averages: every
+// answer blocked from scoring by the guardrail (ADR-0010). It cannot say "done"
+// early either — the worker writes it only after the rollup, or when there is
+// no rollup to write.
 export function isEvaluationFinished(result: EvaluationResponse): boolean {
-  return result.averages !== undefined || result.status === "failed";
+  return (
+    result.averages !== undefined ||
+    result.status === "complete" ||
+    result.status === "failed"
+  );
 }
