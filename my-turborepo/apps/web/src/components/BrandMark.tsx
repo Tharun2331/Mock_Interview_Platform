@@ -1,11 +1,13 @@
-import { PresenceOrb } from "@/components/PresenceOrb";
+import logo from "@/logo.svg";
 import { MESSAGES } from "@/lib/messages";
 import { cn } from "@/lib/utils";
 
-// The wordmark is the signature element at rest: the same bloom the interview
-// screen animates, held still in the accent. Stating the idea once as the brand
-// mark and once as live state is what ties the marketing surface and the app
-// surface into one product rather than two.
+// The logo mark beside the wordmark. The mark is the same file the favicon
+// points at, so the browser tab and the header cannot drift apart.
+//
+// The wordmark stays in the ink token rather than the logo's indigo: indigo on
+// the dark canvas falls short of text contrast, and the mark already carries
+// the colour.
 
 type BrandMarkProps = {
   className?: string;
@@ -17,9 +19,12 @@ type BrandMarkProps = {
 export function BrandMark({ className, size = "sm" }: BrandMarkProps) {
   return (
     <span className={cn("flex items-center gap-2.5", className)}>
-      <PresenceOrb
-        hue="var(--cue)"
-        className={size === "lg" ? "size-6" : "size-4"}
+      {/* Empty alt: the wordmark beside it already names the product, so a
+          screen reader would otherwise hear it twice. */}
+      <img
+        src={logo}
+        alt=""
+        className={size === "lg" ? "size-8" : "size-6"}
       />
       <span
         className={
