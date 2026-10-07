@@ -36,14 +36,19 @@ const guardrailRequest =
 // A block surfaces as a normal 200 whose text is the guardrail's canned
 // message. Returning it would hand the caller that message as if it were the
 // model's answer, and the Evaluator would try to score it.
+//
+// `purpose` names the call. Without it a finding said which model answered but
+// not which agent asked, and on 2026-10-07 that left a finding attributable to
+// either Gap or Company Intel from timing alone.
 function checkGuardrail(
   response: ConverseCommandOutput,
   modelId: string,
+  purpose: string,
 ): void {
   const findings = guardrailFindings(response.trace?.guardrail);
   if (findings.length > 0) {
     console.warn(
-      `[bedrock] guardrail findings on ${modelId} — ${findings.join(" | ")}`,
+      `[bedrock] guardrail findings on ${modelId} for ${purpose} — ${findings.join(" | ")}`,
     );
   }
 
@@ -81,6 +86,9 @@ type ConverseTextArgs = {
   // a described one, and the position matters — as message history it reads as
   // "this is what you did last time", not "here is some documentation".
   exampleTurns?: ExampleTurn[];
+  // Names the call in guardrail log lines. Structured calls use their tool
+  // name for this instead, which already says what they are doing.
+  purpose?: string;
 };
 
 // Deliberately absent: assistant prefill (seeding the reply with "{" so the
@@ -164,7 +172,7 @@ export async function converseText(
         }),
       );
 
-      checkGuardrail(response, modelId);
+      checkGuardrail(response, modelId, args.purpose ?? "text");
 
       const text = readText(response.output?.message?.content);
       if (text.length > 0) {
@@ -293,7 +301,7 @@ export async function converseStructured(
         }),
       );
 
-      checkGuardrail(response, modelId);
+      checkGuardrail(response, modelId, args.toolName);
 
       const content = response.output?.message?.content ?? [];
 

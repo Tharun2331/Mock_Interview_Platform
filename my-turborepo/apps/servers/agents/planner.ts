@@ -153,6 +153,7 @@ export async function runPlanner(req: PlannerInput): Promise<PlanResponse> {
     exampleTurns: [
       { user: EXAMPLE_USER_PROMPT, assistant: EXAMPLE_ASSISTANT_RESPONSE },
     ],
+    purpose: "planner",
   });
 
   // Validated against the shared response contract directly, so there is no
