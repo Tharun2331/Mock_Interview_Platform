@@ -38,6 +38,9 @@ export const GUARDRAIL = {
   // Converse's stopReason when the guardrail blocked the input or the output.
   // The reply text is then the guardrail's canned message, not a generation.
   INTERVENED_STOP_REASON: "guardrail_intervened",
+  // ApplyGuardrail's `action` for the same outcome. A different string from a
+  // different API: the standalone call reports it in its own vocabulary.
+  INTERVENED_ACTION: "GUARDRAIL_INTERVENED",
 } as const;
 
 // Tool names the Mock Interview agent calls over the Sonic stream. Referenced

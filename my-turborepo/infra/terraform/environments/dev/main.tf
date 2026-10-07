@@ -17,17 +17,18 @@ module "iam" {
   worker_log_group_arn = module.cloudwatch.worker_log_group_arn
 }
 
-# The text agents' Bedrock Guardrail (ADR-0010). Detect mode first: every filter
-# reports in the Converse trace, which the server logs, and nothing is blocked.
-# Switch to "enforce" once the findings from real interviews have been read and
-# the strengths tuned against them.
+# The text agents' Bedrock Guardrail (ADR-0010). Enforcing on dev since
+# 2026-10-07, after a detect phase of real interviews and three injection tests:
+# filters block, PII is anonymized, and the denied topics exist. Prod follows
+# only once dev shows no false positives on ordinary interviews.
 #
 # Cost: no always-on charge. Billed per 1,000 characters scanned, per policy, on
-# the user turn and the model's reply only.
+# the user turn and the model's reply only. Enforce adds the denied topics'
+# charge to every scan.
 module "guardrail" {
   source      = "../../modules/guardrail"
   environment = var.environment
-  mode        = "detect"
+  mode        = "enforce"
 }
 
 # Log groups and alarms.

@@ -122,7 +122,36 @@ export const converseStructured = mock(
 );
 
 // Relative to THIS file, so it resolves to apps/servers/lib/bedrock.
-mock.module("../../lib/bedrock", () => ({ converseText, converseStructured }));
+// The field-level guardrail check (ADR-0010). Answers per text, so a test can
+// refuse one field and pass the rest. Default: nothing flagged, nothing blocked
+// — the same as a server with no guardrail configured.
+export type ScreenResult = { blocked: boolean; findings: string[] };
+type ScreenBehaviour = (text: string) => ScreenResult | Error;
+
+const PASS: ScreenResult = { blocked: false, findings: [] };
+let screenBehaviour: ScreenBehaviour = () => PASS;
+
+export const screenInput = mock(async (text: string): Promise<ScreenResult> => {
+  const result = screenBehaviour(text);
+  if (result instanceof Error) throw result;
+  return result;
+});
+
+/** How the guardrail answers each screened text. */
+export function setScreenBehaviour(behaviour: ScreenBehaviour): void {
+  screenBehaviour = behaviour;
+}
+
+export function resetScreenStub(): void {
+  screenBehaviour = () => PASS;
+  screenInput.mockClear();
+}
+
+mock.module("../../lib/bedrock", () => ({
+  converseText,
+  converseStructured,
+  screenInput,
+}));
 
 const DEFAULT_STRUCTURED_MODEL = "mistral.ministral-3-8b-instruct";
 

@@ -21,6 +21,18 @@ export const MESSAGES = {
   INVALID_GITHUB_URL:
     "Enter a GitHub profile URL, like https://github.com/your-username.",
   PLAN_FAILED: "Could not generate an interview plan. Try again.",
+  // The guardrail refused text the candidate typed (ADR-0010). Deliberately
+  // not "malicious": the filters also misfire on ordinary technical language,
+  // and a candidate who pasted a real posting must not be accused of anything.
+  // It names what to change without describing what was detected.
+  PLAN_INPUT_REFUSED:
+    "We couldn't use this text. Remove any instructions aimed at PrepPilot and try again.",
+  // The same refusal, from the Planner reading the saved resume or repository
+  // descriptions — material the plan form cannot edit, so it points at the
+  // profile instead. Replaces PLAN_FAILED's "Try again" for this case, which
+  // promised a retry that would be refused the same way every time.
+  PLAN_MATERIAL_REFUSED:
+    "We couldn't build a plan from your saved resume or repositories. Check them for instructions aimed at PrepPilot, update your profile, and try again.",
 
   UPLOAD_NOT_A_FILE: "No resume file was included in the upload.",
   RESUME_REQUIRED: "A resume PDF is required to start an interview.",

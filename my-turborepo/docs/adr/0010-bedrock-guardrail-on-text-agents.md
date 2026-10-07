@@ -117,9 +117,23 @@ Anything that changes one of those three properties — a tool with data access,
 
 **Off by configuration.** With `BEDROCK_GUARDRAIL_ID` or `BEDROCK_GUARDRAIL_VERSION` unset, no `guardrailConfig` is sent and nothing changes. The application code can therefore merge before any environment has a guardrail, and local development needs no change.
 
+### The one exception: screening the plan form's fields
+
+`POST /plan` screens each field the candidate typed — role, job description, company, notes — with its own `ApplyGuardrail` call, in parallel, before anything else runs. In `enforce` a block returns **422** with the field's name, and the form shows _"We couldn't use this text. Remove any instructions aimed at PrepPilot and try again."_ under it. In `detect` the findings are logged per field and nothing is refused.
+
+Why this case and no other: the Gap and Company Intel agents run fire-and-forget after the plan has already been returned. A block inside their Converse calls happens after the candidate has moved on, so it can only ever be silent — the interview runs untargeted and nobody is told why. Screening first is the only point at which those fields can get a visible answer.
+
+- **One call per field**, because one call's verdict cannot say which field it came from. Same text units either way.
+- **Fails open.** If screening errors, the request continues, logged: every agent call still passes through the guardrail inside Converse, and a Bedrock blip must not read as "your text was refused".
+- **Runs before the spend budgets**, so a refused field costs the candidate nothing.
+- **Cost:** content filters on input only, ~5–11 text units per plan. About $0.10 per 100 plans in `detect` and $0.20–0.35 in `enforce` (topics add $0.15/1k units) — a fraction of one interview's Sonic time.
+- **Copy deliberately avoids "malicious".** The filters misfire on ordinary technical language; a real posting must not be accused of anything.
+
+A Planner block — the typed fields passed, so it came from the saved resume or repository descriptions — now returns 422 with no field and points at the profile, replacing a 502 "Try again" that would have been refused the same way every time.
+
 ## Rejected: calling `ApplyGuardrail` separately before each model call
 
-It works, and would also cover text that never reaches a model. But it is a second round trip on every call, it duplicates what Converse does in one request, and it still could not reach the Sonic stream, which is the one path Converse does not cover.
+It works, and would also cover text that never reaches a model. But it is a second round trip on every call, it duplicates what Converse does in one request, and it still could not reach the Sonic stream, which is the one path Converse does not cover. The plan form's fields are the exception above, for the reason given there.
 
 ## Rejected: more prompt instructions
 

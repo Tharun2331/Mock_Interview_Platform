@@ -1,16 +1,22 @@
 import { Router } from "express";
 import {
   PlanRequestSchema,
+  SCREENED_PLAN_FIELDS,
   isCachedPlanFresh,
   type CachedPlan,
+  type PlanInputRefusal,
+  type PlanRequest,
   type PlanResponse,
+  type ScreenedPlanField,
 } from "@repo/shared";
 import { runPlanner } from "../agents/planner";
 import { analyseGap, summariseRepos } from "./gap";
 import { researchCompany } from "./companyIntel";
+import { screenInput } from "../lib/bedrock";
 import { getCachedPlan, putCachedPlan } from "../lib/profile";
 import {
   BedrockError,
+  GuardrailBlockedError,
   ServiceError,
   SessionAccessError,
   SessionStateError,
@@ -48,6 +54,50 @@ function withBudget(
   })();
 }
 
+// The first typed field the guardrail refuses, or undefined.
+//
+// One ApplyGuardrail call per field, in parallel, rather than one call for all
+// of them: a single call's verdict cannot say which field it came from, and the
+// refusal is only useful if it lands under the right one. The cost is the same
+// text units either way.
+//
+// Fails OPEN. If the check itself errors — a throttle, a timeout — the request
+// carries on, logged, because every agent call still goes through the same
+// guardrail inside Converse. Failing closed would turn a Bedrock blip into
+// "your text was refused", which is the one message that must not be wrong.
+async function refusedField(
+  sessionId: string,
+  body: PlanRequest,
+): Promise<ScreenedPlanField | undefined> {
+  const fields = SCREENED_PLAN_FIELDS.flatMap((field) => {
+    const text = body[field];
+    return text === undefined ? [] : [{ field, text }];
+  });
+
+  const verdicts = await Promise.all(
+    fields.map(async ({ field, text }) => {
+      try {
+        const result = await screenInput(text);
+        if (result.findings.length > 0) {
+          console.warn(
+            `[plan] ${sessionId} guardrail findings on ${field} — ${result.findings.join(" | ")}`,
+          );
+        }
+        return result.blocked ? field : undefined;
+      } catch (error) {
+        console.error(
+          `[plan] ${sessionId} screening ${field} failed, continuing — ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+        return undefined;
+      }
+    }),
+  );
+
+  return verdicts.find((field) => field !== undefined);
+}
+
 planRouter.post("/", async (req, res) => {
   const parsed = PlanRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -78,6 +128,20 @@ planRouter.post("/", async (req, res) => {
   };
 
   try {
+    // Before anything else, including the spend budgets: a refused field must
+    // not cost the candidate a model call, and nothing below should run on
+    // text the guardrail would not let through.
+    const refused = await refusedField(parsed.data.sessionId, parsed.data);
+    if (refused !== undefined) {
+      stage(`refused (${refused})`);
+      const body: PlanInputRefusal = {
+        message: MESSAGES.PLAN_INPUT_REFUSED,
+        field: refused,
+      };
+      res.status(422).json(body);
+      return;
+    }
+
     stage("loading inputs");
 
     // Read from the session, never from the request. The client is not trusted
@@ -258,6 +322,19 @@ planRouter.post("/", async (req, res) => {
     if (error instanceof ServiceError) {
       console.error(`[plan] ${error.message}`);
       res.status(500).json({ message: MESSAGES.SESSION_UNAVAILABLE });
+      return;
+    }
+
+    // The typed fields passed screening, so a block here came from what the
+    // Planner also reads: the saved resume and repository descriptions. 422
+    // with no `field`, and copy that points at the profile — "Try again" would
+    // promise a retry that is refused the same way every time.
+    if (error instanceof GuardrailBlockedError) {
+      console.warn(`[plan] ${error.message} — saved material refused`);
+      const body: PlanInputRefusal = {
+        message: MESSAGES.PLAN_MATERIAL_REFUSED,
+      };
+      res.status(422).json(body);
       return;
     }
 
