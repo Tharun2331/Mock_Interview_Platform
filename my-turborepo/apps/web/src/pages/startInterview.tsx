@@ -1,12 +1,16 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
+import axios from "axios";
 import { AlertTriangleIcon, CheckIcon } from "lucide-react";
 import {
   GAP_LIMITS,
   INTEL_LIMITS,
+  PlanInputRefusalSchema,
   PlanResponseSchema,
+  type PlanInputRefusal,
   type PlanResponse,
+  type ScreenedPlanField,
 } from "@repo/shared";
 
 import { Button } from "@/components/ui/button";
@@ -62,6 +66,15 @@ function planFailureMessage(error: unknown): string {
   return transportMessage(error, MESSAGES.PLAN_FAILED_GENERIC);
 }
 
+// The guardrail's refusal (ADR-0010), when that is what a 422 from /plan is.
+// Parsed rather than trusted, so an unrelated 422 falls through to the generic
+// handling instead of being shown under a field.
+function refusalOf(error: unknown): PlanInputRefusal | null {
+  if (statusOf(error) !== 422 || !axios.isAxiosError(error)) return null;
+  const parsed = PlanInputRefusalSchema.safeParse(error.response?.data);
+  return parsed.success ? parsed.data : null;
+}
+
 // A failure the candidate cannot retry their way out of — the session is gone
 // or spent, so the only way forward is a new one.
 function isTerminal(error: unknown): boolean {
@@ -80,6 +93,18 @@ export function StartInterview() {
   const [companyName, setCompanyName] = useState("");
   const [companyNotes, setCompanyNotes] = useState("");
   const [setup, setSetup] = useState<Setup>({ status: "idle" });
+  // The field the guardrail refused, shown under that field until it is
+  // edited. Editing clears it: the candidate is changing exactly what was
+  // refused, and a stale error under corrected text reads as a second refusal.
+  const [refusal, setRefusal] = useState<{
+    field: ScreenedPlanField;
+    message: string;
+  } | null>(null);
+  const refusedMessage = (field: ScreenedPlanField): string | null =>
+    refusal?.field === field ? refusal.message : null;
+  const clearRefusal = (field: ScreenedPlanField): void => {
+    if (refusal?.field === field) setRefusal(null);
+  };
 
   const isBusy = setup.status === "creating" || setup.status === "planning";
 
@@ -133,6 +158,21 @@ export function StartInterview() {
 
       setSetup({ status: "planned", sessionId, plan: parsed.data });
     } catch (error) {
+      // The guardrail refused something. Back to the form either way — a
+      // retry button would be refused the same way every time.
+      const refused = refusalOf(error);
+      if (refused !== null) {
+        setSetup({ status: "idle" });
+        if (refused.field !== undefined) {
+          // Under the field it came from, with everything they typed intact.
+          setRefusal({ field: refused.field, message: refused.message });
+        } else {
+          // The saved resume or repositories, which this form cannot edit.
+          toast.error(refused.message);
+        }
+        return;
+      }
+
       const message = planFailureMessage(error);
 
       // Nothing to retry against — back to the form with the reason, rather
@@ -380,8 +420,13 @@ export function StartInterview() {
             disabled={isBusy}
             placeholder={MESSAGES.FORM_ROLE_PLACEHOLDER}
             aria-describedby="role-hint"
-            aria-invalid={roleError !== null}
-            onChange={(e) => setTargetRole(e.target.value)}
+            aria-invalid={
+              roleError !== null || refusedMessage("targetRole") !== null
+            }
+            onChange={(e) => {
+              setTargetRole(e.target.value);
+              clearRefusal("targetRole");
+            }}
             // Validated on blur, not per keystroke — an error appearing while
             // someone is still typing the first letter reads as scolding.
             onBlur={() =>
@@ -395,12 +440,14 @@ export function StartInterview() {
           <p
             id="role-hint"
             className={
-              roleError !== null
+              roleError !== null || refusedMessage("targetRole") !== null
                 ? "text-xs text-destructive"
                 : "text-xs text-ink-subtle"
             }
           >
-            {roleError ?? MESSAGES.FORM_ROLE_HINT}
+            {roleError ??
+              refusedMessage("targetRole") ??
+              MESSAGES.FORM_ROLE_HINT}
           </p>
         </div>
       </section>
@@ -422,17 +469,26 @@ export function StartInterview() {
             rows={5}
             placeholder={MESSAGES.START_JD_PLACEHOLDER}
             aria-describedby="job-description-hint"
-            aria-invalid={jdTooLong}
+            aria-invalid={
+              jdTooLong || refusedMessage("jobDescription") !== null
+            }
             className="max-h-64 resize-y"
-            onChange={(e) => setJobDescription(e.target.value)}
+            onChange={(e) => {
+              setJobDescription(e.target.value);
+              clearRefusal("jobDescription");
+            }}
           />
           <p
             id="job-description-hint"
             className={
-              jdTooLong ? "text-xs text-destructive" : "text-xs text-ink-subtle"
+              jdTooLong || refusedMessage("jobDescription") !== null
+                ? "text-xs text-destructive"
+                : "text-xs text-ink-subtle"
             }
           >
-            {jdTooLong ? MESSAGES.START_JD_TOO_LONG : MESSAGES.START_JD_HINT}
+            {jdTooLong
+              ? MESSAGES.START_JD_TOO_LONG
+              : (refusedMessage("jobDescription") ?? MESSAGES.START_JD_HINT)}
           </p>
         </div>
 
@@ -453,10 +509,21 @@ export function StartInterview() {
                 placeholder={MESSAGES.START_COMPANY_PLACEHOLDER}
                 aria-describedby="company-hint"
                 maxLength={INTEL_LIMITS.MAX_COMPANY_CHARS}
-                onChange={(e) => setCompanyName(e.target.value)}
+                aria-invalid={refusedMessage("companyName") !== null}
+                onChange={(e) => {
+                  setCompanyName(e.target.value);
+                  clearRefusal("companyName");
+                }}
               />
-              <p id="company-hint" className="text-xs text-ink-subtle">
-                {MESSAGES.START_COMPANY_HINT}
+              <p
+                id="company-hint"
+                className={
+                  refusedMessage("companyName") !== null
+                    ? "text-xs text-destructive"
+                    : "text-xs text-ink-subtle"
+                }
+              >
+                {refusedMessage("companyName") ?? MESSAGES.START_COMPANY_HINT}
               </p>
             </div>
 
@@ -476,10 +543,22 @@ export function StartInterview() {
                   aria-describedby="company-notes-hint"
                   maxLength={INTEL_LIMITS.MAX_NOTES_CHARS}
                   className="max-h-40 resize-y"
-                  onChange={(e) => setCompanyNotes(e.target.value)}
+                  aria-invalid={refusedMessage("companyNotes") !== null}
+                  onChange={(e) => {
+                    setCompanyNotes(e.target.value);
+                    clearRefusal("companyNotes");
+                  }}
                 />
-                <p id="company-notes-hint" className="text-xs text-ink-subtle">
-                  {MESSAGES.START_COMPANY_NOTES_HINT}
+                <p
+                  id="company-notes-hint"
+                  className={
+                    refusedMessage("companyNotes") !== null
+                      ? "text-xs text-destructive"
+                      : "text-xs text-ink-subtle"
+                  }
+                >
+                  {refusedMessage("companyNotes") ??
+                    MESSAGES.START_COMPANY_NOTES_HINT}
                 </p>
               </div>
             ) : null}

@@ -55,6 +55,24 @@ export function wasGuardrailBlocked(stopReason: string | undefined): boolean {
   return stopReason === GUARDRAIL.INTERVENED_STOP_REASON;
 }
 
+// The standalone ApplyGuardrail call's verdict, used to screen form fields
+// before any agent runs. In detect mode the action is NONE even when a filter
+// matched, so a finding and a block are separate questions.
+export function wasInputIntervened(action: string | undefined): boolean {
+  return action === GUARDRAIL.INTERVENED_ACTION;
+}
+
+// Findings from an ApplyGuardrail response, in the same "<where> <policy>:
+// <type>=<action>" shape as the Converse trace — and with the same rule: types
+// and actions only, never the matched text.
+export function screeningFindings(
+  assessments: GuardrailAssessment[] | undefined,
+): string[] {
+  return (assessments ?? []).flatMap((assessment) =>
+    assessmentFindings("input", assessment),
+  );
+}
+
 // One line per finding, as "<where> <policy>:<type>=<action>".
 //
 // Never includes what matched. A PII finding's `match` is the personal data

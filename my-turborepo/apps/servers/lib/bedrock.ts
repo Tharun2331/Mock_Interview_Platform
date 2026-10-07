@@ -1,4 +1,5 @@
 import {
+  ApplyGuardrailCommand,
   BedrockRuntimeClient,
   ConverseCommand,
   type ContentBlock,
@@ -11,8 +12,10 @@ import {
   guardrailConfiguration,
   guardrailFindings,
   resolveGuardrail,
+  screeningFindings,
   userTurnContent,
   wasGuardrailBlocked,
+  wasInputIntervened,
 } from "./guardrail";
 
 // Undefined unless both guardrail variables are set, in which case every text
@@ -75,6 +78,42 @@ export const bedrockClient = new BedrockRuntimeClient({
 
 // One demonstrated input/output pair, shaped exactly like a real call.
 export type ExampleTurn = { user: string; assistant: string };
+
+export type ScreenResult = {
+  // True only in enforce mode, when a policy would have refused the text.
+  blocked: boolean;
+  // Types and actions, never the matched text. Present in detect mode too.
+  findings: string[];
+};
+
+// Screens one piece of candidate-typed text with the guardrail on its own,
+// before any agent sees it (ADR-0010, "field-level check").
+//
+// The one place this service calls ApplyGuardrail directly, which ADR-0010
+// otherwise rejects as a second round trip. It exists for the fields whose
+// agents run fire-and-forget after the plan returns — the job description and
+// the company — where a block inside Converse happens too late to tell anyone.
+// No model runs, so it costs only the guardrail's text units.
+//
+// No guardrail configured means nothing to screen against. Errors propagate:
+// the caller decides whether to fail open.
+export async function screenInput(text: string): Promise<ScreenResult> {
+  if (guardrail === undefined) return { blocked: false, findings: [] };
+
+  const response = await bedrockClient.send(
+    new ApplyGuardrailCommand({
+      guardrailIdentifier: guardrail.id,
+      guardrailVersion: guardrail.version,
+      source: "INPUT",
+      content: [{ text: { text } }],
+    }),
+  );
+
+  return {
+    blocked: wasInputIntervened(response.action),
+    findings: screeningFindings(response.assessments),
+  };
+}
 
 type ConverseTextArgs = {
   system: string;

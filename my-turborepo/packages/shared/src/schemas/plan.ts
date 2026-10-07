@@ -85,6 +85,29 @@ export const PlanRequestSchema = z.object({
 
 export type PlanRequest = z.infer<typeof PlanRequestSchema>;
 
+// The free-text fields the candidate types on the plan form, each screened by
+// the Bedrock Guardrail before anything runs (ADR-0010). Named so a refusal can
+// point at the field it came from.
+export const SCREENED_PLAN_FIELDS = [
+  "targetRole",
+  "jobDescription",
+  "companyName",
+  "companyNotes",
+] as const;
+
+export const ScreenedPlanFieldSchema = z.enum(SCREENED_PLAN_FIELDS);
+export type ScreenedPlanField = z.infer<typeof ScreenedPlanFieldSchema>;
+
+// 422 from POST /plan when the guardrail refused the input. `field` names the
+// form field to show it under; absent, the refusal came from the candidate's
+// saved resume or repositories, which the form cannot edit.
+export const PlanInputRefusalSchema = z.object({
+  message: z.string().min(1),
+  field: ScreenedPlanFieldSchema.optional(),
+});
+
+export type PlanInputRefusal = z.infer<typeof PlanInputRefusalSchema>;
+
 // What the Planner agent itself consumes. Separate from the wire schema on
 // purpose: the agent takes candidate material and returns a plan, and knows
 // nothing about sessions or who is authenticated. Keeping that boundary is what
