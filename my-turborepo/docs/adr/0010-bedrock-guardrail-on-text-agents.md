@@ -25,7 +25,7 @@ Attach one **Amazon Bedrock Guardrail** per environment to every text-agent call
 | Prompt attack                    | input only       | the reason this exists. AWS evaluates it on input only, so its output strength is `NONE` by requirement                 |
 | Content filters                  | input and output | hate, insults, sexual, violence, misconduct, at **MEDIUM**, not HIGH                                                    |
 | PII                              | output only      | **anonymize**, never block. Comprehend already redacts on the way in; this catches a model inventing or echoing         |
-| Denied topics                    | input and output | legal, medical and immigration advice; requests to reveal secrets or other users' data. **Only once enforcing** (below) |
+| Denied topics                    | input and output | requests to reveal secrets or other users' data. **Only once enforcing** (below). Legal, medical and immigration advice topics were tried and removed: they refused a real posting's work-eligibility line on day one (see `modules/guardrail/variables.tf`) |
 | Contextual grounding, word lists | —                | not used                                                                                                                |
 
 **MEDIUM rather than HIGH** because this product's audience talks like an attacker for a living. Resumes, repository descriptions and answers say "SQL injection", "exploit", "kill the process", "privilege escalation". A blocked Evaluator call costs a candidate their feedback, which is worse for them than the risk HIGH would remove.
