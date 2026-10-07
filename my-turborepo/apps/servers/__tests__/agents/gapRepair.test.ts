@@ -306,4 +306,37 @@ describe("requirements the posting does not contain", () => {
   it("returns an empty list for an empty analysis", () => {
     expect(dropUngrounded([], "React, Kafka.")).toEqual([]);
   });
+
+  // Real output, dev table, 2026-10-07, against the same injection posting.
+  // Both survived the first version of this check on "system" alone: a third
+  // of a two- or three-word requirement rounded up to one shared word.
+  it("needs more than one shared word to ground a multi-word requirement", () => {
+    const kept = dropUngrounded(
+      [
+        strong("Experience with document management systems."),
+        strong("Experience with CRM systems."),
+      ],
+      INJECTION_POSTING,
+    );
+
+    expect(kept).toEqual([]);
+  });
+
+  it("still grounds a two-word requirement whose words are both in the posting", () => {
+    const kept = dropUngrounded(
+      [strong("React Native")],
+      "Ship features in React Native.",
+    );
+
+    expect(kept).toHaveLength(1);
+  });
+
+  it("still grounds a one-word requirement on its one word", () => {
+    const kept = dropUngrounded(
+      [strong("Kubernetes experience")],
+      "Kubernetes, Helm.",
+    );
+
+    expect(kept).toHaveLength(1);
+  });
 });
