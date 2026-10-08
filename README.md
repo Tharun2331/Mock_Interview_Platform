@@ -1,7 +1,5 @@
 # PrepPilot AI
 
-> ⚠️ **Work in progress.** The product is built end to end, but the backend has not been deployed yet. Expect breaking changes.
-
 PrepPilot AI is a voice-based mock interview platform built on AWS. A candidate saves their resume and GitHub username once. After that, they can run live spoken interviews generated from that material. Each answer is scored in the background, and a Coach agent turns the results into an improvement plan.
 
 Personal details are removed from the resume before any model sees it. The original PDF is stored in S3, and the Planner only reads the redacted text. See [ADR-0007](my-turborepo/docs/adr/0007-user-scoped-redacted-candidate-material.md).
