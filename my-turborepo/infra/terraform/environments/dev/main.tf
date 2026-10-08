@@ -183,10 +183,13 @@ locals {
   # use a VPC origin — see the api_edge module.
   #
   # preppilot-dev is the app's home; preppilot.tharunsekar.xyz is reserved for
-  # prod. The apex still serves the app during the move, and its A record must
-  # stay regardless: Cognito's auth.tharunsekar.xyz needs the apex to resolve.
-  # Drop it from this list once nothing links to it.
-  web_domains = ["preppilot-dev.tharunsekar.xyz", "tharunsekar.xyz"]
+  # prod. The bare apex no longer serves the app (removed 2026-10-08), but its
+  # A record STAYS — the cloudfront module still creates it (create_apex_record),
+  # because Cognito needs tharunsekar.xyz to resolve before it will create or
+  # update auth.tharunsekar.xyz or prod's auth-prod. A visit to the apex now
+  # reaches CloudFront with no matching alias and is refused; DNS resolving is
+  # all Cognito needs.
+  web_domains = ["preppilot-dev.tharunsekar.xyz"]
   web_origin  = join(",", [for domain in local.web_domains : "https://${domain}"])
   api_domain  = "api-dev.tharunsekar.xyz"
 
