@@ -206,6 +206,9 @@ export function Confirm() {
                   <FieldError
                     errors={errors.code ? [errors.code] : undefined}
                   />
+                  <p className="text-xs leading-relaxed text-ink-subtle">
+                    {MESSAGES.CONFIRM_SPAM_HINT}
+                  </p>
                 </Field>
               </FieldGroup>
             </CardContent>
