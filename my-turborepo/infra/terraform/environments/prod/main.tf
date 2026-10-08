@@ -54,11 +54,17 @@ module "iam" {
 }
 
 # Its own guardrail, never dev's: tuning dev must not change prod (ADR-0010).
-# Moves to "enforce" only on the evidence dev's detect phase produced.
+#
+# Enforcing from its first apply, skipping a prod detect phase — a deliberate
+# call (2026-10-08) on dev's evidence: a full fifteen-answer interview under
+# enforce with no refusals, and the one false positive seen (the immigration
+# topic on a posting's work-eligibility line) already removed. The risk taken
+# is that the first real posting to trip a filter is refused rather than
+# logged. If that happens, set "detect", apply, restart the API — then tune.
 module "guardrail" {
   source      = "../../modules/guardrail"
   environment = var.environment
-  mode        = "detect"
+  mode        = "enforce"
 }
 
 module "cloudwatch" {
