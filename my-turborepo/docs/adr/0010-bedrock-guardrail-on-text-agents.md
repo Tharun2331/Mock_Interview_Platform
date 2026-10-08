@@ -20,13 +20,13 @@ Attach one **Amazon Bedrock Guardrail** per environment to every text-agent call
 
 ### What the guardrail checks
 
-| Policy                           | Applies to       | Setting                                                                                                                 |
-| -------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Prompt attack                    | input only       | the reason this exists. AWS evaluates it on input only, so its output strength is `NONE` by requirement                 |
-| Content filters                  | input and output | hate, insults, sexual, violence, misconduct, at **MEDIUM**, not HIGH                                                    |
-| PII                              | output only      | **anonymize**, never block. Comprehend already redacts on the way in; this catches a model inventing or echoing         |
+| Policy                           | Applies to       | Setting                                                                                                                                                                                                                                                      |
+| -------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Prompt attack                    | input only       | the reason this exists. AWS evaluates it on input only, so its output strength is `NONE` by requirement                                                                                                                                                      |
+| Content filters                  | input and output | hate, insults, sexual, violence, misconduct, at **MEDIUM**, not HIGH                                                                                                                                                                                         |
+| PII                              | output only      | **anonymize**, never block. Comprehend already redacts on the way in; this catches a model inventing or echoing                                                                                                                                              |
 | Denied topics                    | input and output | requests to reveal secrets or other users' data. **Only once enforcing** (below). Legal, medical and immigration advice topics were tried and removed: they refused a real posting's work-eligibility line on day one (see `modules/guardrail/variables.tf`) |
-| Contextual grounding, word lists | —                | not used                                                                                                                |
+| Contextual grounding, word lists | —                | not used                                                                                                                                                                                                                                                     |
 
 **MEDIUM rather than HIGH** because this product's audience talks like an attacker for a living. Resumes, repository descriptions and answers say "SQL injection", "exploit", "kill the process", "privilege escalation". A blocked Evaluator call costs a candidate their feedback, which is worse for them than the risk HIGH would remove.
 
@@ -50,6 +50,8 @@ Rollout:
 2. Tune strengths against what was flagged.
 3. dev, `enforce`.
 4. prod, `detect`, then `enforce`, on the same evidence.
+
+**As carried out (2026-10-08):** prod went straight to `enforce` on its first apply, skipping step 4's detect phase. The dev evidence was one full fifteen-answer interview under `enforce` with no refusals, and the only false positive seen — the immigration topic on a posting's work-eligibility line — had already been removed. The accepted risk is that the first real posting to trip a filter is refused rather than logged; the remedy is `detect`, apply, restart the API, and tune from the logged findings.
 
 ### Behaviour on a block
 
