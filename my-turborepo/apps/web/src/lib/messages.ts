@@ -122,6 +122,11 @@ export const MESSAGES = {
     `Enter the 6-digit code we sent to ${email}.`,
   CONFIRM_CODE_LABEL: "Confirmation code",
   CONFIRM_CODE_PLACEHOLDER: "123456",
+  // Cognito's default sender is a shared address that mail providers routinely
+  // file as spam, so for most people the code is not in the inbox. Said before
+  // they go looking, not after a failed wait.
+  CONFIRM_SPAM_HINT:
+    "Can't find it? Check your spam or junk folder — the code often lands there. It can take a minute to arrive.",
   CONFIRM_SUBMIT: "Confirm and continue",
   CONFIRM_SUBMIT_PENDING: "Confirming…",
   CONFIRM_EDIT_EMAIL: "Wrong address?",
