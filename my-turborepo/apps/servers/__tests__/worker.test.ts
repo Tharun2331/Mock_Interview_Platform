@@ -746,3 +746,67 @@ describe("an answer the guardrail blocks", () => {
     expect(unscoredWrites()).toHaveLength(0);
   });
 });
+
+// Dev, 2026-10-07: Ministral returned no `rationale` three times running for
+// one answer of fifteen. Thrown from the last delivery, the message went to the
+// DLQ and the session would have waited at `evaluating` forever.
+describe("a model failure on the final attempt", () => {
+  const SUMMARY = {
+    PK: sessionPk(SESSION_ID),
+    SK: SORT_KEY.EVAL_SUMMARY,
+    type: ITEM_TYPE.SESSION_EVAL_SUMMARY,
+    questionCount: 3,
+  };
+
+  const unscoredWrites = () =>
+    ddb
+      .commandCalls(UpdateCommand)
+      .filter((call) => call.args[0].input.UpdateExpression?.startsWith("ADD"));
+
+  it("is recorded as unscored instead of failing a last time", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs(SUMMARY);
+    setModelFailure(new BedrockError("Evaluator output failed validation"));
+
+    const outcome = await handleMessage(body(), { finalAttempt: true });
+
+    expect(outcome).toMatchObject({
+      kind: "unscored",
+      questionId: QUESTION_ID,
+    });
+    expect(unscoredWrites()).toHaveLength(1);
+  });
+
+  it("completes the session when it was the last answer", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs({ ...SUMMARY, unscoredQuestionIds: new Set([QUESTION_ID]) });
+    evaluationsScored(2);
+    setModelFailure(new BedrockError("Evaluator output failed validation"));
+
+    const outcome = await handleMessage(body(), { finalAttempt: true });
+
+    expect(outcome).toMatchObject({ kind: "unscored", finalized: "finalized" });
+  });
+
+  // Earlier deliveries still go back to SQS: a second generation often works.
+  it("still throws before the final attempt, so SQS retries it", async () => {
+    itemsFound([ANSWER, META]);
+    summaryIs(SUMMARY);
+    setModelFailure(new BedrockError("Evaluator output failed validation"));
+
+    await expect(
+      handleMessage(body(), { finalAttempt: false }),
+    ).rejects.toThrow(BedrockError);
+    expect(unscoredWrites()).toHaveLength(0);
+  });
+
+  // Recording the answer needs DynamoDB too, so a DynamoDB failure has nothing
+  // better to do than reach the DLQ, where the depth alarm reports it.
+  it("still throws a non-model failure on the final attempt", async () => {
+    ddb.on(BatchGetCommand).rejects(new Error("throughput exceeded"));
+
+    await expect(handleMessage(body(), { finalAttempt: true })).rejects.toThrow(
+      ServiceError,
+    );
+  });
+});

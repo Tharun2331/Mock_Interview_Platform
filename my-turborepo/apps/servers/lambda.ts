@@ -1,3 +1,4 @@
+import { config } from "./lib/config";
 import { handleMessage } from "./worker";
 
 // The Evaluator as a Lambda function (ADR-0009). A third entrypoint into the
@@ -20,14 +21,32 @@ import { handleMessage } from "./worker";
 
 // The subset of Lambda's SQS event this reads.
 export type SqsEvent = {
-  Records: Array<{ messageId: string; body: string }>;
+  Records: Array<{
+    messageId: string;
+    body: string;
+    // How many times SQS has delivered this message, this one included.
+    attributes?: { ApproximateReceiveCount?: string };
+  }>;
 };
+
+// True on the delivery after which SQS gives up and moves the message to the
+// DLQ. A missing or unreadable count is treated as not-final: retrying once
+// more is the safe direction, and the count is always present in practice.
+export function isFinalAttempt(
+  receiveCount: string | undefined,
+  maxReceives: number,
+): boolean {
+  const count = Number(receiveCount);
+  return Number.isFinite(count) && count >= maxReceives;
+}
 
 export type SqsBatchResponse = {
   batchItemFailures: Array<{ itemIdentifier: string }>;
 };
 
-export async function handleSqsEvent(event: SqsEvent): Promise<SqsBatchResponse> {
+export async function handleSqsEvent(
+  event: SqsEvent,
+): Promise<SqsBatchResponse> {
   const batchItemFailures: SqsBatchResponse["batchItemFailures"] = [];
 
   // Sequential, as in worker.ts. Concurrency is bounded where it can be seen
@@ -35,10 +54,17 @@ export async function handleSqsEvent(event: SqsEvent): Promise<SqsBatchResponse>
   // one invocation, where it would multiply Bedrock spend with no ceiling.
   for (const record of event.Records) {
     try {
-      const outcome = await handleMessage(record.body);
+      const outcome = await handleMessage(record.body, {
+        finalAttempt: isFinalAttempt(
+          record.attributes?.ApproximateReceiveCount,
+          config.evalMaxReceives,
+        ),
+      });
 
       if (outcome.kind === "unparseable") {
-        console.error(`[evaluator] dropping unparseable message ${record.messageId}`);
+        console.error(
+          `[evaluator] dropping unparseable message ${record.messageId}`,
+        );
       } else if (outcome.kind === "scored") {
         console.log(
           `[evaluator] scored ${outcome.questionId} with ${outcome.modelId} (${outcome.finalized})`,

@@ -102,6 +102,7 @@ module "evaluator" {
     CORS_ORIGIN                 = local.web_origin
     BEDROCK_GUARDRAIL_ID        = module.guardrail.guardrail_id
     BEDROCK_GUARDRAIL_VERSION   = module.guardrail.guardrail_version
+    EVAL_MAX_RECEIVES           = tostring(module.sqs.max_receive_count)
   }
 }
 

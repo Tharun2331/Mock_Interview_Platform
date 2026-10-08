@@ -23,6 +23,8 @@ process.env.AWS_REGION = "us-east-1";
 // that machine only. lib/guardrail.ts is tested directly instead.
 process.env.BEDROCK_GUARDRAIL_ID = "";
 process.env.BEDROCK_GUARDRAIL_VERSION = "";
+// The eval queue's receive limit, pinned to the sqs module's default.
+process.env.EVAL_MAX_RECEIVES = "3";
 
 // The interview's own clock, pinned to the PRODUCTION shape.
 //

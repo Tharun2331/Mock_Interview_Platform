@@ -22,3 +22,8 @@ output "eval_dlq_name" {
   description = "Dead-letter queue name, for the ApproximateNumberOfMessagesVisible alarm dimension."
   value       = aws_sqs_queue.eval_dlq.name
 }
+
+output "max_receive_count" {
+  description = "Receives before a message goes to the DLQ. Passed to the Evaluator as EVAL_MAX_RECEIVES so it knows when an attempt is the last one and can record the answer as unscored instead of letting it strand its session in the DLQ."
+  value       = var.max_receive_count
+}

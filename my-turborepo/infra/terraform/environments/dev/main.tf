@@ -121,6 +121,9 @@ module "evaluator" {
     # Takes effect on the next invocation after apply.
     BEDROCK_GUARDRAIL_ID      = module.guardrail.guardrail_id
     BEDROCK_GUARDRAIL_VERSION = module.guardrail.guardrail_version
+    # From the queue itself, so the worker's idea of "last attempt" cannot
+    # drift from the redrive policy that enforces it.
+    EVAL_MAX_RECEIVES = tostring(module.sqs.max_receive_count)
   }
 }
 
