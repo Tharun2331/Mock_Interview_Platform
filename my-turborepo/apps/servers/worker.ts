@@ -7,7 +7,7 @@ import { EvalJobSchema } from "@repo/shared";
 import { runEvaluator } from "./agents/evaluator";
 import { runSessionSummarizer } from "./agents/sessionSummarizer";
 import { WORKER } from "./lib/constants";
-import { GuardrailBlockedError } from "./lib/errors";
+import { BedrockError, GuardrailBlockedError } from "./lib/errors";
 import {
   attachSessionSummary,
   finalizeIfComplete,
@@ -67,7 +67,18 @@ export type MessageOutcome =
 // Throws only on failures a retry could plausibly fix — a DynamoDB outage, an
 // exhausted Bedrock chain. The caller leaves those messages undeleted so SQS
 // redelivers them, and `maxReceiveCount` eventually routes them to the DLQ.
-export async function handleMessage(body: string): Promise<MessageOutcome> {
+//
+// Except on the final attempt, for a model failure: see below.
+export type HandleOptions = {
+  // This delivery is the last before SQS moves the message to the DLQ. Set by
+  // lambda.ts from the receive count; the local poller never sets it.
+  finalAttempt?: boolean;
+};
+
+export async function handleMessage(
+  body: string,
+  options: HandleOptions = {},
+): Promise<MessageOutcome> {
   let parsedBody: unknown;
   try {
     parsedBody = JSON.parse(body);
@@ -109,15 +120,34 @@ export async function handleMessage(body: string): Promise<MessageOutcome> {
   try {
     result = await runEvaluator(state.input);
   } catch (error) {
-    if (!(error instanceof GuardrailBlockedError)) throw error;
+    // A guardrail block is final on every attempt — a retry sends the same
+    // answer to the same guardrail. Any other model failure is final only on
+    // the last attempt: earlier ones go back to SQS, because a second
+    // generation often succeeds.
+    //
+    // Why the last attempt matters (dev, 2026-10-07): Ministral returned a tool
+    // call with no `rationale` three times running for one answer out of
+    // fifteen. Thrown from the final delivery, that message went to the DLQ and
+    // its session would have waited at `evaluating` forever — fourteen answers
+    // scored, no overall result, absent from history. Recorded as unscored, the
+    // session completes and the page says one answer could not be scored.
+    //
+    // Model failures only. A DynamoDB failure still throws: recording the
+    // answer needs DynamoDB too, so there is nothing better to do than let it
+    // reach the DLQ, where the depth alarm reports it.
+    const blocked = error instanceof GuardrailBlockedError;
+    const exhausted =
+      options.finalAttempt === true && error instanceof BedrockError;
+    if (!blocked && !exhausted) throw error;
 
-    // Not retried: a retry sends the same answer to the same guardrail. A
-    // redelivery of this message — say the completion check below throws —
-    // reaches the guardrail again and re-adds the same id, which the set
-    // absorbs. Only a guardrail call is spent, never a generation, because an
-    // input block stops the request before the model runs.
+    // A redelivery of this message — say the completion check below throws —
+    // re-adds the same id, which the set absorbs.
     console.warn(
-      `[evaluator] guardrail blocked scoring ${questionId}, recording it as unscored`,
+      blocked
+        ? `[evaluator] guardrail blocked scoring ${questionId}, recording it as unscored`
+        : `[evaluator] scoring ${questionId} failed on its final attempt, recording it as unscored — ${
+            error instanceof Error ? error.message : error
+          }`,
     );
     await markAnswerUnscored({ sessionId, questionId });
     const finalized = await closeOutIfComplete(sessionId);

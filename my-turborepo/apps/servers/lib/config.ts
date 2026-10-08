@@ -182,6 +182,12 @@ export const config = {
   // boot would take down auth, /plan and the interview loop itself. `lib/sqs.ts`
   // raises a clear error if an enqueue is attempted while unset.
   evalQueueUrl: env("EVAL_QUEUE_URL", ""),
+  // The eval queue's maxReceiveCount, passed by Terraform from the sqs module.
+  // On the attempt that reaches it, the worker records an answer it cannot
+  // score as unscored rather than failing a last time — after which SQS would
+  // move it to the DLQ and its session would wait at `evaluating` forever. The
+  // default matches the module's.
+  evalMaxReceives: Number(env("EVAL_MAX_RECEIVES", "3")),
   // Without a timeout a hung upstream holds the request open indefinitely and
   // requests pile up behind it.
   githubTimeoutMs: Number(env("GITHUB_TIMEOUT_MS", "5000")),
