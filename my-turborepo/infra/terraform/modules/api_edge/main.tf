@@ -41,13 +41,30 @@ locals {
 # this domain.
 # ---------------------------------------------------------------------------
 
+# Tracks the instance the VPC origin points at, so a new instance replaces the
+# origin (replace_triggered_by cannot name a variable directly).
+resource "terraform_data" "instance" {
+  input = var.instance_arn
+}
+
 # CloudFront's entry into the VPC. Traffic arrives at the instance from
 # CloudFront-managed ENIs in the private subnet over AWS's network, so the
 # instance keeps no public IP. Plain HTTP on that hop: TLS terminates at the
 # edge, and the hop never leaves the VPC.
+#
+# **Replaced, never updated, when the instance changes.** CloudFront refuses to
+# change a VPC origin's target while a distribution uses it
+# (CannotUpdateEntityWhileInUse). An in-place update is what Terraform tried on
+# prod 2026-10-09, when the instance was replaced under a live edge: the apply
+# failed halfway and the API answered 504 until this existed. Dev never hit it,
+# because there the edge is destroyed and recreated with the server.
+#
+# create_before_destroy makes the order: new origin for the new instance, then
+# the distribution switched to it, then the old origin deleted. The name
+# carries the instance id because both exist for that moment.
 resource "aws_cloudfront_vpc_origin" "api" {
   vpc_origin_endpoint_config {
-    name                   = "prepilot-api-${var.environment}"
+    name                   = "prepilot-api-${var.environment}-${element(split("/", var.instance_arn), 1)}"
     arn                    = var.instance_arn
     http_port              = var.app_port
     https_port             = 443
@@ -60,6 +77,11 @@ resource "aws_cloudfront_vpc_origin" "api" {
   }
 
   tags = local.common_tags
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [terraform_data.instance]
+  }
 }
 
 # Creating a VPC origin makes AWS create this security group in the VPC; the
