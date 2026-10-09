@@ -38,7 +38,12 @@ RUN case "$TARGETARCH" in \
       *) echo "unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac \
  && bun build apps/servers/lambda.ts --compile --minify --sourcemap \
+      --define 'process.env.NODE_ENV="production"' \
       --target="$BUN_TARGET" --outfile /out/bootstrap
+# The --define is load-bearing: Bun replaces process.env.NODE_ENV with a
+# constant at build time, so without it the binary believes it is in
+# development whatever the runtime environment says. See isProduction in
+# apps/servers/lib/config.ts.
 
 # ---------------------------------------------------------------------------
 # Runtime: distroless, not AWS's provided.al2023.
