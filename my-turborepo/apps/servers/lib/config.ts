@@ -89,6 +89,16 @@ const DEFAULT_TEXT_MODELS = [
 // read. Loosening them to make testing convenient would mean a six-minute plan
 // could reach production and, worse, that the validation guarding real plans no
 // longer describes real plans.
+//
+// **In a compiled binary this is decided at BUILD time, not at runtime.**
+// `bun build` replaces `process.env.NODE_ENV` with a constant, so the deployed
+// server and the Evaluator Lambda ignore the NODE_ENV their environment sets
+// and use whatever the build defined. Both builds therefore pass
+// `--define process.env.NODE_ENV="production"` (`build:server` in package.json,
+// evaluator.Dockerfile). Without it this compiled to `() => false`, and the
+// deployed server ran with every production-only rule off: no Secure cookies,
+// no https-only CORS check, test mode reachable. Found 2026-10-09 when the
+// deployed auth cookies came back without `Secure`.
 const isProduction = (): boolean => process.env.NODE_ENV === "production";
 
 // The CORS allowlist. Exported, and pure, so the production rules are testable
