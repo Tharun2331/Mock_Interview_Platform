@@ -403,7 +403,12 @@ export const AUTH = {
   OAUTH_STATE_MAX_AGE_MS: 10 * 60 * 1000,
   // Bytes of randomness in the OAuth state and the PKCE verifier.
   OAUTH_RANDOM_BYTES: 32,
-  // Cognito prefixes a federated user's username with the provider name.
+  // Cognito prefixes a federated user's username with the provider name
+  // exactly as configured — provider_name = "Google" in the cognito module —
+  // so it is `Google_1083…`, capital G. Verified against the dev pool
+  // 2026-10-09; a lowercase prefix here silently stopped every Google
+  // sign-out from ending the hosted-UI session. Compared case-insensitively
+  // anyway, since a native username is a UUID and can never collide.
   GOOGLE_USERNAME_PREFIX: "google_",
   OAUTH_SCOPES: "openid email profile aws.cognito.signin.user.admin",
   // Shown as the account's issuer in an authenticator app.

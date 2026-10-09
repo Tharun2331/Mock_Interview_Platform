@@ -489,7 +489,7 @@ export async function exchangeAuthorizationCode(
 export function hostedUiLogoutUrl(username: string | undefined): string | null {
   if (
     username === undefined ||
-    !username.startsWith(AUTH.GOOGLE_USERNAME_PREFIX)
+    !username.toLowerCase().startsWith(AUTH.GOOGLE_USERNAME_PREFIX)
   ) {
     return null;
   }

@@ -579,6 +579,9 @@ describe("POST /signout", () => {
     expect(cleared(setCookies(response).get("pp_rt"))).toBe(true);
   });
 
+  // `Google_…` with a capital G: Cognito uses the provider name exactly as
+  // configured. A lowercase fixture here once hid that every real Google
+  // sign-out was missing this URL.
   it("returns the hosted-UI logout URL for a Google sign-in", async () => {
     cognito.on(RevokeTokenCommand).resolves({});
     const url = await publicApp();
@@ -586,7 +589,7 @@ describe("POST /signout", () => {
     const response = await post(
       `${url}/signout`,
       undefined,
-      "pp_rt=refresh-1; pp_user=google_1093",
+      "pp_rt=refresh-1; pp_user=Google_1093",
     );
 
     const { logoutUrl } = (await response.json()) as { logoutUrl: string };
@@ -636,7 +639,7 @@ describe("GET /google and /google/callback", () => {
   it("exchanges the code with the secret and verifier, then lands on /callback", async () => {
     const url = await publicApp();
     const { state, expectedState, verifier } = await start(url);
-    const token = accessToken("google_1093");
+    const token = accessToken("Google_1093");
     tokenResponse = {
       status: 200,
       body: { access_token: token, refresh_token: "refresh-g", id_token: "x" },
@@ -664,7 +667,7 @@ describe("GET /google and /google/callback", () => {
     );
     const cookies = setCookies(response);
     expect(cookies.get("pp_at")?.value).toBe(token);
-    expect(cookies.get("pp_user")?.value).toBe("google_1093");
+    expect(cookies.get("pp_user")?.value).toBe("Google_1093");
     expect(cleared(cookies.get("pp_oauth"))).toBe(true);
   });
 

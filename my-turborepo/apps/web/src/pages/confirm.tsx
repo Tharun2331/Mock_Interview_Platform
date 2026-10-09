@@ -3,7 +3,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
-import { autoSignIn, confirmSignUp } from "aws-amplify/auth";
 import {
   ChangeEmailSchema,
   ConfirmSignupSchema,
@@ -27,13 +26,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { errorMessage, isAlreadyAuthenticated } from "@/lib/errors";
+import { confirmSignUp } from "@/lib/authApi";
+import { errorMessage } from "@/lib/errors";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { MESSAGES } from "@/lib/messages";
 
 // Handed over from the signup page via router state. Email only — the password
 // is never passed here, because history state is readable by any script for the
-// lifetime of the session. Sign-in is completed with Amplify's autoSignIn flow.
+// lifetime of the session.
 type PendingSignup = { email: string };
 
 function isPendingSignup(value: unknown): value is PendingSignup {
@@ -42,16 +42,6 @@ function isPendingSignup(value: unknown): value is PendingSignup {
     value !== null &&
     "email" in value &&
     typeof value.email === "string"
-  );
-}
-
-// Cognito rejects re-confirming an already-CONFIRMED user with this exact error.
-// It means confirmation already succeeded, so we can safely proceed to sign-in.
-function isAlreadyConfirmed(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    error.name === "NotAuthorizedException" &&
-    error.message.includes("Current status is CONFIRMED")
   );
 }
 
@@ -97,32 +87,20 @@ export function Confirm() {
 
   const onSubmit = handleSubmit(async ({ code }) => {
     try {
-      await confirmSignUp({ username: state.email, confirmationCode: code });
+      // An account a previous attempt already confirmed comes back as success
+      // too — the server treats it as the outcome being asked for.
+      await confirmSignUp(state.email, code);
     } catch (error) {
-      // A prior attempt may have already confirmed the account (then failed at
-      // sign-in). If so, don't block — fall through and sign in. Any other
-      // error (e.g. a wrong/expired code) is surfaced so the user can retry.
-      if (!isAlreadyConfirmed(error)) {
-        toast.error(errorMessage(error, MESSAGES.AUTH_CONFIRM_FAILED));
-        return;
-      }
+      toast.error(errorMessage(error, MESSAGES.AUTH_CONFIRM_FAILED));
+      return;
     }
 
-    try {
-      // Completes the session Cognito started during signUp, so no password is
-      // needed here. Throws when no autoSignIn flow was started in this browser
-      // — e.g. arriving from the sign-in page's unconfirmed-account path — in
-      // which case the user just signs in normally.
-      await autoSignIn();
-      navigate("/form", { replace: true });
-    } catch (error) {
-      if (isAlreadyAuthenticated(error)) {
-        navigate("/form", { replace: true });
-        return;
-      }
-      toast.info(MESSAGES.AUTH_SIGNED_UP_NOW_SIGN_IN);
-      navigate("/signin", { replace: true });
-    }
+    // Confirmed, but not signed in. Amplify's autoSignIn rode on a session it
+    // kept in the browser; the server-side equivalent would mean holding the
+    // password between two requests, which it never does (ADR-0011). So the
+    // candidate signs in once more, with the email already filled in.
+    toast.info(MESSAGES.AUTH_SIGNED_UP_NOW_SIGN_IN);
+    navigate("/signin", { replace: true, state: { email: state.email } });
   });
 
   return (

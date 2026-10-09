@@ -2,15 +2,18 @@ import tailwind from "bun-plugin-tailwind";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 
-// Fail the build rather than inlining "" for a missing value — an empty pool id
-// produces a bundle that looks fine and breaks every auth call at runtime. CI
-// should catch this, not the user.
+// Fail the build rather than inlining "" for a missing value — an empty API URL
+// produces a bundle that looks fine and fails every call at runtime. CI should
+// catch this, not the user.
+//
+// No Cognito values any more: the bundle never talks to Cognito (ADR-0011).
+// Sign-in goes through the API, which holds the session in httpOnly cookies.
 const requireBuildEnv = (key: string): string => {
   const value = process.env[key];
   if (!value) {
     throw new Error(
       `Missing required build-time variable: ${key}. ` +
-        `Mirror it from the Terraform cognito module outputs before building.`,
+        `Mirror it from the environment's Terraform outputs before building.`,
     );
   }
   return value;
@@ -18,7 +21,7 @@ const requireBuildEnv = (key: string): string => {
 
 // The API origin the bundle talks to. https:// only: the interview socket takes
 // its scheme from this URL, so an http:// base would ship a bundle that sends
-// the access token and the candidate's microphone audio in plaintext.
+// the session cookie and the candidate's microphone audio in plaintext.
 const requireHttpsApiUrl = (key: string): string => {
   const value = requireBuildEnv(key);
   let url: URL;
@@ -40,15 +43,6 @@ const requireHttpsApiUrl = (key: string): string => {
 // leaves the previous dist/ intact instead of deleting it and then failing.
 const define = {
   "process.env.NODE_ENV": JSON.stringify("production"),
-  "process.env.BUN_PUBLIC_REGION": JSON.stringify(
-    requireBuildEnv("BUN_PUBLIC_REGION"),
-  ),
-  "process.env.BUN_PUBLIC_COGNITO_USER_POOL_ID": JSON.stringify(
-    requireBuildEnv("BUN_PUBLIC_COGNITO_USER_POOL_ID"),
-  ),
-  "process.env.BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID": JSON.stringify(
-    requireBuildEnv("BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID"),
-  ),
   "process.env.BUN_PUBLIC_API_URL": JSON.stringify(
     requireHttpsApiUrl("BUN_PUBLIC_API_URL"),
   ),
@@ -56,11 +50,6 @@ const define = {
   // sign-up refused once the pre sign-up trigger enforces it.
   "process.env.BUN_PUBLIC_TURNSTILE_SITE_KEY": JSON.stringify(
     requireBuildEnv("BUN_PUBLIC_TURNSTILE_SITE_KEY"),
-  ),
-  // Optional: unset falls back to dev's hosted-UI domain in lib/config.ts.
-  // Defined either way, so the bundle never reads `process.env` at runtime.
-  "process.env.BUN_PUBLIC_COGNITO_DOMAIN": JSON.stringify(
-    process.env.BUN_PUBLIC_COGNITO_DOMAIN ?? "",
   ),
 };
 
@@ -79,20 +68,9 @@ const result = await Bun.build({
   // every chunk, which served the whole unminified frontend (comments included)
   // to anyone who asked. Debug locally with `bun --hot` instead.
   sourcemap: "none",
-  // Load-bearing: without it Google sign-in hangs forever on /callback.
-  //
-  // Amplify registers the listener that exchanges the hosted-UI `?code=` for
-  // tokens as a side-effect import inside signInWithRedirect, and declares that
-  // file in @aws-amplify/auth's `sideEffects` list. Bun's bundler does not apply
-  // that list, treats the import as dead and drops it — and an explicit
-  // `import "aws-amplify/auth/enable-oauth-listener"` is dropped the same way.
-  // With no listener, getCurrentUser() waits on an exchange nobody starts.
-  // `bun --hot` does not tree-shake, so this only ever breaks deployed builds.
-  //
-  // The cost is ~50 KB of minified JS (~5%), from also ignoring @__PURE__
-  // hints. Check before removing: in dist/, the Symbol("oauth-listener")
-  // variable must be called as `X[sym](...)`, not only defined as a method.
-  ignoreDCEAnnotations: true,
+  // `ignoreDCEAnnotations` used to sit here, forcing Amplify's OAuth listener to
+  // survive tree-shaking. Amplify is gone (ADR-0011) — the server finishes the
+  // Google code exchange — so the bundle keeps @__PURE__ hints and is smaller.
   // Root-absolute asset URLs. Bun emits `./chunk-x.js` by default, which
   // resolves against the current path: fine on /signin, but a full load of a
   // nested route like /results/:sessionId asked for /results/chunk-x.js, which

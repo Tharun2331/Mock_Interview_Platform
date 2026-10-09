@@ -77,8 +77,7 @@ export const MESSAGES = {
   // The pre sign-up trigger refused the address: a disposable-mail domain or a
   // + tag (infra/terraform/modules/cognito/pre_sign_up). Names both causes,
   // because the candidate can fix either and cannot see which one it was.
-  AUTH_MFA_NOT_FOUND:
-    "Two-factor authentication was already turned off.",
+  AUTH_MFA_NOT_FOUND: "Two-factor authentication was already turned off.",
   AUTH_EMAIL_NOT_ALLOWED:
     "That email can't be used to sign up. Use your main address, without a + tag and not a temporary inbox.",
   AUTH_NOT_CONFIRMED: "Confirm your email to finish signing in.",
@@ -94,6 +93,14 @@ export const MESSAGES = {
   AUTH_SIGNIN_FAILED: "Sign-in failed. Check your credentials.",
   AUTH_GOOGLE_FAILED: "Google sign-in failed. Please try again.",
   AUTH_CODE_SENT: "We emailed you a 6-digit confirmation code.",
+  // The password was accepted but the authenticator code came too late: the
+  // pending sign-in lasts three minutes. Says the password is needed again so
+  // landing back on that form does not read as a rejection.
+  AUTH_SIGNIN_EXPIRED:
+    "That sign-in timed out. Enter your password again to get a new code.",
+  // A settings action found the session already over (revoked, or signed out
+  // in another tab).
+  AUTH_SESSION_EXPIRED: "Your session has ended. Sign in again to continue.",
 
   // --- Sign up ---
   SIGNUP_TITLE: "Create your account",

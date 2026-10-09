@@ -7,11 +7,10 @@ import { isAdminSession } from "@/lib/adminApi";
 // the header's nav link and the /admin page's own gate — and each doing its own
 // effect is how the two end up disagreeing about what "loading" looks like.
 //
-// Deliberately NOT a context provider, unlike `useProfile`. That one wraps a real
-// fetch whose result is shared state worth caching once; this reads a claim off a
-// token Amplify already holds in memory, so the call is local and cheap and a
-// provider would be ceremony around a property access. The cost of two callers is
-// two reads of a cached token.
+// Deliberately NOT a context provider, unlike `useProfile`. The answer comes from
+// GET /auth/me — one cheap call the server answers from the token it already
+// verifies — and the two callers are never mounted long enough together for a
+// shared cache to pay for itself.
 //
 // `null` while the token is being read, so a caller can tell "not yet known" from
 // "not an admin" — the difference between rendering nothing for an instant and
