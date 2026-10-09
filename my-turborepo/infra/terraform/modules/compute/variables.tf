@@ -51,6 +51,13 @@ variable "environment_variables" {
   description = "The server's environment, stored as SSM parameters under /prepilot/<env>/api/env/ and loaded on every service start. Not for secrets. PORT is set from app_port."
 }
 
+variable "secret_environment_variables" {
+  type        = map(string)
+  description = "Secret entries in the server's environment, stored as SecureString parameters on the same path and decrypted by the loader. Only for values that are ALREADY in state because AWS generated them (the Cognito client secret); a secret a human holds is written out of band instead, per infra/terraform/CLAUDE.md."
+  default     = {}
+  sensitive   = true
+}
+
 # The build lives outside this module (the s3 module), so it survives the
 # server being switched off. See the note on the bucket there.
 variable "artifacts_bucket_id" {

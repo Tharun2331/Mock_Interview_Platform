@@ -19,6 +19,19 @@ output "cognito_user_pool_client_id" {
   value       = module.cognito.cognito_user_pool_client_id
 }
 
+# For apps/servers/.env when running locally (ADR-0011). The secret is read with
+# `terraform output -raw cognito_server_client_secret`, never printed in a plan.
+output "cognito_server_client_id" {
+  description = "ID of the confidential client the API's auth routes use"
+  value       = module.cognito.server_client_id
+}
+
+output "cognito_server_client_secret" {
+  description = "Secret of the confidential client. Sensitive."
+  value       = module.cognito.server_client_secret
+  sensitive   = true
+}
+
 # Consumed by the server as UPLOADS_BUCKET. Exposed here so runtime config comes
 # from state rather than being copied out of the console, where a typo surfaces
 # only as a failed upload.

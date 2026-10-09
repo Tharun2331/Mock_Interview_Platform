@@ -177,6 +177,62 @@ resource "aws_cognito_user_pool_client" "client" {
   depends_on = [aws_cognito_identity_provider.google]
 }
 
+# 7b. Confidential client for the API's own auth routes (ADR-0011).
+#
+# The browser no longer talks to Cognito. Express signs candidates in, holds the
+# tokens in httpOnly cookies, and exchanges Google's code itself, so no token is
+# ever readable by page script. That makes this a server-side client, and a
+# server-side client can keep a secret: a stolen authorization code or a copied
+# client id is useless without it.
+#
+# The public `client` above stays only until the web app has moved over; it is
+# deleted in the same change that removes Amplify, and this one becomes the only
+# client in the pool.
+resource "aws_cognito_user_pool_client" "server" {
+  name         = "api-bff-client"
+  user_pool_id = aws_cognito_user_pool.pool.id
+
+  generate_secret = true
+
+  supported_identity_providers = ["COGNITO", "Google"]
+  # USER_PASSWORD_AUTH, not SRP. SRP exists so the password never leaves the
+  # browser; in this design the password reaches Express either way, over TLS,
+  # so server-side SRP would be extra code protecting nothing.
+  explicit_auth_flows                  = ["ALLOW_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+  allowed_oauth_flows                  = ["code"]
+  allowed_oauth_flows_user_pool_client = true
+  # Same list as the public client, for the same reason: without
+  # aws.cognito.signin.user.admin a Google user's access token cannot manage
+  # their own MFA.
+  allowed_oauth_scopes = [
+    "phone",
+    "email",
+    "openid",
+    "profile",
+    "aws.cognito.signin.user.admin",
+  ]
+
+  # Google's code comes back to the API, not to a web page, so it never passes
+  # through page script. Sign-out still lands on the web app.
+  callback_urls = [for origin in var.api_origins : "${origin}/api/v1/auth/google/callback"]
+  logout_urls   = var.app_origins
+
+  prevent_user_existence_errors = "ENABLED"
+  enable_token_revocation       = true
+
+  id_token_validity     = 1
+  access_token_validity = 1
+  # Unchanged at 7 days. The token now sits in an httpOnly cookie instead of
+  # localStorage, so script can no longer read it, but a copied cookie jar
+  # still carries it; the lifetime is still how long that stays useful.
+  refresh_token_validity = 7
+
+  # Rotation stays off for the same reason as the public client:
+  # REFRESH_TOKEN_AUTH, which the server uses to renew, is refused while it is on.
+
+  depends_on = [aws_cognito_identity_provider.google]
+}
+
 # 8. Admin group.
 #
 # Membership in this group is the whole of the admin authorisation model. Cognito

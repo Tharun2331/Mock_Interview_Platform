@@ -29,12 +29,15 @@ install -d -m 0755 /opt/prepilot/bin /var/log/prepilot
 # Writes the service's environment from SSM on every start, so changing a
 # value is `terraform apply` plus a restart, never a new instance. Runs as
 # root (the `+` in the unit) and the file is root-only: systemd reads it, the
-# service user never needs to.
+# service user never needs to. Root-only matters more since the path gained a
+# SecureString (the Cognito client secret): --with-decryption writes it here in
+# plaintext, and plain String entries pass through it unchanged.
 cat > /opt/prepilot/bin/load-env <<'EOF'
 #!/bin/bash
 set -euo pipefail
 umask 077
 aws ssm get-parameters-by-path --region ${region} --path "${ssm_env_path}" \
+  --with-decryption \
   --query 'Parameters[].[Name,Value]' --output text \
   | awk -F'\t' '{ n = $1; sub(".*/", "", n); print n "=" $2 }' > /run/prepilot/api.env.tmp
 mv /run/prepilot/api.env.tmp /run/prepilot/api.env

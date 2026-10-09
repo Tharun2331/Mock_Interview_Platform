@@ -167,6 +167,8 @@ module "cognito" {
   aws_acm_custom_domain = local.auth_domain
 
   app_origins = var.app_origins
+  # Google's code returns to the API (ADR-0011). No localhost in prod.
+  api_origins = ["https://${local.api_domain}"]
 
   # Prod's widget lists only the prod site, so no localhost here.
   turnstile_mode      = local.turnstile_mode
@@ -209,6 +211,15 @@ module "compute" {
     # Reaches the running server only on a service restart — see dev.
     BEDROCK_GUARDRAIL_ID      = module.guardrail.guardrail_id
     BEDROCK_GUARDRAIL_VERSION = module.guardrail.guardrail_version
+    # Cookie-based auth routes (ADR-0011) — see dev.
+    COGNITO_SERVER_CLIENT_ID = module.cognito.server_client_id
+    COGNITO_DOMAIN           = module.cognito.custom_domain
+    API_PUBLIC_ORIGIN        = "https://${local.api_domain}"
+    WEB_APP_ORIGIN           = "https://${local.web_domains[0]}"
+  }
+
+  secret_environment_variables = {
+    COGNITO_SERVER_CLIENT_SECRET = module.cognito.server_client_secret
   }
 }
 

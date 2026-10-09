@@ -16,6 +16,19 @@ output "cognito_user_pool_client_id" {
   description = "The ID of the Cognito User Pool Client"
   value       = aws_cognito_user_pool_client.client.id
 }
+output "server_client_id" {
+  description = "ID of the confidential client the API's auth routes use (ADR-0011)"
+  value       = aws_cognito_user_pool_client.server.id
+}
+
+# Cognito generates this value, so it is in state the moment the client exists;
+# exporting it adds no exposure. It goes to the server as a SecureString.
+output "server_client_secret" {
+  description = "Secret of the confidential client. Sensitive."
+  value       = aws_cognito_user_pool_client.server.client_secret
+  sensitive   = true
+}
+
 output "cognito_user_pool_arn" {
   description = "ARN of the Cognito User Pool. Consumed by the IAM module to scope AdminDeleteUser and ListUsers to this pool and no other."
   value       = aws_cognito_user_pool.pool.arn

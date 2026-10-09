@@ -218,6 +218,9 @@ module "cognito" {
 
   # Dev's pages only. The production origin belongs to the prod pool's client.
   app_origins = var.app_origins
+  # Where Google's code is returned to the server client (ADR-0011): the local
+  # server for `bun dev`, and the deployed dev API.
+  api_origins = ["http://localhost:8000", "https://${local.api_domain}"]
 
   # Turnstile on native sign-ups. Hostnames are the sign-up page's own, from
   # the same list as CORS, plus localhost for `bun --hot`; they must match the
@@ -283,6 +286,17 @@ module "compute" {
     # (skip_destroy in the guardrail module).
     BEDROCK_GUARDRAIL_ID      = module.guardrail.guardrail_id
     BEDROCK_GUARDRAIL_VERSION = module.guardrail.guardrail_version
+    # The cookie-based auth routes (ADR-0011). The server's own public origin
+    # and the hosted-UI domain build Google's authorize and callback URLs; the
+    # web origin is where a finished sign-in lands.
+    COGNITO_SERVER_CLIENT_ID = module.cognito.server_client_id
+    COGNITO_DOMAIN           = module.cognito.custom_domain
+    API_PUBLIC_ORIGIN        = "https://${local.api_domain}"
+    WEB_APP_ORIGIN           = "https://${local.web_domains[0]}"
+  }
+
+  secret_environment_variables = {
+    COGNITO_SERVER_CLIENT_SECRET = module.cognito.server_client_secret
   }
 }
 
