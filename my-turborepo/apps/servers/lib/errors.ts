@@ -1,3 +1,5 @@
+import type { AuthErrorCode } from "@repo/shared";
+
 // Thrown when a Bedrock call cannot produce a usable result — every model in
 // the fallback chain failed, or the generation came back unparseable.
 //
@@ -89,6 +91,22 @@ export class ProfileStateError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ProfileStateError";
+  }
+}
+
+// A sign-in, sign-up or MFA step failed for a reason the candidate can act on
+// (ADR-0011). Carries the stable code the client maps to copy and the HTTP
+// status to answer with; the message is for logs only and may hold Cognito's
+// own text. A dependency or configuration failure is a ServiceError instead.
+export class AuthFlowError extends Error {
+  readonly code: AuthErrorCode;
+  readonly status: number;
+
+  constructor(code: AuthErrorCode, status: number, message: string = code) {
+    super(message);
+    this.name = "AuthFlowError";
+    this.code = code;
+    this.status = status;
   }
 }
 

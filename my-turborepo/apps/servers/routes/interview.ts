@@ -9,6 +9,8 @@ import {
   SONIC,
 } from "../lib/constants";
 import { verifier } from "../lib/cognitoAuth";
+import { COOKIES, readCookie } from "../lib/authCookies";
+import { isAllowedOrigin } from "../lib/originCheck";
 import {
   ProfileStateError,
   SessionAccessError,
@@ -63,9 +65,11 @@ import {
 // long-polling fallback cannot carry duplex audio at all.
 
 const PATH = "/api/v1/interview";
-// A browser WebSocket cannot set headers, so the access token rides in the
-// subprotocol. Deliberately not a query parameter: those land in ALB access
-// logs and browser history in plain text.
+// The handshake authenticates with the access-token cookie (ADR-0011). Until
+// the web app moves over, the Amplify client still sends the token as a
+// subprotocol instead — a browser WebSocket cannot set headers, and a query
+// parameter would land in access logs and browser history. Removed with the
+// public app client.
 const AUTH_PROTOCOL_PREFIX = "bearer.";
 
 export type InterviewServerEvent =
@@ -1020,6 +1024,20 @@ export function attachInterviewSocket(server: Server): WebSocketServer {
       return;
     }
 
+    // Cross-site WebSocket hijacking. A WebSocket handshake is not subject to
+    // CORS, and once the session is a cookie the browser attaches it to a
+    // handshake ANY page opens. Without this, a hostile page could open an
+    // interview as the candidate and listen to it. Browsers always send Origin
+    // on a handshake; one outside the web app's own list is refused before
+    // anything is verified or allocated.
+    if (!isAllowedOrigin(req.headers.origin)) {
+      console.warn(
+        `[interview] refused handshake from origin ${req.headers.origin ?? "none"}`,
+      );
+      refuse(socket);
+      return;
+    }
+
     const sessionId = url.searchParams.get("sessionId");
     const protocols = (req.headers["sec-websocket-protocol"] ?? "")
       .split(",")
@@ -1027,14 +1045,19 @@ export function attachInterviewSocket(server: Server): WebSocketServer {
     const bearer = protocols.find((value) =>
       value.startsWith(AUTH_PROTOCOL_PREFIX),
     );
+    // The httpOnly cookie (ADR-0011), else the subprotocol the Amplify client
+    // still sends until the web app moves over.
+    const token =
+      readCookie(req, COOKIES.access) ??
+      bearer?.slice(AUTH_PROTOCOL_PREFIX.length);
 
-    if (sessionId === null || bearer === undefined) {
+    if (sessionId === null || token === undefined || token.length === 0) {
       refuse(socket);
       return;
     }
 
     void verifier
-      .verify(bearer.slice(AUTH_PROTOCOL_PREFIX.length))
+      .verify(token)
       .then((payload) => {
         wss.handleUpgrade(req, socket, head, (ws) => {
           alive.add(ws);

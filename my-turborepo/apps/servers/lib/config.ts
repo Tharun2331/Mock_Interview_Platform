@@ -123,7 +123,10 @@ export function resolveCorsOrigins(
         `CORS_ORIGIN allows non-https origins in production: ${insecure.join(", ")}`,
       );
     }
-    if (origins.includes("*") || origins.some((origin) => origin.includes("*"))) {
+    if (
+      origins.includes("*") ||
+      origins.some((origin) => origin.includes("*"))
+    ) {
       throw new Error("CORS_ORIGIN may not contain a wildcard in production.");
     }
   }
@@ -200,9 +203,10 @@ export const config = {
   // everything. `dynamodb` shares one count across every task through the
   // sessions table — one extra write per API request. Set it to `dynamodb`
   // before running more than one task.
-  rateLimitStore: env("RATE_LIMIT_STORE", "memory") === "dynamodb"
-    ? ("dynamodb" as const)
-    : ("memory" as const),
+  rateLimitStore:
+    env("RATE_LIMIT_STORE", "memory") === "dynamodb"
+      ? ("dynamodb" as const)
+      : ("memory" as const),
 
   // ---------------------------------------------------------------------------
   // Model spend
@@ -222,6 +226,34 @@ export const config = {
   agentRunsPerSession: Number(env("AGENT_RUNS_PER_SESSION", "8")),
   cognitoUserPoolId: requireEnv("COGNITO_USER_POOL_ID"),
   cognitoUserPoolClientId: requireEnv("COGNITO_USER_POOL_CLIENT_ID"),
+
+  // ---------------------------------------------------------------------------
+  // Cookie-based auth (ADR-0011)
+  // ---------------------------------------------------------------------------
+
+  // The confidential client the /auth routes sign in with. Not requireEnv: the
+  // Evaluator Lambda shares this module and never authenticates anyone, so it
+  // is not given them. lib/cognitoUserAuth.ts raises a ServiceError when a
+  // route needs them and they are unset.
+  cognitoServerClientId: env("COGNITO_SERVER_CLIENT_ID", ""),
+  cognitoServerClientSecret: env("COGNITO_SERVER_CLIENT_SECRET", ""),
+  // The hosted-UI domain (auth.tharunsekar.xyz in dev), host only. Google
+  // sign-in is authorised and its code exchanged there.
+  cognitoDomain: env("COGNITO_DOMAIN", ""),
+  // This API's own public origin. Google's code is returned to
+  // <origin>/api/v1/auth/google/callback, which must match the client's
+  // callback_urls exactly, so it cannot be derived from a request's Host.
+  apiPublicOrigin: env("API_PUBLIC_ORIGIN", "http://localhost:8000"),
+  // Where a finished Google sign-in, or a hosted-UI sign-out, lands.
+  webAppOrigin: env("WEB_APP_ORIGIN", "http://localhost:3000"),
+  // Secure cookies with __Host-/__Secure- prefixes. Always in production; off
+  // for local http://localhost, where not every browser stores a Secure cookie.
+  cookieSecure: isProduction() || env("COOKIE_SECURE", "") === "true",
+  // Credential-taking routes (sign-in, the TOTP step, sign-up, confirm), per
+  // IP per rateLimitWindowMs. Tighter than the API limiter because these are
+  // the routes a password-guessing script would hammer, and there is no
+  // Cognito subject to key them on yet.
+  authRateLimitMaxRequests: Number(env("AUTH_RATE_LIMIT_MAX_REQUESTS", "10")),
 
   // Which environment this process believes it is. Used as the only dimension on
   // every custom metric and to scope the admin surface in logs.

@@ -12,6 +12,16 @@
 // same world on every machine.
 process.env.COGNITO_USER_POOL_ID = "us-east-1_test000000";
 process.env.COGNITO_USER_POOL_CLIENT_ID = "testclientid0000000000000";
+// The confidential client the /auth routes use (ADR-0011). A developer's .env
+// carries the real dev secret, so these are pinned like the rest.
+process.env.COGNITO_SERVER_CLIENT_ID = "testserverclient000000000";
+process.env.COGNITO_SERVER_CLIENT_SECRET = "testserverclientsecret";
+process.env.COGNITO_DOMAIN = "auth.test.invalid";
+process.env.API_PUBLIC_ORIGIN = "http://localhost:8000";
+process.env.WEB_APP_ORIGIN = "http://localhost:3000";
+// Bare cookie names and no Secure flag, the local-development shape.
+process.env.COOKIE_SECURE = "";
+process.env.AUTH_RATE_LIMIT_MAX_REQUESTS = "10";
 process.env.SESSIONS_TABLE = "prepilot-sessions-test";
 process.env.UPLOADS_BUCKET = "prepilot-uploads-test";
 process.env.EVAL_QUEUE_URL =
