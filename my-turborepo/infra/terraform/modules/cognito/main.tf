@@ -114,25 +114,37 @@ resource "aws_route53_record" "cognito_domain" {
   }
 }
 
-# 7. App Client updated with Custom Domain Redirects & Localhost testing fallback
-resource "aws_cognito_user_pool_client" "client" {
-  name         = "web-app-client"
+# 7. The pool's only app client: confidential, used by the API alone (ADR-0011).
+#
+# The browser never talks to Cognito. Express signs candidates in, keeps the
+# tokens in httpOnly cookies, and exchanges Google's code itself, so no token
+# is ever readable by page script. A server-side client can keep a secret, so
+# a stolen authorization code or a copied client id is useless without it.
+#
+# It replaced a public SRP client that the web app used through Amplify, which
+# kept the tokens in localStorage. Deleting that client is what invalidated the
+# tokens still sitting in browsers that had used it.
+#
+# Named `server` from when the two coexisted; renaming the resource would
+# replace the client and change its id for nothing.
+resource "aws_cognito_user_pool_client" "server" {
+  name         = "api-bff-client"
   user_pool_id = aws_cognito_user_pool.pool.id
 
-  supported_identity_providers         = ["COGNITO", "Google"]
-  explicit_auth_flows                  = ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+  generate_secret = true
+
+  supported_identity_providers = ["COGNITO", "Google"]
+  # USER_PASSWORD_AUTH, not SRP. SRP exists so the password never leaves the
+  # browser; in this design the password reaches Express either way, over TLS,
+  # so server-side SRP would be extra code protecting nothing.
+  explicit_auth_flows                  = ["ALLOW_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
   allowed_oauth_flows                  = ["code"]
   allowed_oauth_flows_user_pool_client = true
-  # aws.cognito.signin.user.admin is the scope that gates every self-service
-  # Cognito API — GetUser, ChangePassword, and the whole MFA management
-  # family (AssociateSoftwareToken, SetUserMFAPreference, and by extension
-  # fetchMFAPreference/setUpTOTP/verifyTOTPSetup/updateMFAPreference in
-  # Amplify). A native sign-in (signIn(), USER_SRP_AUTH) gets it on its access
-  // token automatically; the Hosted UI / OAuth code exchange used by Google
-  // sign-in only grants what is listed here. Its absence produced
-  // "NotAuthorizedException: Access Token does not have required scopes" for
-  // every Google-authenticated candidate who opened Settings > Security — not
-  // a federated-user limitation, just this one scope never being requested.
+  # aws.cognito.signin.user.admin gates every self-service Cognito API —
+  # GetUser and the whole MFA family. A password sign-in gets it on its access
+  # token automatically; the hosted-UI code exchange behind Google sign-in only
+  # grants what is listed here. Its absence once gave every Google user
+  # "Access Token does not have required scopes" in Settings > Security.
   allowed_oauth_scopes = [
     "phone",
     "email",
@@ -141,38 +153,34 @@ resource "aws_cognito_user_pool_client" "client" {
     "aws.cognito.signin.user.admin",
   ]
 
-  # Only this environment's URLs. One client used to accept both localhost and
-  # production, so a production sign-in code could be sent to
-  # http://localhost:3000, where anything listening locally could catch it.
-  # Each environment's pool now lists its own pages and nothing else.
-  callback_urls = [for origin in var.app_origins : "${origin}/callback"]
+  # Google's code comes back to the API, not to a web page, so it never passes
+  # through page script. Sign-out lands on the web app. Only this environment's
+  # origins: a client that accepted another environment's URLs could send a
+  # production code to http://localhost, where anything listening catches it.
+  callback_urls = [for origin in var.api_origins : "${origin}/api/v1/auth/google/callback"]
   logout_urls   = var.app_origins
-  # Sign-in and password reset answer the same way whether or not the account
-  # exists. The web app already shows one message for both, but that only
-  # covered the UI: anyone calling InitiateAuth or ForgotPassword directly
-  # could tell UserNotFoundException from NotAuthorizedException and build a
-  # list of registered emails. Left unset, the API defaults to LEGACY, which
-  # reveals it. Sign-up still has to say an address is taken; that is inherent
-  # to open sign-up and is what the rate limits in Cognito bound.
+
+  # Sign-in answers the same way whether or not the account exists. Left unset,
+  # the API defaults to LEGACY, and anyone calling InitiateAuth directly could
+  # tell UserNotFoundException from NotAuthorizedException and list registered
+  # emails. Sign-up still has to say an address is taken; that is inherent to
+  # open sign-up.
   prevent_user_existence_errors = "ENABLED"
 
-  # Refresh tokens can be revoked (sign-out, account deletion). The default,
+  # Sign-out and account deletion revoke the refresh token. The default,
   # stated so it cannot be switched off unnoticed.
   enable_token_revocation = true
 
-  id_token_validity     = 1 # Valid for 1 hour
-  access_token_validity = 1 # Valid for 1 hour
-  # 7 days, not 30. Amplify keeps this token in localStorage, so it is the one a
-  # script injection would steal; the lifetime is how long that theft stays
+  id_token_validity     = 1
+  access_token_validity = 1
+  # 7 days. The token is in an httpOnly cookie, so script cannot read it, but a
+  # copied cookie jar still carries it; the lifetime is how long that stays
   # useful. A candidate who has not opened the app for a week signs in again.
-  refresh_token_validity = 7 # Valid for 7 days
+  refresh_token_validity = 7
 
   # Refresh-token rotation is deliberately NOT enabled. Cognito refuses it while
-  # ALLOW_REFRESH_TOKEN_AUTH is an allowed flow ("ALLOW_REFRESH_TOKEN_AUTH is not
-  # a permitted ExplicitAuthFlow when refresh token rotation is enabled",
-  # confirmed against dev 2026-10-01), and Amplify refreshes through exactly that
-  # flow, so enabling it would stop every session renewing after an hour.
-  # Rotation only covers the OAuth /oauth2/token refresh grant.
+  # ALLOW_REFRESH_TOKEN_AUTH is an allowed flow (confirmed against dev
+  # 2026-10-01), and the server renews sessions through exactly that flow.
 
   depends_on = [aws_cognito_identity_provider.google]
 }

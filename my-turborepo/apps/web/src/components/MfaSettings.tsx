@@ -3,13 +3,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import QRCode from "qrcode";
-import {
-  fetchMFAPreference,
-  setUpTOTP,
-  updateMFAPreference,
-  verifyTOTPSetup,
-} from "aws-amplify/auth";
 import { TotpCodeSchema, type TotpCodeInput } from "@repo/shared";
+import {
+  disableTotp,
+  fetchTotpEnabled,
+  startTotpSetup,
+  verifyTotpSetup,
+} from "@/lib/authApi";
 
 import {
   AlertDialog,
@@ -40,10 +40,10 @@ import { MESSAGES } from "@/lib/messages";
 // smaller scale: each status renders one unambiguous thing, and nothing here
 // is ever "on AND enrolling" at once.
 //
-// `setUpTOTP` runs against the CURRENT session — the candidate is already
-// signed in, so this needs no password and no email code. It is unrelated to
-// the sign-in-time TOTP challenge in signin.tsx, which runs before a session
-// exists at all and uses `confirmSignIn` instead.
+// Enrolment runs against the CURRENT session — the candidate is already signed
+// in, so this needs no password and no email code; the server authorises each
+// call with the session cookie. It is unrelated to the sign-in-time TOTP step
+// in signin.tsx, which runs before a session exists at all.
 type MfaStatus =
   | { status: "checking" }
   | { status: "off" }
@@ -77,8 +77,8 @@ export function MfaSettings() {
   const load = async (): Promise<void> => {
     setState({ status: "checking" });
     try {
-      const { preferred } = await fetchMFAPreference();
-      setState({ status: preferred === "TOTP" ? "on" : "off" });
+      const enabled = await fetchTotpEnabled();
+      setState({ status: enabled ? "on" : "off" });
     } catch (error) {
       setState({
         status: "error",
@@ -115,18 +115,15 @@ export function MfaSettings() {
 
   const startEnrolling = async (): Promise<void> => {
     try {
-      const details = await setUpTOTP();
+      // The server builds the otpauth URI: issuer "PrepPilot" (never a model
+      // or AWS service name), account label the sign-in email, which is what
+      // the candidate's password manager already calls this account.
+      const details = await startTotpSetup();
       reset();
       setState({
         status: "enrolling",
         sharedSecret: details.sharedSecret,
-        // MESSAGES.APP_NAME is the issuer shown in the authenticator app —
-        // never a model or AWS service name, per the frontend skill's naming
-        // rule, though that rule is about the interview loop rather than
-        // this screen. No account name is passed: Cognito's own default is
-        // the sign-in email, which is the label already on the candidate's
-        // password manager entry for this account.
-        setupUri: details.getSetupUri(MESSAGES.APP_NAME).toString(),
+        setupUri: details.setupUri,
       });
     } catch (error) {
       toast.error(mfaErrorMessage(error, MESSAGES.MFA_START_FAILED));
@@ -135,11 +132,10 @@ export function MfaSettings() {
 
   const onVerify = handleSubmit(async ({ code }) => {
     try {
-      await verifyTOTPSetup({ code });
-      // The write that actually turns it on. verifyTOTPSetup alone registers
-      // the device but leaves the account still checking only a password —
-      // this is the step an incomplete enrolment would be missing.
-      await updateMFAPreference({ totp: "PREFERRED" });
+      // Verifies the device AND makes TOTP the preferred method, server-side
+      // in one call: verifying alone would leave the account still checking
+      // only a password.
+      await verifyTotpSetup(code);
       setState({ status: "on" });
       toast.success(MESSAGES.MFA_ENABLED);
     } catch (error) {
@@ -150,7 +146,7 @@ export function MfaSettings() {
   const onDisable = async (): Promise<void> => {
     setDisabling(true);
     try {
-      await updateMFAPreference({ totp: "DISABLED" });
+      await disableTotp();
       setState({ status: "off" });
       setDisableOpen(false);
       toast.success(MESSAGES.MFA_DISABLED);
@@ -238,7 +234,10 @@ export function MfaSettings() {
           </p>
           <p className="text-xs text-ink-subtle">{MESSAGES.MFA_OFF_BODY}</p>
         </div>
-        <Button className="cursor-pointer" onClick={() => void startEnrolling()}>
+        <Button
+          className="cursor-pointer"
+          onClick={() => void startEnrolling()}
+        >
           {MESSAGES.MFA_ENABLE}
         </Button>
       </div>
@@ -302,7 +301,11 @@ export function MfaSettings() {
         </FieldGroup>
 
         <div className="flex flex-wrap gap-2">
-          <Button type="submit" className="cursor-pointer" disabled={isSubmitting}>
+          <Button
+            type="submit"
+            className="cursor-pointer"
+            disabled={isSubmitting}
+          >
             {isSubmitting
               ? MESSAGES.MFA_SETUP_VERIFY_PENDING
               : MESSAGES.MFA_SETUP_VERIFY}

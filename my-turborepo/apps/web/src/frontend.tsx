@@ -7,10 +7,9 @@
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { Amplify } from "aws-amplify";
 import { App } from "./App";
 import { config as configureZod } from "zod";
-import { COGNITO } from "./lib/config";
+import { clearLegacyAuthStorage } from "./lib/legacyAuthCleanup";
 
 // Before anything parses. Zod v4 probes `new Function("")` to decide whether to
 // JIT-compile its validators. The production Content-Security-Policy has no
@@ -19,26 +18,10 @@ import { COGNITO } from "./lib/config";
 // is that same fallback, chosen up front.
 configureZod({ jitless: true });
 
-// Configure Amplify once, at startup. This drives the custom email/password
-// sign-up + sign-in flow AND the Google hosted-UI redirect flow in the client
-// (Cognito stays out of the data path).
-Amplify.configure({
-  Auth: {
-    Cognito: {
-      userPoolId: COGNITO.userPoolId,
-      userPoolClientId: COGNITO.userPoolClientId,
-      loginWith: {
-        oauth: {
-          domain: COGNITO.oauth.domain,
-          scopes: [...COGNITO.oauth.scopes],
-          redirectSignIn: [...COGNITO.oauth.redirectSignIn],
-          redirectSignOut: [...COGNITO.oauth.redirectSignOut],
-          responseType: COGNITO.oauth.responseType,
-        },
-      },
-    },
-  },
-});
+// No auth library to configure: sign-in goes through the API, which keeps the
+// session in httpOnly cookies (ADR-0011). See lib/authApi.ts. What the old
+// Amplify client left in localStorage is cleared on the way in.
+clearLegacyAuthStorage();
 
 const elem = document.getElementById("root");
 if (!elem) {

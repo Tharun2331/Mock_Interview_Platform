@@ -3,10 +3,9 @@ import { PresenceOrb } from "@/components/PresenceOrb";
 import { useAuthStatus } from "@/lib/auth";
 import { MESSAGES } from "@/lib/messages";
 
-// The inverse of RequireAuth. Amplify persists tokens in localStorage, so a
-// session survives a browser restart — without this guard a returning user
-// lands on /signup still signed in, and clicking "Continue with Google" throws
-// UserAlreadyAuthenticatedException instead of signing them in.
+// The inverse of RequireAuth. The session cookie lasts 7 days and survives a
+// browser restart, so without this guard a returning user lands on /signup
+// while still signed in and is asked for a password they do not need.
 export function RedirectIfAuthenticated() {
   const status = useAuthStatus();
 

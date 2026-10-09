@@ -1,4 +1,3 @@
-import { fetchAuthSession } from "aws-amplify/auth";
 import {
   AdminAccessResponseSchema,
   AdminMetricsResponseSchema,
@@ -9,6 +8,7 @@ import {
   type MetricsWindowHours,
 } from "@repo/shared";
 import { api } from "@/lib/api";
+import { fetchMe } from "@/lib/authApi";
 import { UnexpectedResponseError } from "@/lib/profileApi";
 
 // The admin surface's three calls, each parsed against the shared schema so a
@@ -21,10 +21,11 @@ const ADMIN_METRICS_URL = "/api/v1/admin/metrics";
 
 // Whether this session's token carries the admin group.
 //
-// Read from the ACCESS token's `cognito:groups` claim, which is the same claim
-// the server's RequireAdmin checks — so the client and the server are reading one
-// value rather than two that can disagree. No network call: the token is already
-// cached by Amplify.
+// Read from GET /auth/me, which reports the ACCESS token's `cognito:groups`
+// claim — the same claim the server's RequireAdmin checks — so the client and
+// the server are reading one value rather than two that can disagree. The token
+// itself is an httpOnly cookie this page cannot read (ADR-0011), so asking the
+// server is the only way to learn it.
 //
 // **This is a rendering decision, never an authorisation one.** It exists so a
 // non-admin is not shown a nav link to a page that would 404, and so the page can
@@ -38,15 +39,8 @@ const ADMIN_METRICS_URL = "/api/v1/admin/metrics";
 // so rather than suggesting a retry.
 export async function isAdminSession(): Promise<boolean> {
   try {
-    const { tokens } = await fetchAuthSession();
-    const claim = tokens?.accessToken?.payload["cognito:groups"];
-
-    // The claim is typed as a loose JWT value, so this narrows rather than
-    // asserts. A malformed claim reads as "not an admin", which is the safe
-    // direction and costs a real admin one sign-in.
-    if (!Array.isArray(claim)) return false;
-
-    return claim.some((group) => group === ADMIN_GROUP);
+    const { groups } = await fetchMe();
+    return groups.includes(ADMIN_GROUP);
   } catch {
     // A failed session read is not an admin session. Deliberately not
     // distinguished from "signed out": RequireAuth has already established that

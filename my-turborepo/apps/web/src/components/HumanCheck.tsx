@@ -1,15 +1,22 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { useTheme } from "next-themes";
 import { TURNSTILE_SITE_KEY } from "@/lib/config";
 import { MESSAGES } from "@/lib/messages";
 
 // The sign-up form's human check: Cloudflare Turnstile.
 //
-// The web app signs up straight against Cognito, so without this anything able
-// to call Cognito's SignUp API could farm accounts — and every account gets
-// free interviews, each a billed voice stream. The widget yields a single-use
-// token; the form sends it as validationData, and the pre sign-up trigger
-// verifies it with Cloudflare (infra/terraform/modules/cognito/pre_sign_up).
+// Without this, anything able to call the sign-up route (or Cognito's SignUp
+// API directly) could farm accounts — and every account gets free interviews,
+// each a billed voice stream. The widget yields a single-use token; the form
+// sends it to the API, which passes it on as validationData, and the pre
+// sign-up trigger verifies it with Cloudflare
+// (infra/terraform/modules/cognito/pre_sign_up).
 //
 // `always`: the widget, with Cloudflare's mark, is visible from page load, so
 // the form visibly says it is protected. (It was `interaction-only` at first,
@@ -98,7 +105,9 @@ export type HumanCheck = {
 
 // State and the handler that changes it live together, so the form never
 // needs an adapter between them.
-export function useHumanCheck(siteKey: string = TURNSTILE_SITE_KEY): HumanCheck {
+export function useHumanCheck(
+  siteKey: string = TURNSTILE_SITE_KEY,
+): HumanCheck {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetId = useRef<string | undefined>(undefined);
   const { resolvedTheme } = useTheme();
@@ -176,6 +185,7 @@ export function humanCheckToken(state: HumanCheckState): {
   token: string | undefined;
 } {
   if (state.status === "ready") return { canSubmit: true, token: state.token };
-  if (state.status === "unconfigured") return { canSubmit: true, token: undefined };
+  if (state.status === "unconfigured")
+    return { canSubmit: true, token: undefined };
   return { canSubmit: false, token: undefined };
 }

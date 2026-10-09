@@ -7,12 +7,12 @@ import {
   resetProfileStub,
   setProfileState,
 } from "../helpers/profileStub";
-// The SHARED aws-amplify/auth stub. AppShell renders the Header, which reads the
-// `cognito:groups` claim through `fetchAuthSession` to decide whether to show the
-// admin link — so this file reaches Amplify even though it never mentions it.
+// The SHARED @/lib/authApi stub. AppShell renders the Header, which asks
+// GET /auth/me for the session's groups to decide whether to show the admin
+// link — so this file reaches lib/authApi even though it never mentions it.
 // Registered here as well as in Header.test.tsx because whichever of the two runs
 // FIRST is the one that decides whether the stub exists at all.
-import { resetAmplifyAuthStub } from "../helpers/amplifyAuthStub";
+import { resetAuthApiStub } from "../helpers/authApiStub";
 
 const { AppShell } = await import("@/components/layout/AppShell");
 const { MemoryRouter, Route, Routes } = await import("react-router");
@@ -45,7 +45,7 @@ function shellRoot(): HTMLElement {
 
 beforeEach(() => {
   resetProfileStub();
-  resetAmplifyAuthStub();
+  resetAuthApiStub();
   setProfileState({ status: "ready", profile: COMPLETE_PROFILE });
 });
 

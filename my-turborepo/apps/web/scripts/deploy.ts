@@ -35,7 +35,6 @@ const requireOutput = (key: string, hint = ""): string => {
   return value;
 };
 
-const userPoolId = requireOutput("cognito_user_pool_id");
 // Set whether or not the API server is running: its hostname is fixed, so the
 // site can be published while the API is switched off.
 const apiUrl = requireOutput("api_url");
@@ -43,21 +42,13 @@ const bucket = requireOutput("frontend_bucket_id");
 const distributionId = requireOutput("frontend_distribution_id");
 
 // --- Build -------------------------------------------------------------------
-// The region is the user pool id's prefix (us-east-1_xxxx), so it cannot
-// disagree with the pool it belongs to.
+// No Cognito ids: the bundle signs in through the API (ADR-0011), which is the
+// only thing that knows the pool, the client or the hosted-UI domain. That also
+// removes the old way a prod bundle could end up pointed at dev's pool.
 await $`bun run build.ts`.cwd(webDir).env({
   ...process.env,
-  BUN_PUBLIC_REGION: userPoolId.split("_")[0]!,
-  BUN_PUBLIC_COGNITO_USER_POOL_ID: userPoolId,
-  BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID: requireOutput(
-    "cognito_user_pool_client_id",
-  ),
   BUN_PUBLIC_API_URL: apiUrl,
   BUN_PUBLIC_TURNSTILE_SITE_KEY: requireOutput("turnstile_site_key"),
-  // Required, not left to config.ts's fallback: that fallback is dev's domain,
-  // so a prod bundle built without this would send Google sign-in to the dev
-  // user pool.
-  BUN_PUBLIC_COGNITO_DOMAIN: requireOutput("cognito_domain"),
 });
 
 // --- Publish -----------------------------------------------------------------

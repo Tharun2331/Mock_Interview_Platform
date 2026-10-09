@@ -9,7 +9,7 @@ const {
   widgetSize,
 } = await import("@/components/HumanCheck");
 const { MESSAGES } = await import("@/lib/messages");
-const { errorMessage, isHumanCheckRefusal } = await import("@/lib/errors");
+const { AuthApiError, errorMessage } = await import("@/lib/errors");
 
 // Turnstile's browser API, stubbed at the boundary: `render` records the
 // options it was given, so a test can play Cloudflare by calling the callbacks.
@@ -75,11 +75,17 @@ describe("the human check", () => {
 
   it("holds the form until a token arrives, then releases it with that token", async () => {
     const options = await mounted();
-    expect(humanCheckToken(latest!.state)).toEqual({ canSubmit: false, token: undefined });
+    expect(humanCheckToken(latest!.state)).toEqual({
+      canSubmit: false,
+      token: undefined,
+    });
 
     act(() => options.callback("tok-1"));
 
-    expect(humanCheckToken(latest!.state)).toEqual({ canSubmit: true, token: "tok-1" });
+    expect(humanCheckToken(latest!.state)).toEqual({
+      canSubmit: true,
+      token: "tok-1",
+    });
   });
 
   // Tokens last 300 seconds; a form left open past that must not submit a dead one.
@@ -105,7 +111,9 @@ describe("the human check", () => {
     const options = await mounted();
     act(() => options["error-callback"]());
 
-    expect(screen.getByRole("alert").textContent).toBe(MESSAGES.HUMAN_CHECK_FAILED);
+    expect(screen.getByRole("alert").textContent).toBe(
+      MESSAGES.HUMAN_CHECK_FAILED,
+    );
     expect(humanCheckToken(latest!.state).canSubmit).toBe(false);
   });
 
@@ -125,26 +133,34 @@ describe("the human check", () => {
     render(<Harness siteKey="" />);
 
     expect(rendered).toBeUndefined();
-    expect(humanCheckToken(latest!.state)).toEqual({ canSubmit: true, token: undefined });
+    expect(humanCheckToken(latest!.state)).toEqual({
+      canSubmit: true,
+      token: undefined,
+    });
   });
 });
 
 describe("a refused sign-up's message", () => {
-  function lambdaRefusal(message: string): Error {
-    const error = new Error(`PreSignUp failed with error ${message}`);
-    error.name = "UserLambdaValidationException";
-    return error;
-  }
-
-  // The trigger refuses for two reasons under one exception name. A failed human
-  // check must not send someone off to find another email address.
+  // The trigger refuses for two reasons under one Cognito exception; the server
+  // tells them apart (ADR-0011) and sends distinct codes. A failed human check
+  // must not send someone off to find another email address.
   it("tells a failed human check apart from a refused address", () => {
-    const humanCheck = lambdaRefusal("We could not confirm you are a person. Please try again.");
-    const address = lambdaRefusal("Disposable email addresses cannot be used to sign up.");
+    expect(
+      errorMessage(new AuthApiError("HUMAN_CHECK_FAILED"), "fallback"),
+    ).toBe(MESSAGES.AUTH_HUMAN_CHECK_FAILED);
+    expect(
+      errorMessage(new AuthApiError("EMAIL_NOT_ALLOWED"), "fallback"),
+    ).toBe(MESSAGES.AUTH_EMAIL_NOT_ALLOWED);
+  });
 
-    expect(isHumanCheckRefusal(humanCheck)).toBe(true);
-    expect(errorMessage(humanCheck, "fallback")).toBe(MESSAGES.AUTH_HUMAN_CHECK_FAILED);
-    expect(isHumanCheckRefusal(address)).toBe(false);
-    expect(errorMessage(address, "fallback")).toBe(MESSAGES.AUTH_EMAIL_NOT_ALLOWED);
+  // Anything the server did not explain — a network drop, a 5xx — gets the
+  // caller's own message, never a guessed one.
+  it("falls back for anything without a code", () => {
+    expect(errorMessage(new Error("Network Error"), "fallback")).toBe(
+      "fallback",
+    );
+    expect(errorMessage(new AuthApiError("FAILED"), "fallback")).toBe(
+      "fallback",
+    );
   });
 });

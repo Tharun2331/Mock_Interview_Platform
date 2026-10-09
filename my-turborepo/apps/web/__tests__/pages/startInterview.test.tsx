@@ -55,7 +55,15 @@ const post = mock(async (url: string, body?: unknown) => {
   return { data: PLAN };
 });
 
-mock.module("@/lib/api", () => ({ api: { post } }));
+// Every export of lib/api, not only `api`. mock.module is global and permanent
+// for the process, so a module loaded LATER by another file and importing
+// `authHttp` or `AUTH_PATHS` (lib/authApi does) would otherwise fail to load
+// outright, and that file's tests would silently stop existing.
+mock.module("@/lib/api", () => ({
+  api: { post },
+  authHttp: { post },
+  AUTH_PATHS: {},
+}));
 
 const { StartInterview } = await import("@/pages/startInterview");
 const { AppToaster } = await import("@/components/AppToaster");

@@ -1,4 +1,3 @@
-import { signOut } from "aws-amplify/auth";
 import { NavLink, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { CompassIcon, ShieldIcon, TrendingUpIcon } from "lucide-react";
@@ -6,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/BrandMark";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
+import { signOut } from "@/lib/authApi";
 import { errorMessage } from "@/lib/errors";
 import { useProfile } from "@/lib/profile";
 import { useIsAdmin } from "@/lib/useIsAdmin";
@@ -45,7 +45,14 @@ export function Header() {
 
   const handleSignOut = async () => {
     try {
-      await signOut();
+      const { logoutUrl } = await signOut();
+      // A Google sign-in also left a session on Cognito's hosted UI. Without
+      // ending it there too, the next "Continue with Google" signs straight
+      // back in. Cognito sends the browser back to the app afterwards.
+      if (logoutUrl !== null) {
+        window.location.assign(logoutUrl);
+        return;
+      }
       navigate("/signup", { replace: true });
     } catch (error) {
       toast.error(errorMessage(error, MESSAGES.SIGN_OUT_FAILED));

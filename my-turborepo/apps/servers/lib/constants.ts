@@ -386,3 +386,37 @@ export const PROMPT = {
   // a plan from a partial resume beats no plan at all.
   MAX_RESUME_CHARS: 4_000,
 } as const;
+
+// Cookie-based auth (ADR-0011). See lib/authCookies.ts for how these are used.
+export const AUTH = {
+  // Mount point of the auth router. The refresh, pending-TOTP and OAuth cookies
+  // are scoped under it so the browser never attaches them to any other route
+  // or to the interview WebSocket.
+  ROUTE_PREFIX: "/api/v1/auth",
+  // Lifetimes match the Cognito client's token validity: 1 hour and 7 days.
+  // A cookie outliving its token would only ever carry a rejected value.
+  ACCESS_COOKIE_MAX_AGE_MS: 60 * 60 * 1000,
+  REFRESH_COOKIE_MAX_AGE_MS: 7 * 24 * 60 * 60 * 1000,
+  // Cognito's own session for a challenge lasts 3 minutes.
+  PENDING_TOTP_MAX_AGE_MS: 3 * 60 * 1000,
+  // Long enough to sit through Google's consent screen.
+  OAUTH_STATE_MAX_AGE_MS: 10 * 60 * 1000,
+  // Bytes of randomness in the OAuth state and the PKCE verifier.
+  OAUTH_RANDOM_BYTES: 32,
+  // Cognito prefixes a federated user's username with the provider name
+  // exactly as configured — provider_name = "Google" in the cognito module —
+  // so it is `Google_1083…`, capital G. Verified against the dev pool
+  // 2026-10-09; a lowercase prefix here silently stopped every Google
+  // sign-out from ending the hosted-UI session. Compared case-insensitively
+  // anyway, since a native username is a UUID and can never collide.
+  GOOGLE_USERNAME_PREFIX: "google_",
+  OAUTH_SCOPES: "openid email profile aws.cognito.signin.user.admin",
+  // Shown as the account's issuer in an authenticator app.
+  TOTP_ISSUER: "PrepPilot",
+  // The pre sign-up Lambda refuses a failed human check and a refused address
+  // under one exception name; its message tells them apart. MUST stay in step
+  // with TURNSTILE_REFUSAL in infra/terraform/modules/cognito/pre_sign_up/index.mjs.
+  HUMAN_CHECK_REFUSAL_MARKER: "confirm you are a person",
+  // A token-endpoint call that takes longer is a stalled socket.
+  TOKEN_ENDPOINT_TIMEOUT_MS: 10_000,
+} as const;

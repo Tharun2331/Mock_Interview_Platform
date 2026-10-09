@@ -71,7 +71,7 @@ resource "aws_instance" "api" {
   }
 
   # The service reads these on its first start.
-  depends_on = [aws_ssm_parameter.env]
+  depends_on = [aws_ssm_parameter.env, aws_ssm_parameter.secret_env]
 }
 
 # No inline ingress: the only thing allowed to reach this instance is
@@ -138,6 +138,23 @@ data "aws_iam_policy_document" "host" {
     ]
   }
 
+  # SecureString entries on that same path are encrypted with the account's
+  # AWS-managed SSM key. ViaService limits the grant to decryption SSM performs
+  # on the instance's behalf, so the role cannot decrypt arbitrary ciphertext
+  # with that key directly.
+  statement {
+    sid       = "DecryptServiceEnvironment"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt"]
+    resources = [data.aws_kms_alias.ssm.target_key_arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["ssm.${local.region}.amazonaws.com"]
+    }
+  }
+
   statement {
     sid       = "PullBuild"
     effect    = "Allow"
@@ -183,5 +200,24 @@ resource "aws_ssm_parameter" "env" {
   value = each.value
 
   tags = local.common_tags
+}
+
+# The exception to "secrets are written out of band": values AWS generated
+# itself, which are in state regardless because the resource that created them
+# exports them (aws_cognito_user_pool_client.client_secret). Copying one out of
+# band would protect nothing and would go stale on every client replacement.
+# Names are not secret, only the values, hence nonsensitive() on the keys.
+resource "aws_ssm_parameter" "secret_env" {
+  for_each = toset(nonsensitive(keys(var.secret_environment_variables)))
+
+  name  = "${local.ssm_env_path}${each.key}"
+  type  = "SecureString"
+  value = var.secret_environment_variables[each.key]
+
+  tags = local.common_tags
+}
+
+data "aws_kms_alias" "ssm" {
+  name = "alias/aws/ssm"
 }
 

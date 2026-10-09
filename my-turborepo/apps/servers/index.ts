@@ -15,7 +15,10 @@ import { attachInterviewSocket } from "./routes/interview";
 import { AuthMiddleware } from "./lib/cognitoAuth";
 import { RequireAdmin } from "./lib/adminAuth";
 import { metricsMiddleware } from "./lib/metrics";
-import { apiRateLimiter } from "./lib/rateLimit";
+import { apiRateLimiter, authRateLimiter } from "./lib/rateLimit";
+import { requireAllowedOrigin } from "./lib/originCheck";
+import { AUTH } from "./lib/constants";
+import { authRouter, meRouter, mfaRouter } from "./routes/auth";
 const app = express();
 
 // Behind CloudFront, req.ip is CloudFront's VPC-origin ENI without this.
@@ -39,8 +42,32 @@ app.set("trust proxy", 1);
 app.use(metricsMiddleware);
 
 app.use(helmet());
-app.use(cors({ origin: config.corsOrigins }));
+// `credentials: true` because the session is now a cookie (ADR-0011): without
+// it the browser neither sends the cookie on the web app's cross-origin fetches
+// nor lets the page see the response. It requires an exact origin list, never
+// "*", which resolveCorsOrigins already guarantees in production.
+app.use(cors({ origin: config.corsOrigins, credentials: true }));
+// The CSRF control that cookie auth needs. Ahead of every route, including the
+// public auth routes, where it stops a hostile page signing a candidate into
+// an attacker's account. See lib/originCheck.ts.
+app.use(requireAllowedOrigin);
 app.use(express.json({ limit: config.jsonBodyLimit }));
+
+// Auth (ADR-0011). The credential-taking routes get the per-IP limiter; it is
+// mounted here rather than inside the router, like every other limiter, so the
+// router's tests exercise the handlers rather than the throttle. A mount on
+// /signin also covers /signin/totp.
+app.use(
+  [
+    `${AUTH.ROUTE_PREFIX}/signin`,
+    `${AUTH.ROUTE_PREFIX}/signup`,
+    `${AUTH.ROUTE_PREFIX}/confirm`,
+  ],
+  authRateLimiter,
+);
+app.use(AUTH.ROUTE_PREFIX, authRouter);
+app.use(`${AUTH.ROUTE_PREFIX}/me`, AuthMiddleware, meRouter);
+app.use(`${AUTH.ROUTE_PREFIX}/mfa`, AuthMiddleware, apiRateLimiter, mfaRouter);
 
 // AuthMiddleware runs first so the limiter can key on the Cognito subject
 // rather than the IP. The cost is that an unauthenticated flood still reaches

@@ -15,8 +15,16 @@ output "cognito_user_pool_id" {
 }
 
 output "cognito_user_pool_client_id" {
-  description = "The ID of the Cognito User Pool Client"
+  description = "ID of the pool's only app client, the confidential one the API signs in with (ADR-0011)"
   value       = module.cognito.cognito_user_pool_client_id
+}
+
+# For apps/servers/.env when running locally (ADR-0011). Read with
+# `terraform output -raw cognito_user_pool_client_secret`; never printed in a plan.
+output "cognito_user_pool_client_secret" {
+  description = "Secret of the app client. Sensitive."
+  value       = module.cognito.cognito_user_pool_client_secret
+  sensitive   = true
 }
 
 # Consumed by the server as UPLOADS_BUCKET. Exposed here so runtime config comes
@@ -118,9 +126,9 @@ output "api_url" {
   value       = "https://${local.api_domain}"
 }
 
-# Read by apps/web/scripts/deploy.ts as BUN_PUBLIC_COGNITO_DOMAIN.
+# COGNITO_DOMAIN in apps/servers/.env when running locally (ADR-0011).
 output "cognito_domain" {
-  description = "Hosted-UI domain the web app's Google sign-in redirects through"
+  description = "Hosted-UI domain the API's Google sign-in redirects through"
   value       = module.cognito.custom_domain
 }
 

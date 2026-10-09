@@ -17,7 +17,6 @@
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.3",
     "@repo/shared": "*",
-    "aws-amplify": "^6.19.0",
     "axios": "^1.20.0",
     "bun-plugin-tailwind": "^0.1.2",
     "class-variance-authority": "^0.7.1",

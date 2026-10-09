@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { signOut } from "aws-amplify/auth";
 import { toast } from "sonner";
 import { Trash2Icon } from "lucide-react";
 
@@ -17,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { signOut } from "@/lib/authApi";
 import { deleteAccount } from "@/lib/profileApi";
 import { transportMessage } from "@/lib/httpErrors";
 import { MESSAGES } from "@/lib/messages";
@@ -56,10 +56,12 @@ export function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
       return;
     }
 
-    // The Cognito user is gone by the time this resolves, so the tokens in this
-    // browser now authenticate nobody. signOut is still worth attempting to
-    // clear local storage, but it is expected to fail against a deleted user —
-    // and a failure here must not read as a failed deletion, which succeeded.
+    // The Cognito user is gone by the time this resolves, so the session
+    // cookies in this browser now authenticate nobody. signOut is still worth
+    // calling, because the server clears those cookies even though revoking a
+    // deleted user's token fails — and a failure here must not read as a
+    // failed deletion, which succeeded. A Google user's hosted-UI session is
+    // left to expire: its account no longer exists to sign back into.
     try {
       await signOut();
     } catch {
