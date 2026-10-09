@@ -5,12 +5,5 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 // queries) is well covered by it.
 GlobalRegistrator.register();
 
-// The build inlines these, and lib/config.ts throws on any that is absent —
-// deliberately, so a misconfigured deploy cannot boot. Anything importing
-// lib/config transitively (which is most of the app) needs them set first.
-// These three are the whole list `requirePublicEnv` guards; the OAuth domain
-// and redirect URLs are literals in that file, not environment variables.
-process.env.BUN_PUBLIC_REGION ??= "us-east-1";
-process.env.BUN_PUBLIC_COGNITO_USER_POOL_ID ??= "us-east-1_test000000";
-process.env.BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID ??=
-  "testclientid000000000000";
+// No Cognito variables to pin any more: the bundle has none (ADR-0011), so
+// lib/config.ts throws on nothing at import.

@@ -1,13 +1,13 @@
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import type { NextFunction, Request, Response } from "express";
+import { readAccessToken } from "./authCookies";
 import { config } from "./config";
 import { MESSAGES } from "./messages";
 import { recordAuthFailure } from "./metrics";
 
 // Exported so the WebSocket upgrade handler verifies against the same JWKS
-// cache rather than standing up a second verifier. A browser WebSocket cannot
-// send an Authorization header, so that path reads the token from the
-// handshake's subprotocol instead — different transport, same trust decision.
+// cache rather than standing up a second verifier. Same trust decision, read
+// from the handshake's cookie instead of a request's.
 export const verifier = CognitoJwtVerifier.create({
   userPoolId: config.cognitoUserPoolId,
   tokenUse: "access",
@@ -19,15 +19,13 @@ export const AuthMiddleware = async (
   res: Response,
   next: NextFunction,
 ) => {
-  // 1. Extract token from the Authorization header (Format: Bearer <token>)
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  // 1. The access token, from its httpOnly cookie (ADR-0011).
+  const token = readAccessToken(req);
+  if (token === undefined) {
     recordAuthFailure();
     res.status(401).json({ error: MESSAGES.UNAUTHORIZED_MISSING_TOKEN });
     return;
   }
-
-  const token = authHeader.slice("Bearer ".length);
 
   try {
     // 2. Verify the token

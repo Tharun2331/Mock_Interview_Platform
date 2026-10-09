@@ -1,4 +1,4 @@
-import { fetchAuthSession } from "aws-amplify/auth";
+import { fetchMe } from "@/lib/authApi";
 import { BACKEND_URL } from "@/lib/config";
 
 // Client for the interview WebSocket.
@@ -59,20 +59,22 @@ export type InterviewSocket = {
 export async function openInterviewSocket(
   args: InterviewSocketArgs,
 ): Promise<InterviewSocket> {
-  const session = await fetchAuthSession();
-  const token = session.tokens?.accessToken.toString();
-  if (token === undefined) throw new Error("No access token");
+  // The handshake authenticates with the access-token cookie, which the
+  // browser attaches by itself (ADR-0011). A handshake cannot be refreshed and
+  // replayed the way an API call can — and a refused one arrives as a bare
+  // dropped connection, indistinguishable from the network failing — so the
+  // session is confirmed first: /auth/me renews a lapsed access token on the
+  // way, and rejects if the session is over.
+  await fetchMe();
 
   const url = new URL(BACKEND_URL);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.pathname = "/api/v1/interview";
   url.searchParams.set("sessionId", args.sessionId);
 
-  // The token travels as a WebSocket subprotocol because a browser WebSocket
-  // cannot set headers. Deliberately not a query parameter: those are recorded
-  // in ALB access logs and browser history in plain text, and this one grants
-  // an authenticated session.
-  const socket = new WebSocket(url, [`bearer.${token}`]);
+  // No token in the URL or a subprotocol: the cookie is the credential, and
+  // page script never holds it.
+  const socket = new WebSocket(url);
   socket.binaryType = "arraybuffer";
 
   await new Promise<void>((resolve, reject) => {

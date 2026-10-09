@@ -11,6 +11,10 @@ import { mock } from "bun:test";
 // will hijack it — the real verifier will never load. Whoever writes that file
 // must stub `aws-jwt-verify` instead, or move this stub behind a flag first.
 //
+// The cookie and Bearer reading lives in lib/authCookies.ts, outside this
+// module, so the upgrade handler's real token-selection logic runs under this
+// stub; only the verification itself is replaced.
+//
 // Only routes/interview.ts reads `verifier` directly. Every HTTP route is
 // mounted by testApp.ts without the middleware chain, so `AuthMiddleware` is
 // re-exported here purely so this module keeps the same shape as the real one

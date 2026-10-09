@@ -12,7 +12,7 @@ output "cognito_user_pool_client_id" {
 }
 
 output "cognito_domain" {
-  description = "Hosted-UI domain the web app's Google sign-in redirects through"
+  description = "Hosted-UI domain the API's Google sign-in redirects through"
   value       = module.cognito.custom_domain
 }
 

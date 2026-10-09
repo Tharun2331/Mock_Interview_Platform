@@ -9,6 +9,8 @@ import {
   SONIC,
 } from "../lib/constants";
 import { verifier } from "../lib/cognitoAuth";
+import { readAccessToken } from "../lib/authCookies";
+import { isAllowedOrigin } from "../lib/originCheck";
 import {
   ProfileStateError,
   SessionAccessError,
@@ -62,11 +64,11 @@ import {
 // second billable Sonic stream with no memory of the conversation, and its
 // long-polling fallback cannot carry duplex audio at all.
 
+// The handshake authenticates with the access-token cookie, which the browser
+// attaches by itself (ADR-0011). The token used to ride in a `bearer.`
+// subprotocol, because a browser WebSocket cannot set headers; that path went
+// with the Amplify client, and a subprotocol is no longer read.
 const PATH = "/api/v1/interview";
-// A browser WebSocket cannot set headers, so the access token rides in the
-// subprotocol. Deliberately not a query parameter: those land in ALB access
-// logs and browser history in plain text.
-const AUTH_PROTOCOL_PREFIX = "bearer.";
 
 export type InterviewServerEvent =
   | {
@@ -137,18 +139,19 @@ export function isInterruptionSentinel(content: string): boolean {
 // off a hand-written handshake: a minimal `server.on("upgrade", (_, socket) =>
 // socket.end("HTTP/1.1 401 ..."))` delivers nothing either. Bun's `node:http`
 // fires the upgrade event but does not flush writes made to the raw socket, so
-// every refusal — expired token, missing session id, missing subprotocol —
-// arrives at the browser as a dropped connection carrying no status.
+// every refusal — expired token, missing session id, missing cookie, foreign
+// origin — arrives at the browser as a dropped connection carrying no status.
 //
 // `end()` rather than the original `write()` + `destroy()` regardless: destroy
 // discards anything still buffered, so that pair is racy wherever it DOES work.
 // This costs nothing and is correct under Node, which is what a future move off
 // Bun's http shim would restore.
 //
-// The consequence worth knowing: the client cannot currently distinguish "your
-// session expired, sign in again" from "the network dropped". Closing that gap
-// needs a different channel — a pre-flight HTTP call before the upgrade, or a
-// close frame after accepting it — not a different write here.
+// The consequence worth knowing: a refusal alone cannot tell the client "your
+// session expired" from "the network dropped". The web client closes most of
+// that gap with a pre-flight GET /auth/me before every handshake
+// (apps/web/src/lib/interviewSocket.ts), which renews a lapsed token and fails
+// clearly on an ended session, so an expired cookie rarely reaches this path.
 function refuse(socket: Duplex): void {
   socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
 }
@@ -1020,21 +1023,30 @@ export function attachInterviewSocket(server: Server): WebSocketServer {
       return;
     }
 
-    const sessionId = url.searchParams.get("sessionId");
-    const protocols = (req.headers["sec-websocket-protocol"] ?? "")
-      .split(",")
-      .map((value) => value.trim());
-    const bearer = protocols.find((value) =>
-      value.startsWith(AUTH_PROTOCOL_PREFIX),
-    );
+    // Cross-site WebSocket hijacking. A WebSocket handshake is not subject to
+    // CORS, and once the session is a cookie the browser attaches it to a
+    // handshake ANY page opens. Without this, a hostile page could open an
+    // interview as the candidate and listen to it. Browsers always send Origin
+    // on a handshake; one outside the web app's own list is refused before
+    // anything is verified or allocated.
+    if (!isAllowedOrigin(req.headers.origin)) {
+      console.warn(
+        `[interview] refused handshake from origin ${req.headers.origin ?? "none"}`,
+      );
+      refuse(socket);
+      return;
+    }
 
-    if (sessionId === null || bearer === undefined) {
+    const sessionId = url.searchParams.get("sessionId");
+    const token = readAccessToken(req);
+
+    if (sessionId === null || token === undefined) {
       refuse(socket);
       return;
     }
 
     void verifier
-      .verify(bearer.slice(AUTH_PROTOCOL_PREFIX.length))
+      .verify(token)
       .then((payload) => {
         wss.handleUpgrade(req, socket, head, (ws) => {
           alive.add(ws);

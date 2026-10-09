@@ -2,7 +2,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
-import { signUp, signIn, signInWithRedirect } from "aws-amplify/auth";
 import { SignupSchema, type SignupInput } from "@repo/shared";
 
 import {
@@ -31,7 +30,8 @@ import {
   humanCheckToken,
   useHumanCheck,
 } from "@/components/HumanCheck";
-import { errorMessage, isAlreadyAuthenticated } from "@/lib/errors";
+import { signUp, startGoogleSignIn } from "@/lib/authApi";
+import { errorMessage } from "@/lib/errors";
 import { MESSAGES } from "@/lib/messages";
 
 // The confirm page sends a corrected address back here so the user does not have
@@ -65,22 +65,15 @@ export function Signup() {
 
   const onSubmit = handleSubmit(async (values) => {
     try {
-      const { nextStep } = await signUp({
-        username: values.email,
+      const next = await signUp({
+        email: values.email,
         password: values.password,
-        // Cognito holds the pending session, so the confirm page can complete
-        // sign-in by calling autoSignIn() — no password needs to travel there.
-        options: {
-          userAttributes: { email: values.email },
-          autoSignIn: true,
-          // Handed to the pre sign-up trigger, which verifies it with
-          // Cloudflare. validationData is never stored on the user.
-          validationData:
-            token === undefined ? undefined : { turnstileToken: token },
-        },
+        // The server hands it to the pre sign-up trigger, which verifies it
+        // with Cloudflare. It is never stored on the user.
+        turnstileToken: token,
       });
 
-      if (nextStep.signUpStep === "CONFIRM_SIGN_UP") {
+      if (next === "CONFIRM_SIGN_UP") {
         toast.info(MESSAGES.AUTH_CODE_SENT);
         // Only the email is handed over, and only via in-memory router state.
         // The password is deliberately NOT passed — history state is readable
@@ -89,9 +82,14 @@ export function Signup() {
         return;
       }
 
-      if (nextStep.signUpStep === "DONE") {
-        await signIn({ username: values.email, password: values.password });
+      // The server signs in itself when a sign-up needs no confirmation, which
+      // this pool never does today; handled so it cannot strand anyone.
+      if (next === "DONE") {
         navigate("/form");
+        return;
+      }
+      if (next === "TOTP") {
+        navigate("/signin");
       }
     } catch (error) {
       toast.error(errorMessage(error, MESSAGES.AUTH_SIGNUP_FAILED));
@@ -100,22 +98,6 @@ export function Signup() {
       humanCheck.reset();
     }
   });
-
-  // Kicks off the Cognito hosted-UI redirect to Google. On return, the browser
-  // lands on /callback where Amplify finishes the token exchange.
-  async function handleGoogle() {
-    try {
-      await signInWithRedirect({ provider: "Google" });
-    } catch (error) {
-      // A session already exists (e.g. another tab signed in). Nothing is
-      // wrong — send the user where the redirect would have taken them.
-      if (isAlreadyAuthenticated(error)) {
-        navigate("/form", { replace: true });
-        return;
-      }
-      toast.error(errorMessage(error, MESSAGES.AUTH_GOOGLE_FAILED));
-    }
-  }
 
   return (
     <AuthLayout>
@@ -132,7 +114,7 @@ export function Signup() {
             type="button"
             variant="outline"
             className="w-full"
-            onClick={handleGoogle}
+            onClick={startGoogleSignIn}
           >
             <GoogleIcon className="size-4" />
             {MESSAGES.CONTINUE_WITH_GOOGLE}

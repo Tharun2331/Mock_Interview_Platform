@@ -5,6 +5,14 @@ export const MESSAGES = {
   INVALID_PLAN_BODY: "Invalid request body",
   UNAUTHORIZED_MISSING_TOKEN: "Unauthorized: missing or malformed token",
   UNAUTHORIZED_INVALID_TOKEN: "Unauthorized: invalid token",
+  // Log-facing (ADR-0011). Clients receive AuthErrorCode values, not these.
+  AUTH_NOT_CONFIGURED:
+    "Cookie auth is not configured: COGNITO_USER_POOL_CLIENT_SECRET and COGNITO_DOMAIN are required.",
+  AUTH_COGNITO_FAILED: "Cognito auth call failed.",
+  AUTH_TOKEN_EXCHANGE_FAILED: "The hosted-UI token exchange failed.",
+  AUTH_UNEXPECTED_CHALLENGE:
+    "Cognito returned a challenge this app does not handle.",
+  ORIGIN_REFUSED: "Request refused: origin not allowed.",
   RATE_LIMITED: "Too many requests. Wait a moment and try again.",
   // Client-facing spend refusals. Both are 429s: the request was fine, the
   // account has spent what it may spend, and waiting (until tomorrow, or for a

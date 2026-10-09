@@ -67,6 +67,11 @@ variable "app_origins" {
   description = "Origins the web app is served from in THIS environment, without a trailing slash, e.g. [\"http://localhost:3000\"] for dev or [\"https://preppilot.tharunsekar.xyz\"] for prod. Each becomes an allowed sign-in callback (<origin>/callback) and sign-out URL. Never list another environment's origin here."
 }
 
+variable "api_origins" {
+  type        = list(string)
+  description = "Origins the API is served from in THIS environment, without a trailing slash, e.g. [\"http://localhost:8000\", \"https://api-dev.tharunsekar.xyz\"]. Each becomes an allowed Google sign-in callback (<origin>/api/v1/auth/google/callback) on the server client. Never list another environment's origin here."
+}
+
 variable "block_plus_addressing" {
   type        = bool
   description = "Refuse native sign-ups whose address has a + tag (name+1@example.com). Every tag lands in one inbox, so leaving it open lets one mailbox create unlimited accounts, each with its own free interviews."

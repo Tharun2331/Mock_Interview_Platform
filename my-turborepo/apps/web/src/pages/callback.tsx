@@ -1,43 +1,37 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
-import { Hub } from "aws-amplify/utils";
-import { getCurrentUser } from "aws-amplify/auth";
 import { PresenceOrb } from "@/components/PresenceOrb";
-import { errorMessage } from "@/lib/errors";
+import { completeGoogleSignIn } from "@/lib/authApi";
 import { MESSAGES } from "@/lib/messages";
 
-// Landing route for the Cognito hosted-UI redirect (matches the client's
-// `callback_urls`). Amplify parses the `?code=` and exchanges it for tokens on
-// load, emitting Hub `auth` events when it finishes. We wait for those and then
-// route the user into the app.
+// Where a Google sign-in lands (ADR-0011). By the time the browser is here the
+// server has already exchanged Google's code and set the session cookies — the
+// code never reached this page. All that is left is to confirm the session
+// exists, tell AuthProvider, and go into the app.
+//
+// A failed or refused Google sign-in does not land here; the server sends it
+// to /signin?error=google instead. Reaching this page without a session (a
+// bookmark, a stale tab) is treated the same way.
 export function Callback() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const unsubscribe = Hub.listen("auth", ({ payload }) => {
-      switch (payload.event) {
-        case "signInWithRedirect":
-          navigate("/form", { replace: true });
-          break;
-        case "signInWithRedirect_failure":
-          toast.error(MESSAGES.AUTH_GOOGLE_FAILED);
-          navigate("/signup", { replace: true });
-          break;
-      }
-    });
+    let active = true;
 
-    // The exchange may have already completed before this listener attached
-    // (e.g. fast reload), so check for an existing session as a fallback.
-    getCurrentUser()
-      .then(() => navigate("/form", { replace: true }))
-      .catch((error) => {
-        // No session yet — the Hub listener above will drive navigation once
-        // the redirect exchange resolves. A hard failure is surfaced there.
-        void errorMessage(error, "");
+    completeGoogleSignIn()
+      .then(() => {
+        if (active) navigate("/form", { replace: true });
+      })
+      .catch(() => {
+        if (!active) return;
+        toast.error(MESSAGES.AUTH_GOOGLE_FAILED);
+        navigate("/signin", { replace: true });
       });
 
-    return unsubscribe;
+    return () => {
+      active = false;
+    };
   }, [navigate]);
 
   return (

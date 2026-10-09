@@ -1,11 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 // The SHARED stubs, not local mock.module calls. Each of these modules is
 // registered exactly once for the whole process — see the helpers' headers.
 import {
-  resetAmplifyAuthStub,
-  setAmplifyGroups,
-} from "../helpers/amplifyAuthStub";
+  resetAuthApiStub,
+  setSessionGroups,
+  signOut,
+} from "../helpers/authApiStub";
 import {
   COMPLETE_PROFILE as COMPLETE,
   resetProfileStub,
@@ -15,19 +22,22 @@ import {
 
 const { Header } = await import("@/components/layout/Header");
 const { MESSAGES } = await import("@/lib/messages");
-const { MemoryRouter } = await import("react-router");
+const { MemoryRouter, Route, Routes } = await import("react-router");
 
 function renderHeader(path = "/start") {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <Header />
+      <Routes>
+        <Route path="*" element={<Header />} />
+        <Route path="/signup" element={<p>sign-up page</p>} />
+      </Routes>
     </MemoryRouter>,
   );
 }
 
 beforeEach(() => {
   resetProfileStub();
-  resetAmplifyAuthStub();
+  resetAuthApiStub();
 });
 
 afterEach(cleanup);
@@ -159,20 +169,54 @@ describe("the rest of the header", () => {
   });
 });
 
+describe("signing out", () => {
+  it("lands a password session on the sign-up page", async () => {
+    setProfileState({ status: "ready", profile: COMPLETE });
+    renderHeader();
+
+    fireEvent.click(screen.getByRole("button", { name: MESSAGES.SIGN_OUT }));
+
+    expect(await screen.findByText("sign-up page")).toBeDefined();
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  // A Google sign-in also left a session on Cognito's hosted UI; skipping its
+  // logout URL means the next "Continue with Google" signs straight back in.
+  it("sends a Google session through the hosted-UI logout", async () => {
+    const assign = spyOn(window.location, "assign").mockImplementation(
+      () => {},
+    );
+    signOut.mockImplementationOnce(async () => ({
+      logoutUrl: "https://auth.example/logout?client_id=x",
+    }));
+    setProfileState({ status: "ready", profile: COMPLETE });
+    renderHeader();
+
+    fireEvent.click(screen.getByRole("button", { name: MESSAGES.SIGN_OUT }));
+
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith(
+        "https://auth.example/logout?client_id=x",
+      ),
+    );
+    assign.mockRestore();
+  });
+});
+
 // The admin link, and the reason this block exists at all.
 //
-// Header reads the `cognito:groups` claim through `fetchAuthSession` to decide
-// whether to render it. When that import was added, the shared amplify stub
-// exported only `signOut`, so this whole FILE stopped loading on Linux CI with
-// "Export named 'fetchAuthSession' not found" — nine tests silently ceased to
-// exist while the suite still reported green, and it passed on Windows because
-// the mock key does not match there.
+// Header learns the session's groups from GET /auth/me (fetchMe). When it first
+// read them — through Amplify's `fetchAuthSession`, before ADR-0011 — the shared
+// stub exported only `signOut`, so this whole FILE stopped loading on Linux CI
+// with "Export named 'fetchAuthSession' not found": nine tests silently ceased
+// to exist while the suite still reported green, and it passed on Windows
+// because the mock key does not match there.
 //
 // These tests are what make that impossible to repeat quietly: they fail if the
-// stub loses `fetchAuthSession`, rather than vanishing along with the file.
+// stub loses `fetchMe`, rather than vanishing along with the file.
 describe("the admin link", () => {
   it("is hidden for a candidate who is not in the admin group", async () => {
-    setAmplifyGroups([]);
+    setSessionGroups([]);
     setProfileState({ status: "ready", profile: COMPLETE });
     renderHeader();
 
@@ -184,7 +228,7 @@ describe("the admin link", () => {
   });
 
   it("appears for a member of the admin group", async () => {
-    setAmplifyGroups(["admins"]);
+    setSessionGroups(["admins"]);
     setProfileState({ status: "ready", profile: COMPLETE });
     renderHeader();
 
@@ -196,7 +240,7 @@ describe("the admin link", () => {
     // Gated on the group claim alone, NOT on `showHistory`. An operator has no
     // reason to have uploaded a resume, and tying the two would hide the admin
     // link from exactly the person who needs it.
-    setAmplifyGroups(["admins"]);
+    setSessionGroups(["admins"]);
     setProfileState({ status: "ready", profile: null });
     renderHeader();
 

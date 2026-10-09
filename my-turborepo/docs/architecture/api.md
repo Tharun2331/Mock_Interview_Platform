@@ -9,10 +9,26 @@ streamed audio frames.
 
 ## 1. What exists today
 
-On `dev`. Every route below `/api/v1` is behind Cognito JWT verification and
-the per-user rate limiter.
+On `dev`. Every route below `/api/v1` except the public auth routes is behind
+Cognito JWT verification and the per-user rate limiter.
 
 ```
+# Auth (ADR-0011). Public; answers set httpOnly cookies, never a token.
+POST   /api/v1/auth/signin          { email, password } -> { next: DONE|TOTP|CONFIRM_SIGN_UP }
+POST   /api/v1/auth/signin/totp     { code }            -> { next }   (pending sign-in in a cookie)
+POST   /api/v1/auth/signup          { email, password, turnstileToken? } -> { next }
+POST   /api/v1/auth/confirm         { email, code }     204; does not sign in
+POST   /api/v1/auth/refresh         no body             204, new access cookie; 401 ends the session
+POST   /api/v1/auth/signout         no body             -> { logoutUrl: string | null }
+GET    /api/v1/auth/google          302 to Google through Cognito's hosted UI (state + PKCE)
+GET    /api/v1/auth/google/callback 302 to <web>/callback, or <web>/signin?error=google
+# Auth, signed in
+GET    /api/v1/auth/me              -> { id, username, groups }
+GET    /api/v1/auth/mfa             -> { enabled }
+POST   /api/v1/auth/mfa/totp/setup  -> { sharedSecret, setupUri }
+POST   /api/v1/auth/mfa/totp/verify { code }  204, and TOTP becomes preferred
+DELETE /api/v1/auth/mfa/totp        204
+
 GET    /api/v1/profile              -> { profile: ProfileView | null }
 PUT    /api/v1/profile              { username, firstName, lastName }
 POST   /api/v1/profile/resume       multipart: resume (PDF), gitHub?
@@ -29,9 +45,14 @@ GET    /api/v1/sessions/:sessionId/evaluation
                                     -> { status, completed, total, averages?,
                                          evaluations[], role? }
 
-WS     /            access token in the WebSocket subprotocol, verified during
-                    the HTTP upgrade
+WS     /api/v1/interview?sessionId=…   access-token cookie and an allowed
+                    Origin, both checked during the HTTP upgrade
 ```
+
+Auth failures answer `{ code }`, a stable `AuthErrorCode` from `@repo/shared`
+(`INVALID_CREDENTIALS`, `CODE_INVALID`, `SIGNIN_EXPIRED`, …), never Cognito's
+own text. An unknown email and a wrong password are the same code and the same
+bytes. The web app owns the copy each code maps to.
 
 `GET /sessions/:sessionId/evaluation` is the first route built on the
 `/api/v1/sessions` shape §3 has always specified, rather than the flat shape
@@ -72,11 +93,19 @@ this section is the one that matches the code.
 
 ## 2. Conventions
 
-**Auth.** Every route except `/health` requires
-`Authorization: Bearer <cognito-jwt>`. The `requireAuth` middleware verifies
-the token against Cognito's JWKS (cached in memory) and attaches the verified
-`sub` to the request. **Never trust a user id from a request body or path
-parameter** — always the token claim.
+**Auth.** Every route except `/health` and the public auth routes requires the
+access-token cookie (`pp_at`, `__Host-pp_at` in production), httpOnly and
+`SameSite=Strict` — see [ADR-0011](../adr/0011-httponly-cookie-sessions.md).
+An `Authorization` header is not read. `AuthMiddleware` verifies the token
+against Cognito's JWKS (cached in memory) and attaches the verified `sub` to
+the request. **Never trust a user id from a request body or path parameter**
+— always the token claim. A 401 means the access token lapsed or the session
+ended; the client calls `POST /auth/refresh` once and replays.
+
+**CSRF.** Because the browser attaches the cookie itself, every
+state-changing request must carry an `Origin` in the CORS allowlist or have
+none at all (a non-browser client, which holds no candidate's cookie).
+`lib/originCheck.ts` refuses the rest with 403.
 
 **Validation.** Every body, query, and path parameter is parsed with a Zod
 schema before the handler runs. Parse failure is `400`, never `411` or `422`.
@@ -233,9 +262,14 @@ header — browser `WebSocket` cannot set `Authorization`. The client calls
 then connects with `?ticket=<value>`. **Not implemented, and the ticket store
 it assumed no longer exists** — see
 [ADR-0006](../adr/0006-drop-redis-dynamodb-alone.md). The implemented handshake
-verifies the access token from the WebSocket subprotocol during the HTTP
-upgrade, which is the only point where a handshake can be rejected before a
-socket exists.
+verifies the access-token cookie, which the browser attaches by itself, during
+the HTTP upgrade — the only point where a handshake can be rejected before a
+socket exists. It checks `Origin` first: a handshake is not subject to CORS,
+and without that check any page could open an interview as the candidate
+(cross-site WebSocket hijacking). The client calls `GET /auth/me` just before
+connecting, which renews a lapsed token, because a refused upgrade arrives as a
+bare dropped connection. Until ADR-0011 the token rode in a `bearer.`
+subprotocol; that path is gone.
 
 Passing the JWT itself as a query parameter would put a long-lived credential
 into ALB access logs and browser history. The ticket expires in 60 seconds and

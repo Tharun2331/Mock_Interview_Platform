@@ -20,7 +20,8 @@ export const cognitoAdminClient = new CognitoIdentityProviderClient({
 //
 // Takes the Cognito *username*, not the `sub`. They are the same string for a
 // plain sign-up and very much not for a federated one, where the username looks
-// like `google_10937...`. The access token carries both — AuthMiddleware puts
+// like `Google_10937...` (the provider name as configured, capital G). The
+// access token carries both — AuthMiddleware puts
 // the sub on `req.user.id` and the username on `req.user.username` — so the
 // caller has to pass the right one rather than reusing the id that keys every
 // DynamoDB item.

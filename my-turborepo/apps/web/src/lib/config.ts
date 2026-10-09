@@ -33,70 +33,7 @@ export const TURNSTILE_SITE_KEY: string =
 // client's timeout is only ever the last resort.
 export const API_TIMEOUT_MS = 120_000;
 
-// Cognito user pool — public client values, safe to ship to the browser
-// (the app client has no secret; it uses SRP). Mirror these from the
-// Terraform `cognito` module outputs whenever the pool is re-provisioned.
-//
-// `oauth` drives the hosted-UI redirect flow used for social sign-in (Google).
-// `domain` is the pool's custom auth domain (`aws_acm_custom_domain` in the
-// cognito module). The redirects are this page's own origin: each
-// environment's app client lists only its own callback URLs, so the bundle
-// needs no list of every environment, and Cognito's allowlist stays the
-// control over where a sign-in code may be sent.
-// Bun's bundler inlines these at build time. A missing var becomes the empty
-// string, which would configure Amplify with an empty pool id and turn every
-// auth call into an obscure runtime failure — so fail loudly at startup instead,
-// the same way the server's `requireEnv` does.
-// Where this bundle is being served from. Guarded because tests and tooling
-// can import this module without a browser window.
-const APP_ORIGIN: string =
-  typeof window === "undefined" ? "" : window.location.origin;
-
-const requirePublicEnv = (key: string, value: string | undefined): string => {
-  if (!value) {
-    throw new Error(
-      `Missing required build-time variable: ${key}. ` +
-        `Set it before running the build — see apps/web/build.ts.`,
-    );
-  }
-  return value;
-};
-
-export const COGNITO = {
-  region: requirePublicEnv("BUN_PUBLIC_REGION", process.env.BUN_PUBLIC_REGION),
-  userPoolId: requirePublicEnv(
-    "BUN_PUBLIC_COGNITO_USER_POOL_ID",
-    process.env.BUN_PUBLIC_COGNITO_USER_POOL_ID,
-  ),
-  userPoolClientId: requirePublicEnv(
-    "BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID",
-    process.env.BUN_PUBLIC_COGNITO_USER_POOL_CLIENT_ID,
-  ),
-  oauth: {
-    // Per environment, since each pool has its own hosted-UI domain. The
-    // default is dev's.
-    domain:
-      process.env.BUN_PUBLIC_COGNITO_DOMAIN !== undefined &&
-      process.env.BUN_PUBLIC_COGNITO_DOMAIN.length > 0
-        ? process.env.BUN_PUBLIC_COGNITO_DOMAIN
-        : "auth.tharunsekar.xyz",
-    // aws.cognito.signin.user.admin is requested here as well as allowed on
-    // the app client (infra/terraform/modules/cognito): Cognito only grants a
-    // scope that was BOTH allowed on the client and asked for in this
-    // redirect's `scope` parameter, so listing it on one side alone still
-    // issues a token missing it. Without it, every self-service Cognito call
-    // — GetUser, and the whole MFA family — fails with "Access Token does not
-    // have required scopes" for anyone who signed in through Google, no
-    // matter how many times they sign out and back in.
-    scopes: [
-      "email",
-      "openid",
-      "profile",
-      "phone",
-      "aws.cognito.signin.user.admin",
-    ],
-    redirectSignIn: [`${APP_ORIGIN}/callback`],
-    redirectSignOut: [APP_ORIGIN],
-    responseType: "code",
-  },
-} as const;
+// No Cognito configuration lives here any more (ADR-0011). The bundle never
+// talks to Cognito: sign-in, Google's redirect and the session all go through
+// the API, which keeps the tokens in httpOnly cookies. The pool, the client and
+// the hosted-UI domain are the server's configuration alone.
