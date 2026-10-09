@@ -7,7 +7,7 @@ export const MESSAGES = {
   UNAUTHORIZED_INVALID_TOKEN: "Unauthorized: invalid token",
   // Log-facing (ADR-0011). Clients receive AuthErrorCode values, not these.
   AUTH_NOT_CONFIGURED:
-    "Cookie auth is not configured: COGNITO_SERVER_CLIENT_ID, COGNITO_SERVER_CLIENT_SECRET and COGNITO_DOMAIN are required.",
+    "Cookie auth is not configured: COGNITO_USER_POOL_CLIENT_SECRET and COGNITO_DOMAIN are required.",
   AUTH_COGNITO_FAILED: "Cognito auth call failed.",
   AUTH_TOKEN_EXCHANGE_FAILED: "The hosted-UI token exchange failed.",
   AUTH_UNEXPECTED_CHALLENGE:

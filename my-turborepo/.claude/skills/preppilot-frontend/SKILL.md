@@ -20,7 +20,7 @@ A screen can be both — the first-run empty state is an app screen doing identi
 
 - React is bundled with **`Bun.build()` and `bun-plugin-tailwind`**. There is no Vite. Never write `vite.config.ts`, `import.meta.env`, or reference a Vite plugin.
 - **shadcn/ui** over Tailwind. Extend the CSS-variable layer; never introduce a second component library or a CSS-in-JS runtime.
-- **Cognito via Amplify**. Auth has four renderable conditions: bootstrapping, signed out, signed in, and expired-mid-session. The last one is the one that will hit during a 20-minute interview.
+- **Cognito through the API, never Amplify** (ADR-0011). The session is an httpOnly cookie the page cannot read; every auth action goes through `lib/authApi.ts`, and no code in `apps/web` may hold, store or parse a token. Auth has four renderable conditions: bootstrapping, signed out, signed in, and expired-mid-session. The last one is the one that will hit during a 20-minute interview — `lib/api.ts` refreshes once on a 401, and a failed refresh flips AuthProvider to signed out.
 - Types come from **`packages/shared`** as Zod schemas. Derive UI props with `z.infer` rather than hand-writing duplicates. Before importing a schema, confirm it exists — if it doesn't, define it in `packages/shared` first. The UI requirement is often what reveals a missing field.
 - Tests are **Jest**.
 

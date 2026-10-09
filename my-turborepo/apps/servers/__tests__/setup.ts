@@ -12,10 +12,9 @@
 // same world on every machine.
 process.env.COGNITO_USER_POOL_ID = "us-east-1_test000000";
 process.env.COGNITO_USER_POOL_CLIENT_ID = "testclientid0000000000000";
-// The confidential client the /auth routes use (ADR-0011). A developer's .env
-// carries the real dev secret, so these are pinned like the rest.
-process.env.COGNITO_SERVER_CLIENT_ID = "testserverclient000000000";
-process.env.COGNITO_SERVER_CLIENT_SECRET = "testserverclientsecret";
+// The client's secret (ADR-0011). A developer's .env carries the real dev
+// secret, so it is pinned like the rest.
+process.env.COGNITO_USER_POOL_CLIENT_SECRET = "testclientsecret";
 process.env.COGNITO_DOMAIN = "auth.test.invalid";
 process.env.API_PUBLIC_ORIGIN = "http://localhost:8000";
 process.env.WEB_APP_ORIGIN = "http://localhost:3000";

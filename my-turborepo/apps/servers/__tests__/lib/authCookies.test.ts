@@ -48,15 +48,15 @@ describe("readAccessToken", () => {
     ).toBe("tok");
   });
 
-  it("falls back to a Bearer header during the transition", () => {
+  // The Bearer path went with the Amplify client (ADR-0011). A token lifted
+  // from anywhere else must not have a second way in.
+  it("ignores an Authorization header entirely", () => {
     expect(
       readAccessToken({ headers: { authorization: "Bearer header-tok" } }),
-    ).toBe("header-tok");
+    ).toBeUndefined();
   });
 
-  // The cookie is the credential this server issued; a header alongside it
-  // must not override it.
-  it("prefers the cookie when both are present", () => {
+  it("does not let a header override the cookie", () => {
     expect(
       readAccessToken({
         headers: {
@@ -67,14 +67,9 @@ describe("readAccessToken", () => {
     ).toBe("cookie-tok");
   });
 
-  it("finds nothing in an empty cookie or a non-Bearer header", () => {
+  it("finds nothing in an empty cookie", () => {
     expect(
-      readAccessToken({
-        headers: {
-          cookie: `${COOKIES.access.name}=`,
-          authorization: "Basic x",
-        },
-      }),
+      readAccessToken({ headers: { cookie: `${COOKIES.access.name}=` } }),
     ).toBeUndefined();
   });
 });

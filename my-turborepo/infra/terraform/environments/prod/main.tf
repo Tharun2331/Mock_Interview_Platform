@@ -150,9 +150,6 @@ module "cloudfront" {
   # The apex is dev's. A second owner fails on a duplicate record.
   create_apex_record = false
 
-  # Prod's own hosted-UI domain, or the CSP blocks Google sign-in.
-  auth_domain = local.auth_domain
-
   api_origins = ["https://${local.api_domain}", "wss://${local.api_domain}"]
 }
 
@@ -212,14 +209,13 @@ module "compute" {
     BEDROCK_GUARDRAIL_ID      = module.guardrail.guardrail_id
     BEDROCK_GUARDRAIL_VERSION = module.guardrail.guardrail_version
     # Cookie-based auth routes (ADR-0011) — see dev.
-    COGNITO_SERVER_CLIENT_ID = module.cognito.server_client_id
-    COGNITO_DOMAIN           = module.cognito.custom_domain
-    API_PUBLIC_ORIGIN        = "https://${local.api_domain}"
-    WEB_APP_ORIGIN           = "https://${local.web_domains[0]}"
+    COGNITO_DOMAIN    = module.cognito.custom_domain
+    API_PUBLIC_ORIGIN = "https://${local.api_domain}"
+    WEB_APP_ORIGIN    = "https://${local.web_domains[0]}"
   }
 
   secret_environment_variables = {
-    COGNITO_SERVER_CLIENT_SECRET = module.cognito.server_client_secret
+    COGNITO_USER_POOL_CLIENT_SECRET = module.cognito.cognito_user_pool_client_secret
   }
 }
 

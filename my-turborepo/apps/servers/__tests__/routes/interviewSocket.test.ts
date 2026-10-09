@@ -59,6 +59,9 @@ const bedrock = mockClient(BedrockRuntimeClient);
 const { attachInterviewSocket } = await import("../../routes/interview");
 
 const SESSION_ID = "01J000000000000000000000";
+// The access-token cookie a signed-in browser attaches to every handshake
+// (ADR-0011). setup.ts leaves COOKIE_SECURE off, so the name is unprefixed.
+const SESSION_COOKIE = "pp_at=token-abc";
 const USER_ID = "user-1";
 const TABLE = "prepilot-sessions-test";
 
@@ -224,15 +227,18 @@ function rawUpgrade(
   options: {
     path?: string;
     query?: string;
-    protocol?: string | null;
+    // The session cookie, as the browser attaches it. null sends none.
+    cookie?: string | null;
+    // Only to prove a subprotocol is no longer a credential.
+    protocol?: string;
     headers?: string[];
   },
 ): Promise<string> {
   const path = options.path ?? "/api/v1/interview";
   const query =
     options.query === undefined ? `?sessionId=${SESSION_ID}` : options.query;
-  const protocol =
-    options.protocol === undefined ? "bearer.token-abc" : options.protocol;
+  const cookie = options.cookie === undefined ? SESSION_COOKIE : options.cookie;
+  const protocol = options.protocol ?? null;
 
   return new Promise((resolve) => {
     const socket = netConnect(port, "127.0.0.1", () => {
@@ -245,6 +251,7 @@ function rawUpgrade(
           "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
           "Sec-WebSocket-Version: 13",
           ...(protocol === null ? [] : [`Sec-WebSocket-Protocol: ${protocol}`]),
+          ...(cookie === null ? [] : [`Cookie: ${cookie}`]),
           ...(options.headers ?? []),
           "",
           "",
@@ -281,7 +288,8 @@ function connect(
   options: {
     path?: string;
     sessionId?: string | null;
-    protocol?: string | null;
+    // The session cookie, as the browser attaches it. null sends none.
+    cookie?: string | null;
     headers?: Record<string, string>;
   } = {},
 ): Connected {
@@ -289,18 +297,18 @@ function connect(
   const sessionId =
     options.sessionId === undefined ? SESSION_ID : options.sessionId;
   const query = sessionId === null ? "" : `?sessionId=${sessionId}`;
-  const protocol =
-    options.protocol === undefined ? "bearer.token-abc" : options.protocol;
-  const clientOptions = { headers: options.headers ?? {} };
+  const cookie = options.cookie === undefined ? SESSION_COOKIE : options.cookie;
+  const clientOptions = {
+    headers: {
+      ...(cookie === null ? {} : { Cookie: cookie }),
+      ...(options.headers ?? {}),
+    },
+  };
 
-  const socket =
-    protocol === null
-      ? new WebSocket(`ws://127.0.0.1:${port}${path}${query}`, clientOptions)
-      : new WebSocket(
-          `ws://127.0.0.1:${port}${path}${query}`,
-          [protocol],
-          clientOptions,
-        );
+  const socket = new WebSocket(
+    `ws://127.0.0.1:${port}${path}${query}`,
+    clientOptions,
+  );
 
   clients.push(socket);
 
@@ -427,14 +435,29 @@ describe("the upgrade handshake", () => {
     expect(sonicStreams).toHaveLength(0);
   });
 
-  // A browser WebSocket cannot set headers, so the token rides in the
-  // subprotocol. No subprotocol means no credential.
-  it("refuses a handshake carrying no bearer subprotocol", async () => {
+  // The session cookie is the credential (ADR-0011). No cookie, no interview.
+  it("refuses a handshake carrying no session cookie", async () => {
     const port = await listen();
 
-    const response = await rawUpgrade(port, { protocol: null });
+    const response = await rawUpgrade(port, { cookie: null });
 
     expect(response).not.toContain("101");
+    expect(verify).not.toHaveBeenCalled();
+    expect(sonicStreams).toHaveLength(0);
+  });
+
+  // The `bearer.` subprotocol went with the Amplify client. A token lifted
+  // from somewhere else must not have that second way in.
+  it("no longer accepts a token in the subprotocol", async () => {
+    const port = await listen();
+
+    const response = await rawUpgrade(port, {
+      cookie: null,
+      protocol: "bearer.token-abc",
+    });
+
+    expect(response).not.toContain("101");
+    expect(verify).not.toHaveBeenCalled();
     expect(sonicStreams).toHaveLength(0);
   });
 
@@ -452,27 +475,13 @@ describe("the upgrade handshake", () => {
   });
 
   // ADR-0011: the session is an httpOnly cookie, which the browser attaches
-  // to the handshake on its own. No subprotocol is needed.
-  it("authenticates by the access-token cookie alone", async () => {
+  // to the handshake on its own.
+  it("verifies the token the cookie carries", async () => {
     const port = await listen();
-    const client = connect(port, {
-      protocol: null,
-      headers: { Cookie: "pp_at=cookie-token" },
-    });
+    const client = connect(port, { cookie: "pp_at=cookie-token" });
 
     await client.waitFor("ready");
     expect(verify).toHaveBeenCalledWith("cookie-token");
-  });
-
-  it("prefers the cookie over a subprotocol token", async () => {
-    const port = await listen();
-    const client = connect(port, {
-      headers: { Cookie: "pp_at=cookie-token" },
-    });
-
-    await client.waitFor("ready");
-    expect(verify).toHaveBeenCalledWith("cookie-token");
-    expect(verify).not.toHaveBeenCalledWith("token-abc");
   });
 
   // Cross-site WebSocket hijacking: handshakes are not subject to CORS, and
@@ -482,8 +491,7 @@ describe("the upgrade handshake", () => {
     const port = await listen();
 
     const response = await rawUpgrade(port, {
-      protocol: null,
-      headers: ["Origin: https://evil.example", "Cookie: pp_at=cookie-token"],
+      headers: ["Origin: https://evil.example"],
     });
 
     expect(response).not.toContain("101");
@@ -494,11 +502,7 @@ describe("the upgrade handshake", () => {
   it("accepts a handshake from the web app's own origin", async () => {
     const port = await listen();
     const client = connect(port, {
-      protocol: null,
-      headers: {
-        Origin: "http://localhost:3000",
-        Cookie: "pp_at=cookie-token",
-      },
+      headers: { Origin: "http://localhost:3000" },
     });
 
     await client.waitFor("ready");

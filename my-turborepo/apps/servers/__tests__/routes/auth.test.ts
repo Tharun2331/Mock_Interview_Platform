@@ -27,8 +27,8 @@ import { mount, type MountedApp, type TestUser } from "../helpers/testApp";
 
 // The auth routes over a real HTTP server and real cookies (ADR-0011).
 //
-// Cognito is mocked at the client class, so lib/cognitoUserAuth.ts — the
-// SECRET_HASH, the challenge handling, the error mapping — runs for real. The
+// Cognito is mocked at the client class, so lib/cognitoUserAuth.ts â€” the
+// SECRET_HASH, the challenge handling, the error mapping â€” runs for real. The
 // hosted UI's token endpoint is a plain HTTPS call, faked by intercepting fetch
 // for that one host and passing everything else through, because these tests
 // call the app with fetch too.
@@ -47,8 +47,8 @@ function accessToken(username = USERNAME): string {
 }
 
 function expectedHash(username: string): string {
-  return createHmac("sha256", config.cognitoServerClientSecret)
-    .update(username + config.cognitoServerClientId)
+  return createHmac("sha256", config.cognitoUserPoolClientSecret)
+    .update(username + config.cognitoUserPoolClientId)
     .digest("base64");
 }
 
@@ -185,7 +185,7 @@ describe("POST /signin", () => {
 
     const input = cognito.commandCalls(InitiateAuthCommand)[0]?.args[0].input;
     expect(input?.AuthFlow).toBe("USER_PASSWORD_AUTH");
-    expect(input?.ClientId).toBe(config.cognitoServerClientId);
+    expect(input?.ClientId).toBe(config.cognitoUserPoolClientId);
     expect(input?.AuthParameters?.SECRET_HASH).toBe(expectedHash(EMAIL));
 
     const cookies = setCookies(response);
@@ -557,8 +557,8 @@ describe("POST /signout", () => {
     const input = cognito.commandCalls(RevokeTokenCommand)[0]?.args[0].input;
     expect(input).toMatchObject({
       Token: "refresh-1",
-      ClientId: config.cognitoServerClientId,
-      ClientSecret: config.cognitoServerClientSecret,
+      ClientId: config.cognitoUserPoolClientId,
+      ClientSecret: config.cognitoUserPoolClientSecret,
     });
     const cookies = setCookies(response);
     for (const name of ["pp_at", "pp_rt", "pp_user", "pp_mfa"]) {
@@ -579,7 +579,7 @@ describe("POST /signout", () => {
     expect(cleared(setCookies(response).get("pp_rt"))).toBe(true);
   });
 
-  // `Google_…` with a capital G: Cognito uses the provider name exactly as
+  // `Google_â€¦` with a capital G: Cognito uses the provider name exactly as
   // configured. A lowercase fixture here once hid that every real Google
   // sign-out was missing this URL.
   it("returns the hosted-UI logout URL for a Google sign-in", async () => {
@@ -622,7 +622,7 @@ describe("GET /google and /google/callback", () => {
     expect(authorize.origin).toBe(`https://${config.cognitoDomain}`);
     expect(authorize.searchParams.get("identity_provider")).toBe("Google");
     expect(authorize.searchParams.get("client_id")).toBe(
-      config.cognitoServerClientId,
+      config.cognitoUserPoolClientId,
     );
     expect(authorize.searchParams.get("redirect_uri")).toBe(
       `${config.apiPublicOrigin}/api/v1/auth/google/callback`,
@@ -662,7 +662,7 @@ describe("GET /google and /google/callback", () => {
     expect(sent?.body.get("code_verifier")).toBe(verifier);
     expect(sent?.headers.get("authorization")).toBe(
       `Basic ${Buffer.from(
-        `${config.cognitoServerClientId}:${config.cognitoServerClientSecret}`,
+        `${config.cognitoUserPoolClientId}:${config.cognitoUserPoolClientSecret}`,
       ).toString("base64")}`,
     );
     const cookies = setCookies(response);

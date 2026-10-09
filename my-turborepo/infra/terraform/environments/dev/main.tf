@@ -289,14 +289,13 @@ module "compute" {
     # The cookie-based auth routes (ADR-0011). The server's own public origin
     # and the hosted-UI domain build Google's authorize and callback URLs; the
     # web origin is where a finished sign-in lands.
-    COGNITO_SERVER_CLIENT_ID = module.cognito.server_client_id
-    COGNITO_DOMAIN           = module.cognito.custom_domain
-    API_PUBLIC_ORIGIN        = "https://${local.api_domain}"
-    WEB_APP_ORIGIN           = "https://${local.web_domains[0]}"
+    COGNITO_DOMAIN    = module.cognito.custom_domain
+    API_PUBLIC_ORIGIN = "https://${local.api_domain}"
+    WEB_APP_ORIGIN    = "https://${local.web_domains[0]}"
   }
 
   secret_environment_variables = {
-    COGNITO_SERVER_CLIENT_SECRET = module.cognito.server_client_secret
+    COGNITO_USER_POOL_CLIENT_SECRET = module.cognito.cognito_user_pool_client_secret
   }
 }
 

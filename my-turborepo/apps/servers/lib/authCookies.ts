@@ -173,22 +173,12 @@ export function readCookie(
   return value === undefined || value.length === 0 ? undefined : value;
 }
 
-const BEARER_PREFIX = "Bearer ";
-
-// The access token for this request: the cookie, else an Authorization header.
+// The access token for this request: its httpOnly cookie, and nothing else.
 //
-// The header path is the transition from the Amplify client, which still sends
-// one until the web app moves over; it is removed with the public app client
-// (ADR-0011, Phase 4). The cookie wins when both are present, because it is
-// the one this server issued.
+// An `Authorization: Bearer` header is deliberately NOT read. It was accepted
+// while the Amplify client still sent one (ADR-0011's transition) and went with
+// the public app client. Keeping it would leave a second way in for a token
+// lifted from somewhere else, which is exactly what this design removes.
 export function readAccessToken(req: HasHeaders): string | undefined {
-  const fromCookie = readCookie(req, COOKIES.access);
-  if (fromCookie !== undefined) return fromCookie;
-
-  const header = req.headers.authorization;
-  if (header === undefined || !header.startsWith(BEARER_PREFIX)) {
-    return undefined;
-  }
-  const token = header.slice(BEARER_PREFIX.length).trim();
-  return token.length === 0 ? undefined : token;
+  return readCookie(req, COOKIES.access);
 }

@@ -35,8 +35,8 @@ export const cognitoUserClient = new CognitoIdentityProviderClient({
 type ServerClient = { clientId: string; clientSecret: string; domain: string };
 
 function serverClient(): ServerClient {
-  const clientId = config.cognitoServerClientId;
-  const clientSecret = config.cognitoServerClientSecret;
+  const clientId = config.cognitoUserPoolClientId;
+  const clientSecret = config.cognitoUserPoolClientSecret;
   const domain = config.cognitoDomain;
   if (clientId === "" || clientSecret === "" || domain === "") {
     throw new ServiceError(MESSAGES.AUTH_NOT_CONFIGURED);

@@ -9,7 +9,7 @@ import {
   SONIC,
 } from "../lib/constants";
 import { verifier } from "../lib/cognitoAuth";
-import { COOKIES, readCookie } from "../lib/authCookies";
+import { readAccessToken } from "../lib/authCookies";
 import { isAllowedOrigin } from "../lib/originCheck";
 import {
   ProfileStateError,
@@ -64,13 +64,11 @@ import {
 // second billable Sonic stream with no memory of the conversation, and its
 // long-polling fallback cannot carry duplex audio at all.
 
+// The handshake authenticates with the access-token cookie, which the browser
+// attaches by itself (ADR-0011). The token used to ride in a `bearer.`
+// subprotocol, because a browser WebSocket cannot set headers; that path went
+// with the Amplify client, and a subprotocol is no longer read.
 const PATH = "/api/v1/interview";
-// The handshake authenticates with the access-token cookie (ADR-0011). Until
-// the web app moves over, the Amplify client still sends the token as a
-// subprotocol instead — a browser WebSocket cannot set headers, and a query
-// parameter would land in access logs and browser history. Removed with the
-// public app client.
-const AUTH_PROTOCOL_PREFIX = "bearer.";
 
 export type InterviewServerEvent =
   | {
@@ -141,18 +139,19 @@ export function isInterruptionSentinel(content: string): boolean {
 // off a hand-written handshake: a minimal `server.on("upgrade", (_, socket) =>
 // socket.end("HTTP/1.1 401 ..."))` delivers nothing either. Bun's `node:http`
 // fires the upgrade event but does not flush writes made to the raw socket, so
-// every refusal — expired token, missing session id, missing subprotocol —
-// arrives at the browser as a dropped connection carrying no status.
+// every refusal — expired token, missing session id, missing cookie, foreign
+// origin — arrives at the browser as a dropped connection carrying no status.
 //
 // `end()` rather than the original `write()` + `destroy()` regardless: destroy
 // discards anything still buffered, so that pair is racy wherever it DOES work.
 // This costs nothing and is correct under Node, which is what a future move off
 // Bun's http shim would restore.
 //
-// The consequence worth knowing: the client cannot currently distinguish "your
-// session expired, sign in again" from "the network dropped". Closing that gap
-// needs a different channel — a pre-flight HTTP call before the upgrade, or a
-// close frame after accepting it — not a different write here.
+// The consequence worth knowing: a refusal alone cannot tell the client "your
+// session expired" from "the network dropped". The web client closes most of
+// that gap with a pre-flight GET /auth/me before every handshake
+// (apps/web/src/lib/interviewSocket.ts), which renews a lapsed token and fails
+// clearly on an ended session, so an expired cookie rarely reaches this path.
 function refuse(socket: Duplex): void {
   socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
 }
@@ -1039,19 +1038,9 @@ export function attachInterviewSocket(server: Server): WebSocketServer {
     }
 
     const sessionId = url.searchParams.get("sessionId");
-    const protocols = (req.headers["sec-websocket-protocol"] ?? "")
-      .split(",")
-      .map((value) => value.trim());
-    const bearer = protocols.find((value) =>
-      value.startsWith(AUTH_PROTOCOL_PREFIX),
-    );
-    // The httpOnly cookie (ADR-0011), else the subprotocol the Amplify client
-    // still sends until the web app moves over.
-    const token =
-      readCookie(req, COOKIES.access) ??
-      bearer?.slice(AUTH_PROTOCOL_PREFIX.length);
+    const token = readAccessToken(req);
 
-    if (sessionId === null || token === undefined || token.length === 0) {
+    if (sessionId === null || token === undefined) {
       refuse(socket);
       return;
     }

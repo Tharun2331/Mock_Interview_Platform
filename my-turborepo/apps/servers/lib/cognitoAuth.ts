@@ -8,17 +8,10 @@ import { recordAuthFailure } from "./metrics";
 // Exported so the WebSocket upgrade handler verifies against the same JWKS
 // cache rather than standing up a second verifier. Same trust decision, read
 // from the handshake's cookie instead of a request's.
-//
-// Two client ids while the web app moves to cookies (ADR-0011): the public
-// Amplify client's tokens and the confidential server client's. The public id
-// goes when that client is deleted.
 export const verifier = CognitoJwtVerifier.create({
   userPoolId: config.cognitoUserPoolId,
   tokenUse: "access",
-  clientId: [
-    config.cognitoUserPoolClientId,
-    config.cognitoServerClientId,
-  ].filter((id) => id.length > 0),
+  clientId: config.cognitoUserPoolClientId,
 });
 
 export const AuthMiddleware = async (
@@ -26,8 +19,7 @@ export const AuthMiddleware = async (
   res: Response,
   next: NextFunction,
 ) => {
-  // 1. The access token: the httpOnly cookie, else (until the web app has
-  //    moved over) an `Authorization: Bearer` header. See readAccessToken.
+  // 1. The access token, from its httpOnly cookie (ADR-0011).
   const token = readAccessToken(req);
   if (token === undefined) {
     recordAuthFailure();

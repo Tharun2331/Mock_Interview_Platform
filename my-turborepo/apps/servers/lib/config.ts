@@ -225,18 +225,18 @@ export const config = {
   // of re-plans and on-demand reruns before refusing.
   agentRunsPerSession: Number(env("AGENT_RUNS_PER_SESSION", "8")),
   cognitoUserPoolId: requireEnv("COGNITO_USER_POOL_ID"),
+  // The pool's only app client, confidential (ADR-0011): the /auth routes sign
+  // in with it and every access token is verified against it.
   cognitoUserPoolClientId: requireEnv("COGNITO_USER_POOL_CLIENT_ID"),
 
   // ---------------------------------------------------------------------------
   // Cookie-based auth (ADR-0011)
   // ---------------------------------------------------------------------------
 
-  // The confidential client the /auth routes sign in with. Not requireEnv: the
-  // Evaluator Lambda shares this module and never authenticates anyone, so it
-  // is not given them. lib/cognitoUserAuth.ts raises a ServiceError when a
-  // route needs them and they are unset.
-  cognitoServerClientId: env("COGNITO_SERVER_CLIENT_ID", ""),
-  cognitoServerClientSecret: env("COGNITO_SERVER_CLIENT_SECRET", ""),
+  // The client's secret. Not requireEnv: the Evaluator Lambda shares this
+  // module and never signs anyone in, so it is not given it.
+  // lib/cognitoUserAuth.ts raises a ServiceError when a route needs it unset.
+  cognitoUserPoolClientSecret: env("COGNITO_USER_POOL_CLIENT_SECRET", ""),
   // The hosted-UI domain (auth.tharunsekar.xyz in dev), host only. Google
   // sign-in is authorised and its code exchanged there.
   cognitoDomain: env("COGNITO_DOMAIN", ""),

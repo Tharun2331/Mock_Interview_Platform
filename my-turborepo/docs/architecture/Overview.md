@@ -179,11 +179,12 @@ v2 can swap function bodies for LangGraph nodes without touching callers.
 Each of these has a corresponding record in [`../adr/`](../adr/) with the
 rejected alternatives spelled out. Summarised here:
 
-**Cognito outside the data path.** JWTs are minted once at sign-in by Cognito
-directly to the client via Amplify. Express validates them locally against
-Cognito's public JWKS endpoint, cached in memory. Cognito is not a per-request
-dependency, which cuts latency and removes a failure mode from the interview
-loop.
+**Cognito outside the data path.** Express signs candidates in through a
+confidential Cognito client and keeps the JWTs in httpOnly cookies the page
+cannot read ([ADR-0011](../adr/0011-httponly-cookie-sessions.md)). It validates
+them locally against Cognito's public JWKS endpoint, cached in memory. Cognito
+is called at sign-in and once an hour per session to refresh, never per
+request, which cuts latency and removes a failure mode from the interview loop.
 
 **ALB, not API Gateway.** See [ADR-0002](../adr/0002-alb-not-api-gateway.md).
 

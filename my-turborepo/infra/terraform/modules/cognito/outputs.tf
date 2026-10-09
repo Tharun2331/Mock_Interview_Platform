@@ -13,18 +13,14 @@ output "cognito_user_pool_id" {
 }
 
 output "cognito_user_pool_client_id" {
-  description = "The ID of the Cognito User Pool Client"
-  value       = aws_cognito_user_pool_client.client.id
-}
-output "server_client_id" {
-  description = "ID of the confidential client the API's auth routes use (ADR-0011)"
+  description = "ID of the pool's only app client, the confidential one the API signs in with (ADR-0011)"
   value       = aws_cognito_user_pool_client.server.id
 }
 
 # Cognito generates this value, so it is in state the moment the client exists;
 # exporting it adds no exposure. It goes to the server as a SecureString.
-output "server_client_secret" {
-  description = "Secret of the confidential client. Sensitive."
+output "cognito_user_pool_client_secret" {
+  description = "Secret of the app client. Sensitive."
   value       = aws_cognito_user_pool_client.server.client_secret
   sensitive   = true
 }
@@ -39,9 +35,9 @@ output "admin_group_name" {
   value       = aws_cognito_user_group.admins.name
 }
 
-# The hosted-UI domain as a plain string (auth.<domain>), for the web build's
-# BUN_PUBLIC_COGNITO_DOMAIN. Without it a build falls back to dev's domain, so
-# a prod bundle would send Google sign-in to the dev pool.
+# The hosted-UI domain as a plain string (auth.<domain>), for the API's
+# COGNITO_DOMAIN: Google sign-in is authorised and its code exchanged there
+# (ADR-0011). The web bundle no longer needs it.
 output "custom_domain" {
   description = "Hosted-UI domain the web app's Google sign-in redirects through"
   value       = aws_cognito_user_pool_domain.main.domain
